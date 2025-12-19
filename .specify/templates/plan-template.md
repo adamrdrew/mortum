@@ -31,7 +31,13 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Source of truth: `.specify/memory/constitution.md`
+
+- Readability: simplest correct approach; avoid clever tricks.
+- Safety: no undefined behavior knowingly; warnings treated seriously.
+- Ownership: every allocation/resource has an owner; init/destroy is explicit.
+- Boundaries: gameplay ↔ platform separation; isolate `#ifdef` usage.
+- Builds/docs: keep `make` workflow boring; avoid painful dependencies.
 
 ## Project Structure
 
