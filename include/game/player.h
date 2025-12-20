@@ -8,12 +8,19 @@
 typedef struct Player {
 	float x;
 	float y;
+	float vx;
+	float vy;
 	float angle_deg;
 	int health;
 	int health_max;
 	AmmoState ammo;
 	uint32_t weapons_owned_mask;
 	WeaponId weapon_equipped;
+	float weapon_view_bob_phase;
+	float weapon_view_bob_amp;
+	bool weapon_view_anim_shooting;
+	int weapon_view_anim_frame;
+	float weapon_view_anim_t;
 	uint8_t weapon_select_prev_mask;
 	int mortum_pct;
 	int keys;

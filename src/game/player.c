@@ -20,8 +20,8 @@ void player_init(Player* p) {
 	p->ammo.cur[AMMO_SHELLS] = 0;
 	p->ammo.cur[AMMO_CELLS] = 0;
 
-	p->weapons_owned_mask = (1u << (unsigned)WEAPON_SIDEARM);
-	p->weapon_equipped = WEAPON_SIDEARM;
+	p->weapons_owned_mask = (1u << (unsigned)WEAPON_HANDGUN);
+	p->weapon_equipped = WEAPON_HANDGUN;
 	p->mortum_pct = 0;
 	p->keys = 0;
 	p->purge_items = 0;

@@ -3,10 +3,11 @@
 #include "game/ammo.h"
 
 typedef enum WeaponId {
-	WEAPON_SIDEARM = 0,
+	WEAPON_HANDGUN = 0,
 	WEAPON_SHOTGUN = 1,
 	WEAPON_RIFLE = 2,
-	WEAPON_CROWDCONTROL = 3,
+	WEAPON_SMG = 3,
+	WEAPON_ROCKET = 4,
 	WEAPON_COUNT
 } WeaponId;
 

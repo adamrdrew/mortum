@@ -19,6 +19,12 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 	if (!player || !in) {
 		return;
 	}
+	if (dt_s <= 0.0) {
+		return;
+	}
+
+	float x0 = player->x;
+	float y0 = player->y;
 
 	// Mouse look (yaw)
 	const float mouse_sens_deg_per_px = 0.12f;
@@ -77,10 +83,45 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 	if (player->noclip || !world) {
 		player->x = to_x;
 		player->y = to_y;
+		player->vx = (player->x - x0) / (float)dt_s;
+		player->vy = (player->y - y0) / (float)dt_s;
+
+		float speed = sqrtf(player->vx * player->vx + player->vy * player->vy);
+		float target_amp = speed / move_speed;
+		if (target_amp < 0.0f) {
+			target_amp = 0.0f;
+		}
+		if (target_amp > 1.0f) {
+			target_amp = 1.0f;
+		}
+		float smooth = (float)(dt_s * 8.0);
+		if (smooth > 1.0f) {
+			smooth = 1.0f;
+		}
+		player->weapon_view_bob_amp += (target_amp - player->weapon_view_bob_amp) * smooth;
+		player->weapon_view_bob_phase += (float)(dt_s * 10.0) * (0.2f + 0.8f * player->weapon_view_bob_amp);
 		return;
 	}
 
 	CollisionMoveResult r = collision_move_circle(world, radius, player->x, player->y, to_x, to_y);
 	player->x = r.out_x;
 	player->y = r.out_y;
+	player->vx = (player->x - x0) / (float)dt_s;
+	player->vy = (player->y - y0) / (float)dt_s;
+
+	// Weapon view bob inputs.
+	float speed = sqrtf(player->vx * player->vx + player->vy * player->vy);
+	float target_amp = speed / move_speed;
+	if (target_amp < 0.0f) {
+		target_amp = 0.0f;
+	}
+	if (target_amp > 1.0f) {
+		target_amp = 1.0f;
+	}
+	float smooth = (float)(dt_s * 8.0);
+	if (smooth > 1.0f) {
+		smooth = 1.0f;
+	}
+	player->weapon_view_bob_amp += (target_amp - player->weapon_view_bob_amp) * smooth;
+	player->weapon_view_bob_phase += (float)(dt_s * 10.0) * (0.2f + 0.8f * player->weapon_view_bob_amp);
 }

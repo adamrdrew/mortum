@@ -2,8 +2,8 @@
 
 static const WeaponDef k_defs[WEAPON_COUNT] = {
 	{
-		.id = WEAPON_SIDEARM,
-		.name = "Sidearm",
+		.id = WEAPON_HANDGUN,
+		.name = "Handgun",
 		.ammo_type = AMMO_BULLETS,
 		.ammo_per_shot = 1,
 		.shot_cooldown_s = 0.18f,
@@ -41,9 +41,9 @@ static const WeaponDef k_defs[WEAPON_COUNT] = {
 		.proj_damage = 40,
 	},
 	{
-		.id = WEAPON_CROWDCONTROL,
-		.name = "Chaingun",
-		.ammo_type = AMMO_CELLS,
+		.id = WEAPON_SMG,
+		.name = "SMG",
+		.ammo_type = AMMO_BULLETS,
 		.ammo_per_shot = 1,
 		.shot_cooldown_s = 0.08f,
 		.pellets = 1,
@@ -52,6 +52,19 @@ static const WeaponDef k_defs[WEAPON_COUNT] = {
 		.proj_radius = 0.040f,
 		.proj_life_s = 1.0f,
 		.proj_damage = 14,
+	},
+	{
+		.id = WEAPON_ROCKET,
+		.name = "Rocket",
+		.ammo_type = AMMO_CELLS,
+		.ammo_per_shot = 4,
+		.shot_cooldown_s = 0.95f,
+		.pellets = 1,
+		.spread_deg = 0.0f,
+		.proj_speed = 5.5f,
+		.proj_radius = 0.090f,
+		.proj_life_s = 1.8f,
+		.proj_damage = 120,
 	},
 };
 

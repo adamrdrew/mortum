@@ -114,7 +114,7 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 
 	Image img;
 	bool ok = false;
-	bool enforce_64 = ends_with_ci(filename, ".png");
+	bool enforce_64 = ends_with_ci(filename, ".png") && !strchr(filename, '/') && !strchr(filename, '\\');
 
 	char* preferred = asset_path_join(paths, "Images/Textures", filename);
 	char* fallback = asset_path_join(paths, "Images", filename);

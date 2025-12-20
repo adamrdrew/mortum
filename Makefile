@@ -65,6 +65,8 @@ SRC := \
   src/game/weapons.c \
   src/game/ammo.c \
   src/game/weapon_defs.c \
+  src/game/weapon_visuals.c \
+  src/game/weapon_view.c \
   src/game/upgrades.c \
   src/game/enemy.c \
   src/game/mortum.c \

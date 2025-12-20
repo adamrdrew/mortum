@@ -48,6 +48,24 @@ void weapons_update(
 		return;
 	}
 
+	// Step weapon view shoot animation.
+	if (player->weapon_view_anim_shooting) {
+		player->weapon_view_anim_t += (float)dt_s;
+		const float frame_dt = 1.0f / 30.0f;
+		while (player->weapon_view_anim_t >= frame_dt) {
+			player->weapon_view_anim_t -= frame_dt;
+			player->weapon_view_anim_frame += 1;
+			if (player->weapon_view_anim_frame >= 6) {
+				player->weapon_view_anim_shooting = false;
+				player->weapon_view_anim_frame = 0;
+				player->weapon_view_anim_t = 0.0f;
+				break;
+			}
+		}
+	}
+
+	WeaponId weapon_before = player->weapon_equipped;
+
 	// Switching (edge-triggered on number keys; wheel cycles continuously).
 	uint8_t pressed = (uint8_t)(weapon_select_mask & (uint8_t)~player->weapon_select_prev_mask);
 	player->weapon_select_prev_mask = weapon_select_mask;
@@ -69,6 +87,12 @@ void weapons_update(
 		for (int i = 0; i < steps; i++) {
 			player->weapon_equipped = weapon_next_owned(player, player->weapon_equipped, dir);
 		}
+	}
+
+	if (player->weapon_equipped != weapon_before) {
+		player->weapon_view_anim_shooting = false;
+		player->weapon_view_anim_frame = 0;
+		player->weapon_view_anim_t = 0.0f;
 	}
 
 	player->weapon_cooldown_s = clamp_min0(player->weapon_cooldown_s - (float)dt_s);
@@ -122,5 +146,9 @@ void weapons_update(
 		(void)ammo_add(&player->ammo, def->ammo_type, def->ammo_per_shot);
 		return;
 	}
+
+	player->weapon_view_anim_shooting = true;
+	player->weapon_view_anim_frame = 0;
+	player->weapon_view_anim_t = 0.0f;
 	player->weapon_cooldown_s = def->shot_cooldown_s;
 }

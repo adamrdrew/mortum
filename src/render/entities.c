@@ -206,6 +206,53 @@ static uint32_t texture_sample_tile_nearest(const Texture* t, int tile_x, int ti
 	return t->pixels[y * t->width + x];
 }
 
+static const char* weapon_pickup_filename(const char* type) {
+	if (!type) {
+		return NULL;
+	}
+	if (strcmp(type, "pickup_weapon_handgun") == 0 || strcmp(type, "pickup_weapon_sidearm") == 0) {
+		return "Weapons/Handgun/HANDGUN-PICKUP.png";
+	}
+	if (strcmp(type, "pickup_weapon_shotgun") == 0) {
+		return "Weapons/Shotgun/SHOTGUN-PICKUP.png";
+	}
+	if (strcmp(type, "pickup_weapon_rifle") == 0) {
+		return "Weapons/Rifle/RIFLE-PICKUP.png";
+	}
+	if (strcmp(type, "pickup_weapon_smg") == 0 || strcmp(type, "pickup_weapon_chaingun") == 0) {
+		return "Weapons/SMG/SMG-PICKUP.png";
+	}
+	if (strcmp(type, "pickup_weapon_rocket") == 0) {
+		return "Weapons/Rocket/ROCKET-PICKUP.png";
+	}
+	return NULL;
+}
+
+static inline uint32_t blend_abgr8888_over(uint32_t src, uint32_t dst) {
+	unsigned a = (unsigned)(src >> 24) & 0xFFu;
+	if (a == 0u) {
+		return dst;
+	}
+	if (a == 255u) {
+		return src;
+	}
+
+	unsigned inv_a = 255u - a;
+	unsigned src_r = (unsigned)(src)&0xFFu;
+	unsigned src_g = (unsigned)(src >> 8) & 0xFFu;
+	unsigned src_b = (unsigned)(src >> 16) & 0xFFu;
+
+	unsigned dst_r = (unsigned)(dst)&0xFFu;
+	unsigned dst_g = (unsigned)(dst >> 8) & 0xFFu;
+	unsigned dst_b = (unsigned)(dst >> 16) & 0xFFu;
+
+	unsigned out_r = (src_r * a + dst_r * inv_a + 127u) / 255u;
+	unsigned out_g = (src_g * a + dst_g * inv_a + 127u) / 255u;
+	unsigned out_b = (src_b * a + dst_b * inv_a + 127u) / 255u;
+
+	return (0xFFu << 24) | (out_b << 16) | (out_g << 8) | out_r;
+}
+
 typedef struct BillboardCandidate {
 	const Entity* e;
 	float perp;
@@ -217,6 +264,8 @@ typedef struct BillboardCandidate {
 	int tile_x;
 	int tile_y;
 	bool has_tile;
+	const Texture* tex;
+	bool has_tex;
 } BillboardCandidate;
 
 static int billboard_cmp_far_to_near(const void* a, const void* b) {
@@ -313,9 +362,22 @@ void render_entities_billboard(
 		int y0 = (fb->height - sprite_h) / 2;
 
 		uint32_t col = entity_color(e->type);
+		const Texture* ent_tex = NULL;
+		bool has_tex = false;
+		if (texreg && paths) {
+			const char* weapon_pickup = weapon_pickup_filename(e->type);
+			if (weapon_pickup) {
+				ent_tex = texture_registry_get(texreg, paths, weapon_pickup);
+				if (ent_tex && ent_tex->pixels && ent_tex->width > 0 && ent_tex->height > 0) {
+					has_tex = true;
+					float aspect = (float)ent_tex->width / (float)ent_tex->height;
+					sprite_w = (int)clampf((float)sprite_h * aspect, 2.0f, (float)fb->width);
+				}
+			}
+		}
 		int tile_x = 0;
 		int tile_y = 0;
-		bool has_tile = sprites ? entity_sprite_tile(e->type, e->cooldown_s, &tile_x, &tile_y) : false;
+		bool has_tile = (!has_tex && sprites) ? entity_sprite_tile(e->type, e->cooldown_s, &tile_x, &tile_y) : false;
 
 		if (cand_count >= cands_cap) {
 			int new_cap = cands_cap > 0 ? (cands_cap * 2) : 64;
@@ -338,6 +400,8 @@ void render_entities_billboard(
 		cands[cand_count].tile_x = tile_x;
 		cands[cand_count].tile_y = tile_y;
 		cands[cand_count].has_tile = has_tile;
+		cands[cand_count].tex = ent_tex;
+		cands[cand_count].has_tex = has_tex;
 		cand_count++;
 	}
 
@@ -359,6 +423,25 @@ void render_entities_billboard(
 				continue;
 			}
 			if (depth && c->perp > depth[x]) {
+				continue;
+			}
+
+			if (c->has_tex && c->tex) {
+				float u = (float)sx / (float)(c->sprite_w > 1 ? (c->sprite_w - 1) : 1);
+				for (int sy = 0; sy < c->sprite_h; sy++) {
+					int y = c->y0 + sy;
+					if ((unsigned)y >= (unsigned)fb->height) {
+						continue;
+					}
+					float v = (float)sy / (float)(c->sprite_h > 1 ? (c->sprite_h - 1) : 1);
+					uint32_t px = texture_sample_nearest(c->tex, u, v);
+					if (((px >> 24) & 0xFFu) == 0u) {
+						continue;
+					}
+					px = lighting_apply(px, c->perp, 1.0f, sector_tint, lights, light_count, e->x, e->y);
+					uint32_t* dst = &fb->pixels[y * fb->width + x];
+					*dst = blend_abgr8888_over(px, *dst);
+				}
 				continue;
 			}
 

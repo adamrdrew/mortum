@@ -2,6 +2,7 @@
 
 #include "game/ammo.h"
 #include "game/weapon_defs.h"
+#include "game/weapon_visuals.h"
 
 #include "render/draw.h"
 #include "render/font.h"
@@ -26,7 +27,7 @@ static void hud_draw_panel(Framebuffer* fb, int x, int y, int w, int h, uint32_t
 	draw_rect(fb, x + w - 2, y, 2, h, lo);
 }
 
-void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int fps) {
+void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int fps, TextureRegistry* texreg, const AssetPaths* paths) {
 	(void)fps;
 	const WeaponDef* w = player ? weapon_def_get(player->weapon_equipped) : NULL;
 	int hp = player ? player->health : 0;
@@ -95,6 +96,22 @@ void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int
 	hud_draw_panel(fb, x, panel_y, panel_w, panel_h, 0xFF282828u, hi, lo);
 	snprintf(buf, sizeof(buf), "AMMO %d/%d", ammo_cur, ammo_max);
 	font_draw_text(fb, x + 6, panel_y + 6, buf, text);
+
+	// Weapon icon (optional): draw inside the ammo panel.
+	if (player && texreg && paths) {
+		const WeaponVisualSpec* spec = weapon_visual_spec_get(player->weapon_equipped);
+		if (spec) {
+			char filename[128];
+			snprintf(filename, sizeof(filename), "Weapons/%s/%s-ICON.png", spec->dir_name, spec->prefix);
+			const Texture* icon = texture_registry_get(texreg, paths, filename);
+			if (icon && icon->pixels && icon->width > 0 && icon->height > 0) {
+				int icon_pad = 6;
+				int dst_x = x + panel_w - icon->width - icon_pad;
+				int dst_y = panel_y + (panel_h - icon->height) / 2;
+				draw_blit_abgr8888_alpha(fb, dst_x, dst_y, icon->pixels, icon->width, icon->height);
+			}
+		}
+	}
 
 	x += panel_w + panel_gap;
 	hud_draw_panel(fb, x, panel_y, panel_w, panel_h, 0xFF282828u, hi, lo);

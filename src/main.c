@@ -32,6 +32,8 @@
 #include "game/hud.h"
 #include "game/pickups.h"
 
+#include "game/weapon_view.h"
+
 #include "game/enemy.h"
 #include "game/projectiles.h"
 #include "game/weapons.h"
@@ -183,6 +185,8 @@ int main(int argc, char** argv) {
 	bool debug_overlay_enabled = false;
 	bool debug_prev_down = false;
 	bool spawn_prev_down = false;
+	bool q_prev_down = false;
+	bool e_prev_down = false;
 	bool win_prev = false;
 
 	while (running) {
@@ -225,7 +229,22 @@ int main(int argc, char** argv) {
 		if (input_key_down(&in, SDL_SCANCODE_4)) {
 			weapon_select_mask |= 1u << 3;
 		}
+		if (input_key_down(&in, SDL_SCANCODE_5)) {
+			weapon_select_mask |= 1u << 4;
+		}
 		int weapon_wheel_delta = in.mouse_wheel;
+		bool q_down = input_key_down(&in, SDL_SCANCODE_Q);
+		bool e_down = input_key_down(&in, SDL_SCANCODE_E);
+		bool q_pressed = q_down && !q_prev_down;
+		bool e_pressed = e_down && !e_prev_down;
+		q_prev_down = q_down;
+		e_prev_down = e_down;
+		if (q_pressed) {
+			weapon_wheel_delta -= 1;
+		}
+		if (e_pressed) {
+			weapon_wheel_delta += 1;
+		}
 		bool spawn_down = input_key_down(&in, SDL_SCANCODE_F6);
 		bool spawn_pressed = spawn_down && !spawn_prev_down;
 		spawn_prev_down = spawn_down;
@@ -240,7 +259,7 @@ int main(int argc, char** argv) {
 				projectiles_update(&player, map_ok ? &map.world : NULL, &map.entities, loop.fixed_dt_s);
 
 				corruption_update(&player, map_ok ? &map.entities : NULL, loop.fixed_dt_s);
-				bool use_down = input_key_down(&in, SDL_SCANCODE_E);
+				bool use_down = input_key_down(&in, SDL_SCANCODE_F);
 				bool use_pressed = use_down && !player.use_prev_down;
 				player.use_prev_down = use_down;
 				if (use_pressed) {
@@ -289,7 +308,8 @@ int main(int argc, char** argv) {
 			render_entities_billboard(&fb, &cam, &map.entities, wall_depth, &texreg, &paths, map.world.lights, map.world.light_count);
 		}
 
-		hud_draw(&fb, &player, &gs, fps);
+		weapon_view_draw(&fb, &player, &texreg, &paths);
+		hud_draw(&fb, &player, &gs, fps, &texreg, &paths);
 		if (debug_overlay_enabled) {
 			debug_overlay_draw(&fb, &player, map_ok ? &map.world : NULL, fps);
 		}

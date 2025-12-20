@@ -4,4 +4,7 @@
 #include "game/player.h"
 #include "render/framebuffer.h"
 
-void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int fps);
+#include "assets/asset_paths.h"
+#include "render/texture.h"
+
+void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int fps, TextureRegistry* texreg, const AssetPaths* paths);

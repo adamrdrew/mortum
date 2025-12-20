@@ -49,6 +49,7 @@
     {"type": "pickup_weapon_shotgun", "x": 3.5, "y": 3.5},
     {"type": "pickup_weapon_rifle", "x": 5.0, "y": 3.5},
     {"type": "pickup_weapon_chaingun", "x": 6.5, "y": 3.5},
+    {"type": "pickup_weapon_rocket", "x": 8.0, "y": 3.5},
 
     {"type": "pickup_ammo_bullets", "x": 3.5, "y": 5.0},
     {"type": "pickup_ammo_shells", "x": 5.0, "y": 5.0},

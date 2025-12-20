@@ -62,6 +62,11 @@ void pickups_update(Player* player, EntityList* entities) {
 		} else if (strcmp(e->type, "pickup_shard") == 0) {
 			player->undead_shards_collected += 1;
 			e->active = false;
+		} else if (strcmp(e->type, "pickup_weapon_handgun") == 0 || strcmp(e->type, "pickup_weapon_sidearm") == 0) {
+			player->weapons_owned_mask |= (1u << (unsigned)WEAPON_HANDGUN);
+			player->weapon_equipped = WEAPON_HANDGUN;
+			(void)ammo_add(&player->ammo, AMMO_BULLETS, 15);
+			e->active = false;
 		} else if (strcmp(e->type, "pickup_weapon_shotgun") == 0) {
 			player->weapons_owned_mask |= (1u << (unsigned)WEAPON_SHOTGUN);
 			player->weapon_equipped = WEAPON_SHOTGUN;
@@ -72,10 +77,15 @@ void pickups_update(Player* player, EntityList* entities) {
 			player->weapon_equipped = WEAPON_RIFLE;
 			(void)ammo_add(&player->ammo, AMMO_BULLETS, 20);
 			e->active = false;
-		} else if (strcmp(e->type, "pickup_weapon_chaingun") == 0) {
-			player->weapons_owned_mask |= (1u << (unsigned)WEAPON_CROWDCONTROL);
-			player->weapon_equipped = WEAPON_CROWDCONTROL;
-			(void)ammo_add(&player->ammo, AMMO_CELLS, 30);
+		} else if (strcmp(e->type, "pickup_weapon_smg") == 0 || strcmp(e->type, "pickup_weapon_chaingun") == 0) {
+			player->weapons_owned_mask |= (1u << (unsigned)WEAPON_SMG);
+			player->weapon_equipped = WEAPON_SMG;
+			(void)ammo_add(&player->ammo, AMMO_BULLETS, 30);
+			e->active = false;
+		} else if (strcmp(e->type, "pickup_weapon_rocket") == 0) {
+			player->weapons_owned_mask |= (1u << (unsigned)WEAPON_ROCKET);
+			player->weapon_equipped = WEAPON_ROCKET;
+			(void)ammo_add(&player->ammo, AMMO_CELLS, 20);
 			e->active = false;
 		} else if (strcmp(e->type, "pickup_upgrade_max_health") == 0) {
 			(void)upgrades_apply_max_health(player);

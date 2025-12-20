@@ -6,9 +6,9 @@
 #include "game/player.h"
 #include "game/world.h"
 
-// Basic US1 sidearm: spawns player projectiles while fire is held.
-// US3: Supports multiple weapons (1-4 select) and mouse wheel cycling.
-// `weapon_select_mask`: bit0..bit3 correspond to 1..4 keys held this frame.
+// Basic US1: spawns player projectiles while fire is held.
+// US3: Supports multiple weapons (1-5 select) and cycling (mouse wheel and/or Q/E via wheel delta).
+// `weapon_select_mask`: bit0..bit4 correspond to 1..5 keys held this frame.
 void weapons_update(
 	Player* player,
 	const World* world,

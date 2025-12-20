@@ -7,6 +7,7 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - JSON files in `Assets/` (maps, episodes) (001-mortum-vision-spec)
 - C11 + SDL2 (window/input/audio), vendored `jsmn` via `assets/json.c` (002-texture-floors-ceilings)
 - JSON asset files under `Assets/` (maps, episodes, images, sounds) (002-texture-floors-ceilings)
+- JSON files in `Assets/` (maps, episodes); PNG assets in `Assets/Images/` (003-weapon-system)
 
 - C11 (Clang primary; GCC supported) + SDL2 initially (SDL3 is a later migration option); optional small, vendored parsers/decoders only if they keep builds boring (001-mortum-vision-spec)
 
@@ -26,10 +27,10 @@ tests/
 C11 (Clang primary; GCC supported): Follow standard conventions
 
 ## Recent Changes
+- 003-weapon-system: Added C11 (clang primary, gcc secondary) + SDL2 (window/input/audio)
+- 003-weapon-system: Added SDL2 (window/input/audio)
 - 002-texture-floors-ceilings: Added C11 + SDL2 (window/input/audio), vendored `jsmn` via `assets/json.c`
-- 001-mortum-vision-spec: Added C11 (clang primary, gcc secondary) + SDL2 (window/input/audio)
 
-- 001-mortum-vision-spec: Added C11 (Clang primary; GCC supported) + SDL2 initially (SDL3 is a later migration option); optional small, vendored parsers/decoders only if they keep builds boring
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
