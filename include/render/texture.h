@@ -21,7 +21,12 @@ typedef struct TextureRegistry {
 void texture_registry_init(TextureRegistry* self);
 void texture_registry_destroy(TextureRegistry* self);
 
-// Loads and caches a texture by filename under Assets/Images. Returns NULL on failure.
+// Loads and caches a texture by filename.
+// Preferred location: Assets/Images/Textures/<filename>
+// Backward-compatible fallback: Assets/Images/<filename>
+// Supported formats: .PNG/.png and .bmp (via assets/image loaders).
+// Note: current map textures are expected to be 64x64 when using PNG.
+// Returns NULL on failure.
 const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* paths, const char* filename);
 
 // Nearest sampling, u/v in [0,1].

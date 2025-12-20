@@ -19,16 +19,16 @@
     {"x": 6, "y": 10}
   ],
   "sectors": [
-    {"id": 0, "floor_z": 0, "ceil_z": 4, "floor_tex": "brick.bmp", "ceil_tex": "brick.bmp", "light": 1.0}
+    {"id": 0, "floor_z": 0, "ceil_z": 4, "floor_tex": "FLOOR_2A.PNG", "ceil_tex": "TECH_1A.PNG", "light": 1.0}
   ],
   "walls": [
-    {"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
-    {"v0": 1, "v1": 2, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
-    {"v0": 2, "v1": 3, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
-    {"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
+    {"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "CONCRETE_2A.PNG", "flags": ["solid"]},
+    {"v0": 1, "v1": 2, "front_sector": 0, "back_sector": -1, "tex": "CONCRETE_2A.PNG", "flags": ["solid"]},
+    {"v0": 2, "v1": 3, "front_sector": 0, "back_sector": -1, "tex": "CONCRETE_2A.PNG", "flags": ["solid"]},
+    {"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "CONCRETE_2A.PNG", "flags": ["solid"]},
 
-    {"v0": 4, "v1": 5, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
-    {"v0": 6, "v1": 7, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]}
+    {"v0": 4, "v1": 5, "front_sector": 0, "back_sector": -1, "tex": "STEEL_2A.PNG", "flags": ["solid"]},
+    {"v0": 6, "v1": 7, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]}
   ],
   "entities": [
     {"type": "pickup_health", "x": 3, "y": 8},

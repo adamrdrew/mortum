@@ -14,13 +14,13 @@
     {"x": 0, "y": 12}
   ],
   "sectors": [
-    {"id": 0, "floor_z": 0, "ceil_z": 4, "floor_tex": "brick.bmp", "ceil_tex": "brick.bmp", "light": 1.0}
+    {"id": 0, "floor_z": 0, "ceil_z": 4, "floor_tex": "GRID_1A.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0}
   ],
   "walls": [
-    {"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
-    {"v0": 1, "v1": 2, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
-    {"v0": 2, "v1": 3, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
-    {"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]}
+    {"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]},
+    {"v0": 1, "v1": 2, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]},
+    {"v0": 2, "v1": 3, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]},
+    {"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]}
   ],
   "entities": [
     {"type": "pickup_health", "x": 2.5, "y": 9.5},

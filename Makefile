@@ -50,6 +50,7 @@ SRC := \
   src/assets/map_loader.c \
   src/assets/map_validate.c \
   src/assets/image_bmp.c \
+	src/assets/image_png.c \
   src/assets/sound_wav.c \
   src/game/world.c \
   src/game/entity.c \
@@ -82,10 +83,13 @@ SRC := $(SRC) \
   src/game/debug_overlay.c \
   src/game/debug_spawn.c
 
-OBJ := $(SRC:src/%.c=$(BIN_DIR)/obj/%.o)
+THIRD_SRC := \
+  third_party/lodepng.c
+
+OBJ := $(SRC:src/%.c=$(BIN_DIR)/obj/%.o) $(THIRD_SRC:third_party/%.c=$(BIN_DIR)/obj/third_party/%.o)
 
 LIB_SRC := $(filter-out src/main.c,$(SRC))
-LIB_OBJ := $(LIB_SRC:src/%.c=$(BIN_DIR)/obj/%.o)
+LIB_OBJ := $(LIB_SRC:src/%.c=$(BIN_DIR)/obj/%.o) $(THIRD_SRC:third_party/%.c=$(BIN_DIR)/obj/third_party/%.o)
 
 TOOL_VALIDATE := $(BIN_DIR)/validate_assets
 TOOL_VALIDATE_OBJ := $(BIN_DIR)/obj/tools/validate_assets.o
@@ -111,6 +115,8 @@ clean: ; @rm -rf $(BIN_DIR)
 $(BIN): $(OBJ) ; @mkdir -p $(BIN_DIR) ; $(CC) $(OBJ) -o $@ $(SDL_LIBS)
 
 $(BIN_DIR)/obj/%.o: src/%.c ; @mkdir -p $(dir $@) ; $(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+$(BIN_DIR)/obj/third_party/%.o: third_party/%.c ; @mkdir -p $(dir $@) ; $(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 $(TOOL_VALIDATE_OBJ): tools/validate_assets.c ; @mkdir -p $(dir $@) ; $(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 

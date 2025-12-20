@@ -26,6 +26,14 @@ Public headers live in `include/` mirroring the module names.
 - Fixed timestep update (60Hz target) with an accumulator.
 - Render as fast as possible; present a CPU framebuffer scaled to the window.
 
+## Textures
+
+- Textures are loaded through the `TextureRegistry` (`src/render/texture.c`).
+- Lookup is by filename only; preferred location is `Assets/Images/Textures/<filename>` with a backward-compatible fallback to `Assets/Images/<filename>`.
+- Supported formats are PNG and BMP. PNG decoding is dependency-free via vendored LodePNG (`third_party/lodepng.*`) and is converted to the engine’s ABGR8888 pixel format.
+- Map sectors provide `floor_tex` and `ceil_tex` and the raycaster (`src/render/raycast.c`) draws textured floors/ceilings per sector.
+- Current PNG map textures are expected to be 64x64; invalid sizes are rejected with a clear log error.
+
 ## Tools
 
 - `make validate` builds and runs an offline asset loader/validator (episode + maps).

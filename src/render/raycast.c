@@ -24,6 +24,10 @@ static float clampf(float v, float lo, float hi) {
 	return v;
 }
 
+static float fractf(float v) {
+	return v - floorf(v);
+}
+
 // Ray: o + t*d, segment: a + u*s
 static bool ray_segment_hit(float ox, float oy, float dx, float dy, float ax, float ay, float bx, float by, float* out_t) {
 	float sx = bx - ax;
@@ -134,9 +138,8 @@ static float segment_u(float ax, float ay, float bx, float by, float px, float p
 }
 
 void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* cam, TextureRegistry* texreg, const AssetPaths* paths, float* out_depth) {
-	// Background: sky + floor
+	// Background: sky (floor/ceiling are drawn per column based on ray hit sector)
 	draw_clear(fb, 0xFF0B0E14u);
-	draw_rect(fb, 0, fb->height / 2, fb->width, fb->height / 2, 0xFF121018u);
 
 	if (!world || world->wall_count <= 0 || world->vertex_count <= 0) {
 		if (out_depth) {
@@ -149,6 +152,8 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 
 	float angle0 = cam->angle_deg - cam->fov_deg * 0.5f;
 	float inv_w = fb->width > 1 ? (1.0f / (float)(fb->width - 1)) : 0.0f;
+	float half_h = 0.5f * (float)fb->height;
+	float proj_z = half_h; // camera height in screen space (Wolf3D-style)
 
 	for (int x = 0; x < fb->width; x++) {
 		if (out_depth) {
@@ -207,10 +212,20 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 		uint32_t base = 0xFFB0B0B0u;
 		float sector_intensity = 1.0f;
 		LightColor sector_tint = light_color_white();
+		const Texture* floor_tex = NULL;
+		const Texture* ceil_tex = NULL;
 		if ((unsigned)w.front_sector < (unsigned)world->sector_count) {
 			const Sector* s = &world->sectors[w.front_sector];
 			sector_intensity = s->light;
 			sector_tint = s->light_color;
+			if (texreg && paths) {
+				if (s->floor_tex[0] != '\0') {
+					floor_tex = texture_registry_get(texreg, paths, s->floor_tex);
+				}
+				if (s->ceil_tex[0] != '\0') {
+					ceil_tex = texture_registry_get(texreg, paths, s->ceil_tex);
+				}
+			}
 		}
 
 		// Compute hit u along segment
@@ -225,11 +240,50 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 			tex = texture_registry_get(texreg, paths, w.tex);
 		}
 
+		// Ceiling (textured)
+		if (y0c > 0) {
+			for (int y = 0; y < y0c; y++) {
+				float denom = half_h - (float)y;
+				if (denom <= 0.001f) {
+					continue;
+				}
+				float row_dist = proj_z / denom;
+				float t = row_dist / (corr > 0.001f ? corr : 0.001f);
+				float wx = cam->x + dx * t;
+				float wy = cam->y + dy * t;
+				float tu = fractf(wx);
+				float tv = fractf(wy);
+				uint32_t c = ceil_tex ? texture_sample_nearest(ceil_tex, tu, tv) : 0xFF0B0E14u;
+				c = lighting_apply(c, row_dist, sector_intensity, sector_tint, world->lights, world->light_count, wx, wy);
+				fb->pixels[y * fb->width + x] = c;
+			}
+		}
+
+		// Wall slice
 		for (int y = y0c; y < y1c; y++) {
 			float v = (float)(y - y0) / (float)(slice_h ? slice_h : 1);
 			uint32_t c = tex ? texture_sample_nearest(tex, u, v) : base;
 			c = lighting_apply(c, dist, sector_intensity, sector_tint, world->lights, world->light_count, hit_x, hit_y);
 			fb->pixels[y * fb->width + x] = c;
+		}
+
+		// Floor (textured)
+		if (y1c < fb->height) {
+			for (int y = y1c; y < fb->height; y++) {
+				float denom = (float)y - half_h;
+				if (denom <= 0.001f) {
+					continue;
+				}
+				float row_dist = proj_z / denom;
+				float t = row_dist / (corr > 0.001f ? corr : 0.001f);
+				float wx = cam->x + dx * t;
+				float wy = cam->y + dy * t;
+				float tu = fractf(wx);
+				float tv = fractf(wy);
+				uint32_t c = floor_tex ? texture_sample_nearest(floor_tex, tu, tv) : 0xFF121018u;
+				c = lighting_apply(c, row_dist, sector_intensity, sector_tint, world->lights, world->light_count, wx, wy);
+				fb->pixels[y * fb->width + x] = c;
+			}
 		}
 	}
 }
