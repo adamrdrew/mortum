@@ -286,7 +286,7 @@ int main(int argc, char** argv) {
 		Camera cam = camera_make(player.x, player.y, player.angle_deg, cfg->fov_deg);
 		raycast_render_textured(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, wall_depth);
 		if (map_ok) {
-			render_entities_billboard(&fb, &cam, &map.entities, wall_depth, &texreg, &paths);
+			render_entities_billboard(&fb, &cam, &map.entities, wall_depth, &texreg, &paths, map.world.lights, map.world.light_count);
 		}
 
 		hud_draw(&fb, &player, &gs, fps);

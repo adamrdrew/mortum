@@ -1,6 +1,7 @@
 #include "render/raycast.h"
 
 #include "render/draw.h"
+#include "render/lighting.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -21,18 +22,6 @@ static float clampf(float v, float lo, float hi) {
 		return hi;
 	}
 	return v;
-}
-
-static uint32_t shade(uint32_t rgba, float s) {
-	s = clampf(s, 0.1f, 1.0f);
-	uint8_t a = (uint8_t)((rgba >> 24) & 0xFF);
-	uint8_t r = (uint8_t)((rgba >> 16) & 0xFF);
-	uint8_t g = (uint8_t)((rgba >> 8) & 0xFF);
-	uint8_t b = (uint8_t)(rgba & 0xFF);
-	r = (uint8_t)((float)r * s);
-	g = (uint8_t)((float)g * s);
-	b = (uint8_t)((float)b * s);
-	return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
 // Ray: o + t*d, segment: a + u*s
@@ -114,9 +103,18 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 			y1 = fb->height;
 		}
 
+		Wall w = world->walls[best_wall];
 		uint32_t base = 0xFFB0B0B0u;
-		float s = 1.0f / (1.0f + dist * 0.15f);
-		uint32_t c = shade(base, s);
+		float sector_intensity = 1.0f;
+		LightColor sector_tint = light_color_white();
+		if ((unsigned)w.front_sector < (unsigned)world->sector_count) {
+			const Sector* s = &world->sectors[w.front_sector];
+			sector_intensity = s->light;
+			sector_tint = s->light_color;
+		}
+		float hit_x = cam->x + dx * best_t;
+		float hit_y = cam->y + dy * best_t;
+		uint32_t c = lighting_apply(base, dist, sector_intensity, sector_tint, world->lights, world->light_count, hit_x, hit_y);
 
 		for (int y = y0; y < y1; y++) {
 			fb->pixels[y * fb->width + x] = c;
@@ -207,8 +205,13 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 
 		Wall w = world->walls[best_wall];
 		uint32_t base = 0xFFB0B0B0u;
-		float s = 1.0f / (1.0f + dist * 0.15f);
-		uint32_t shade_c = shade(base, s);
+		float sector_intensity = 1.0f;
+		LightColor sector_tint = light_color_white();
+		if ((unsigned)w.front_sector < (unsigned)world->sector_count) {
+			const Sector* s = &world->sectors[w.front_sector];
+			sector_intensity = s->light;
+			sector_tint = s->light_color;
+		}
 
 		// Compute hit u along segment
 		Vertex a = world->vertices[w.v0];
@@ -224,9 +227,8 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 
 		for (int y = y0c; y < y1c; y++) {
 			float v = (float)(y - y0) / (float)(slice_h ? slice_h : 1);
-			uint32_t c = tex ? texture_sample_nearest(tex, u, v) : shade_c;
-			// Apply distance shading
-			c = shade(c, s);
+			uint32_t c = tex ? texture_sample_nearest(tex, u, v) : base;
+			c = lighting_apply(c, dist, sector_intensity, sector_tint, world->lights, world->light_count, hit_x, hit_y);
 			fb->pixels[y * fb->width + x] = c;
 		}
 	}

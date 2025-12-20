@@ -10,8 +10,9 @@
 
 **Purpose**: Add small reusable rendering utilities needed by multiple improvements.
 
-- [ ] T001 Create lighting helper API in include/render/lighting.h
-- [ ] T002 Implement lighting helper functions in src/render/lighting.c
+- [X] T001 Create lighting helper API in include/render/lighting.h
+- [X] T002 Implement lighting helper functions in src/render/lighting.c
+
 
 ---
 
@@ -21,15 +22,15 @@
 
 **Checkpoint**: Maps can specify sector light tint and optional point lights without breaking existing content.
 
-- [ ] T003 Extend Sector to include light tint fields in include/game/world.h
-- [ ] T004 Implement default sector light tint initialization in src/game/world.c
-- [ ] T005 [P] Update map contract to allow optional sector light tint + lights[] in specs/001-mortum-vision-spec/contracts/map.schema.json
-- [ ] T006 [P] Update asset validation to accept new lighting fields in tools/validate_assets.c
-- [ ] T007 Add PointLight container to World/MapLoadResult in include/game/world.h
-- [ ] T008 Implement PointLight memory ownership (alloc/free) in src/game/world.c
-- [ ] T009 Parse optional sector light tint from map JSON in src/assets/map_loader.c
-- [ ] T010 Parse optional lights[] point lights from map JSON in src/assets/map_loader.c
-- [ ] T011 Update MapLoadResult to carry lights (if not stored in World) in include/assets/map_loader.h
+- [X] T003 Extend Sector to include light tint fields in include/game/world.h
+- [X] T004 Implement default sector light tint initialization in src/game/world.c
+- [X] T005 [P] Update map contract to allow optional sector light tint + lights[] in specs/001-mortum-vision-spec/contracts/map.schema.json
+- [X] T006 [P] Update asset validation to accept new lighting fields in tools/validate_assets.c
+- [X] T007 Add PointLight container to World/MapLoadResult in include/game/world.h
+- [X] T008 Implement PointLight memory ownership (alloc/free) in src/game/world.c
+- [X] T009 Parse optional sector light tint from map JSON in src/assets/map_loader.c
+- [X] T010 Parse optional lights[] point lights from map JSON in src/assets/map_loader.c
+- [X] T011 Update MapLoadResult to carry lights (if not stored in World) in include/assets/map_loader.h
 
 ---
 
@@ -44,18 +45,18 @@
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Fix sprite-vs-sprite occlusion by sorting visible billboards far→near in src/render/entities.c
-- [ ] T013 [P] [US1] Ensure billboard occlusion still respects wall depth buffer in src/render/entities.c
+- [X] T012 [P] [US1] Fix sprite-vs-sprite occlusion by sorting visible billboards far→near in src/render/entities.c
+- [X] T013 [P] [US1] Ensure billboard occlusion still respects wall depth buffer in src/render/entities.c
 
-- [ ] T014 [US1] Replace debug-text HUD with Doom-style bottom bar layout in src/game/hud.c
-- [ ] T015 [US1] Render labeled numbers (HP/MORTUM/AMMO/KEYS) in the HUD bar in src/game/hud.c
-- [ ] T016 [US1] Add simple bevel/contrast rectangles for HUD “lighting” illusion in src/game/hud.c
+- [X] T014 [US1] Replace debug-text HUD with Doom-style bottom bar layout in src/game/hud.c
+- [X] T015 [US1] Render labeled numbers (HP/MORTUM/AMMO/KEYS) in the HUD bar in src/game/hud.c
+- [X] T016 [US1] Add simple bevel/contrast rectangles for HUD “lighting” illusion in src/game/hud.c
 
-- [ ] T017 [US1] Apply sector light intensity + tint to wall shading in src/render/raycast.c
-- [ ] T018 [US1] Apply distance shading + point lights to billboard sprites in src/render/entities.c
-- [ ] T019 [US1] Wire point lights into renderer call sites in src/main.c
+- [X] T017 [US1] Apply sector light intensity + tint to wall shading in src/render/raycast.c
+- [X] T018 [US1] Apply distance shading + point lights to billboard sprites in src/render/entities.c
+- [X] T019 [US1] Wire point lights into renderer call sites in src/main.c
 
-- [ ] T020 [P] [US1] Add a tinted sector + at least one point light to Assets/Levels/arena.json
+- [X] T020 [P] [US1] Add a tinted sector + at least one point light to Assets/Levels/arena.json
 
 **Checkpoint**: US1 remains playable and visuals match the new rules.
 
@@ -69,7 +70,7 @@
 - Mortum is labeled and readable on the HUD bar.
 - When Undead is active, shards progress remains visible (either as text near Mortum or an additional labeled counter).
 
-- [ ] T021 [US2] Add Undead-mode status line into the HUD bar layout in src/game/hud.c
+- [X] T021 [US2] Add Undead-mode status line into the HUD bar layout in src/game/hud.c
 
 ---
 
@@ -77,8 +78,8 @@
 
 **Purpose**: Documentation and cleanup for the new rendering rules.
 
-- [ ] T022 [P] Document lighting fields (sector tint + point lights) in specs/001-mortum-vision-spec/data-model.md
-- [ ] T023 [P] Update visual sanity checks in specs/001-mortum-vision-spec/quickstart.md
+- [X] T022 [P] Document lighting fields (sector tint + point lights) in specs/001-mortum-vision-spec/data-model.md
+- [X] T023 [P] Update visual sanity checks in specs/001-mortum-vision-spec/quickstart.md
 
 ---
 

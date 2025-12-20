@@ -16,6 +16,24 @@ static bool json_get_float(const JsonDoc* doc, int tok, float* out) {
 	return true;
 }
 
+static bool json_get_light_color(const JsonDoc* doc, int tok, LightColor* out) {
+	if (!json_token_is_object(doc, tok)) {
+		return false;
+	}
+	int tr = -1, tg = -1, tb = -1;
+	if (!json_object_get(doc, tok, "r", &tr) || !json_object_get(doc, tok, "g", &tg) || !json_object_get(doc, tok, "b", &tb)) {
+		return false;
+	}
+	float r = 0, g = 0, b = 0;
+	if (!json_get_float(doc, tr, &r) || !json_get_float(doc, tg, &g) || !json_get_float(doc, tb, &b)) {
+		return false;
+	}
+	out->r = r;
+	out->g = g;
+	out->b = b;
+	return true;
+}
+
 void map_load_result_destroy(MapLoadResult* self) {
 	world_destroy(&self->world);
 	entity_list_destroy(&self->entities);
@@ -49,11 +67,13 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	int t_sectors = -1;
 	int t_walls = -1;
 	int t_entities = -1;
+	int t_lights = -1;
 	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls) || !json_object_get(&doc, 0, "entities", &t_entities)) {
 		log_error("Map JSON missing required fields");
 		json_doc_destroy(&doc);
 		return false;
 	}
+	(void)json_object_get(&doc, 0, "lights", &t_lights);
 
 	// player_start
 	if (!json_token_is_object(&doc, t_player)) {
@@ -113,12 +133,14 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	for (int i = 0; i < scount; i++) {
 		int ts = json_array_nth(&doc, t_sectors, i);
 		int tid=-1, tfloor=-1, tceil=-1, tfloor_tex=-1, tceil_tex=-1, tlight=-1;
+		int tlight_color = -1;
 		if (!json_object_get(&doc, ts, "id", &tid) || !json_object_get(&doc, ts, "floor_z", &tfloor) || !json_object_get(&doc, ts, "ceil_z", &tceil) || !json_object_get(&doc, ts, "floor_tex", &tfloor_tex) || !json_object_get(&doc, ts, "ceil_tex", &tceil_tex) || !json_object_get(&doc, ts, "light", &tlight)) {
 			log_error("sector %d missing required fields", i);
 			json_doc_destroy(&doc);
 			map_load_result_destroy(out);
 			return false;
 		}
+		(void)json_object_get(&doc, ts, "light_color", &tlight_color);
 		int id=0;
 		float floor_z=0, ceil_z=0, light=1.0f;
 		StringView sv_floor_tex, sv_ceil_tex;
@@ -132,7 +154,87 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		out->world.sectors[i].floor_z = floor_z;
 		out->world.sectors[i].ceil_z = ceil_z;
 		out->world.sectors[i].light = light;
+		out->world.sectors[i].light_color = light_color_white();
+		if (tlight_color != -1) {
+			LightColor lc = light_color_white();
+			if (!json_get_light_color(&doc, tlight_color, &lc)) {
+				log_error("sector %d light_color invalid", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			out->world.sectors[i].light_color = lc;
+		}
 		world_set_sector_tex(&out->world.sectors[i], sv_floor_tex, sv_ceil_tex);
+	}
+
+	// optional point lights
+	if (t_lights != -1) {
+		if (!json_token_is_array(&doc, t_lights)) {
+			log_error("lights must be an array");
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		int lcount = json_array_size(&doc, t_lights);
+		if (lcount > 0) {
+			if (!world_alloc_lights(&out->world, lcount)) {
+				log_error("failed to allocate lights");
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			for (int i = 0; i < lcount; i++) {
+				int tl = json_array_nth(&doc, t_lights, i);
+				if (!json_token_is_object(&doc, tl)) {
+					log_error("light %d must be an object", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				int tx=-1, ty=-1, tz=-1, tradius=-1, tintensity=-1, tcolor=-1;
+				if (!json_object_get(&doc, tl, "x", &tx) || !json_object_get(&doc, tl, "y", &ty) || !json_object_get(&doc, tl, "radius", &tradius) || !json_object_get(&doc, tl, "intensity", &tintensity)) {
+					log_error("light %d missing required fields", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				(void)json_object_get(&doc, tl, "z", &tz);
+				(void)json_object_get(&doc, tl, "color", &tcolor);
+
+				float x=0, y=0, z=0, radius=0, intensity=0;
+				if (!json_get_float(&doc, tx, &x) || !json_get_float(&doc, ty, &y) || !json_get_float(&doc, tradius, &radius) || !json_get_float(&doc, tintensity, &intensity)) {
+					log_error("light %d fields invalid", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				if (tz != -1) {
+					if (!json_get_float(&doc, tz, &z)) {
+						log_error("light %d z invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				}
+				LightColor lc = light_color_white();
+				if (tcolor != -1) {
+					if (!json_get_light_color(&doc, tcolor, &lc)) {
+						log_error("light %d color invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				}
+
+				out->world.lights[i].x = x;
+				out->world.lights[i].y = y;
+				out->world.lights[i].z = z;
+				out->world.lights[i].radius = radius;
+				out->world.lights[i].intensity = intensity;
+				out->world.lights[i].color = lc;
+			}
+		}
 	}
 
 	// walls

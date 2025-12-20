@@ -57,7 +57,43 @@
           "ceil_z": {"type": "number"},
           "floor_tex": {"type": "string", "minLength": 1},
           "ceil_tex": {"type": "string", "minLength": 1},
-          "light": {"type": "number", "minimum": 0, "maximum": 1}
+          "light": {"type": "number", "minimum": 0, "maximum": 1},
+          "light_color": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["r", "g", "b"],
+            "properties": {
+              "r": {"type": "number", "minimum": 0, "maximum": 1},
+              "g": {"type": "number", "minimum": 0, "maximum": 1},
+              "b": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        }
+      }
+    },
+
+    "lights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["x", "y", "radius", "intensity"],
+        "properties": {
+          "x": {"type": "number"},
+          "y": {"type": "number"},
+          "z": {"type": "number"},
+          "radius": {"type": "number", "exclusiveMinimum": 0},
+          "intensity": {"type": "number", "minimum": 0},
+          "color": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["r", "g", "b"],
+            "properties": {
+              "r": {"type": "number", "minimum": 0, "maximum": 1},
+              "g": {"type": "number", "minimum": 0, "maximum": 1},
+              "b": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
         }
       }
     },

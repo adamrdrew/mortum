@@ -43,6 +43,7 @@ SRC := \
   src/render/entities.c \
   src/render/texture.c \
   src/render/level_mesh.c \
+  src/render/lighting.c \
   src/assets/json.c \
   src/assets/asset_paths.c \
   src/assets/episode_loader.c \

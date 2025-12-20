@@ -2,9 +2,12 @@
 
 #include "render/draw.h"
 
+#include "render/lighting.h"
+
 #include "render/texture.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 static float clampf(float v, float lo, float hi) {
@@ -203,7 +206,40 @@ static uint32_t texture_sample_tile_nearest(const Texture* t, int tile_x, int ti
 	return t->pixels[y * t->width + x];
 }
 
-void render_entities_billboard(Framebuffer* fb, const Camera* cam, const EntityList* entities, const float* depth, TextureRegistry* texreg, const AssetPaths* paths) {
+typedef struct BillboardCandidate {
+	const Entity* e;
+	float perp;
+	int x0;
+	int y0;
+	int sprite_w;
+	int sprite_h;
+	uint32_t col;
+	int tile_x;
+	int tile_y;
+	bool has_tile;
+} BillboardCandidate;
+
+static int billboard_cmp_far_to_near(const void* a, const void* b) {
+	const BillboardCandidate* ca = (const BillboardCandidate*)a;
+	const BillboardCandidate* cb = (const BillboardCandidate*)b;
+	if (ca->perp > cb->perp) {
+		return -1;
+	}
+	if (ca->perp < cb->perp) {
+		return 1;
+	}
+	return 0;
+}
+
+void render_entities_billboard(
+	Framebuffer* fb,
+	const Camera* cam,
+	const EntityList* entities,
+	const float* depth,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const PointLight* lights,
+	int light_count) {
 	if (!fb || !cam || !entities) {
 		return;
 	}
@@ -219,6 +255,10 @@ void render_entities_billboard(Framebuffer* fb, const Camera* cam, const EntityL
 	}
 	float half_fov = 0.5f * fov_rad;
 	float cam_ang = cam->angle_deg * (float)M_PI / 180.0f;
+
+	static BillboardCandidate* cands = NULL;
+	static int cands_cap = 0;
+	int cand_count = 0;
 
 	for (int i = 0; i < entities->count; i++) {
 		const Entity* e = &entities->items[i];
@@ -277,34 +317,71 @@ void render_entities_billboard(Framebuffer* fb, const Camera* cam, const EntityL
 		int tile_y = 0;
 		bool has_tile = sprites ? entity_sprite_tile(e->type, e->cooldown_s, &tile_x, &tile_y) : false;
 
+		if (cand_count >= cands_cap) {
+			int new_cap = cands_cap > 0 ? (cands_cap * 2) : 64;
+			BillboardCandidate* new_buf = (BillboardCandidate*)realloc(cands, (size_t)new_cap * sizeof(*new_buf));
+			if (!new_buf) {
+				// Out of memory: render the candidates we already collected.
+				break;
+			}
+			cands = new_buf;
+			cands_cap = new_cap;
+		}
+
+		cands[cand_count].e = e;
+		cands[cand_count].perp = perp;
+		cands[cand_count].x0 = x0;
+		cands[cand_count].y0 = y0;
+		cands[cand_count].sprite_w = sprite_w;
+		cands[cand_count].sprite_h = sprite_h;
+		cands[cand_count].col = col;
+		cands[cand_count].tile_x = tile_x;
+		cands[cand_count].tile_y = tile_y;
+		cands[cand_count].has_tile = has_tile;
+		cand_count++;
+	}
+
+	if (!cands || cand_count <= 0) {
+		return;
+	}
+
+	qsort(cands, (size_t)cand_count, sizeof(*cands), billboard_cmp_far_to_near);
+
+	for (int i = 0; i < cand_count; i++) {
+		const BillboardCandidate* c = &cands[i];
+		const Entity* e = c->e;
+		LightColor sector_tint = light_color_white();
+
 		// Draw as vertical strips to support depth-buffer occlusion.
-		for (int sx = 0; sx < sprite_w; sx++) {
-			int x = x0 + sx;
+		for (int sx = 0; sx < c->sprite_w; sx++) {
+			int x = c->x0 + sx;
 			if ((unsigned)x >= (unsigned)fb->width) {
 				continue;
 			}
-			if (depth && perp > depth[x]) {
+			if (depth && c->perp > depth[x]) {
 				continue;
 			}
 
-			if (!sprites || !has_tile) {
+			if (!sprites || !c->has_tile) {
 				// Fallback: solid color column.
-				draw_rect(fb, x, y0, 1, sprite_h, col);
+				uint32_t col = lighting_apply(c->col, c->perp, 1.0f, sector_tint, lights, light_count, e->x, e->y);
+				draw_rect(fb, x, c->y0, 1, c->sprite_h, col);
 				continue;
 			}
 
-			float u = (float)sx / (float)(sprite_w > 1 ? (sprite_w - 1) : 1);
-			for (int sy = 0; sy < sprite_h; sy++) {
-				int y = y0 + sy;
+			float u = (float)sx / (float)(c->sprite_w > 1 ? (c->sprite_w - 1) : 1);
+			for (int sy = 0; sy < c->sprite_h; sy++) {
+				int y = c->y0 + sy;
 				if ((unsigned)y >= (unsigned)fb->height) {
 					continue;
 				}
-				float v = (float)sy / (float)(sprite_h > 1 ? (sprite_h - 1) : 1);
-				uint32_t px = texture_sample_tile_nearest(sprites, tile_x, tile_y, 64, u, v);
+				float v = (float)sy / (float)(c->sprite_h > 1 ? (c->sprite_h - 1) : 1);
+				uint32_t px = texture_sample_tile_nearest(sprites, c->tile_x, c->tile_y, 64, u, v);
 				// Magenta color key transparency.
 				if (px == 0xFFFF00FFu) {
 					continue;
 				}
+				px = lighting_apply(px, c->perp, 1.0f, sector_tint, lights, light_count, e->x, e->y);
 				fb->pixels[y * fb->width + x] = px;
 			}
 		}

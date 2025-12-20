@@ -36,6 +36,9 @@ static bool validate_map(const AssetPaths* paths, const char* map_filename) {
 		log_error("Failed to load map: %s", map_filename);
 		return false;
 	}
+	if (map.world.light_count > 0) {
+		log_info("Map %s: %d point lights", map_filename, map.world.light_count);
+	}
 	map_load_result_destroy(&map);
 	return true;
 }

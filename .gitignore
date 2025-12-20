@@ -19,6 +19,7 @@ Thumbs.db
 build/
 dist/
 out/
+obj/
 
 # === Mortum local artifacts ===
 # (keep repo clean while iterating)
@@ -27,6 +28,9 @@ out/
 
 # === SDL / runtime ===
 *.log
+
+# macOS crash reports
+*.crash
 
 # === Assets (keep tracked by default) ===
 # Do NOT ignore Assets/

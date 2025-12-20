@@ -11,6 +11,7 @@ void world_destroy(World* self) {
 	free(self->vertices);
 	free(self->sectors);
 	free(self->walls);
+	free(self->lights);
 	memset(self, 0, sizeof(*self));
 }
 
@@ -31,6 +32,10 @@ bool world_alloc_sectors(World* self, int count) {
 		return false;
 	}
 	self->sector_count = count;
+	for (int i = 0; i < count; i++) {
+		self->sectors[i].light = 1.0f;
+		self->sectors[i].light_color = light_color_white();
+	}
 	return true;
 }
 
@@ -41,6 +46,19 @@ bool world_alloc_walls(World* self, int count) {
 		return false;
 	}
 	self->wall_count = count;
+	return true;
+}
+
+bool world_alloc_lights(World* self, int count) {
+	self->lights = (PointLight*)calloc((size_t)count, sizeof(PointLight));
+	if (!self->lights) {
+		self->light_count = 0;
+		return false;
+	}
+	self->light_count = count;
+	for (int i = 0; i < count; i++) {
+		self->lights[i].color = light_color_white();
+	}
 	return true;
 }
 

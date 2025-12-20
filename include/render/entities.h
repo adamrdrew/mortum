@@ -5,6 +5,7 @@
 #include "render/framebuffer.h"
 
 #include "render/texture.h"
+#include "render/lighting.h"
 
 #include "assets/asset_paths.h"
 
@@ -15,4 +16,12 @@
 //
 // `depth` is per-screen-column wall distance (same space as raycaster's corrected distance).
 // If `depth` is NULL, entities are drawn without occlusion.
-void render_entities_billboard(Framebuffer* fb, const Camera* cam, const EntityList* entities, const float* depth, TextureRegistry* texreg, const AssetPaths* paths);
+void render_entities_billboard(
+	Framebuffer* fb,
+	const Camera* cam,
+	const EntityList* entities,
+	const float* depth,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const PointLight* lights,
+	int light_count);
