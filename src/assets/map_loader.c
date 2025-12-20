@@ -1,0 +1,200 @@
+#include "assets/map_loader.h"
+
+#include "assets/json.h"
+#include "assets/map_validate.h"
+#include "core/log.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+static bool json_get_float(const JsonDoc* doc, int tok, float* out) {
+	double d = 0.0;
+	if (!json_get_double(doc, tok, &d)) {
+		return false;
+	}
+	*out = (float)d;
+	return true;
+}
+
+void map_load_result_destroy(MapLoadResult* self) {
+	world_destroy(&self->world);
+	entity_list_destroy(&self->entities);
+	memset(self, 0, sizeof(*self));
+}
+
+bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filename) {
+	memset(out, 0, sizeof(*out));
+	world_init_empty(&out->world);
+	entity_list_init(&out->entities);
+
+	char* full = asset_path_join(paths, "Levels", map_filename);
+	if (!full) {
+		return false;
+	}
+	JsonDoc doc;
+	if (!json_doc_load_file(&doc, full)) {
+		free(full);
+		return false;
+	}
+	free(full);
+
+	if (doc.token_count < 1 || !json_token_is_object(&doc, 0)) {
+		log_error("Map JSON root must be an object");
+		json_doc_destroy(&doc);
+		return false;
+	}
+
+	int t_player = -1;
+	int t_vertices = -1;
+	int t_sectors = -1;
+	int t_walls = -1;
+	int t_entities = -1;
+	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls) || !json_object_get(&doc, 0, "entities", &t_entities)) {
+		log_error("Map JSON missing required fields");
+		json_doc_destroy(&doc);
+		return false;
+	}
+
+	// player_start
+	if (!json_token_is_object(&doc, t_player)) {
+		log_error("player_start must be an object");
+		json_doc_destroy(&doc);
+		return false;
+	}
+	int t_x=-1,t_y=-1,t_ang=-1;
+	if (!json_object_get(&doc, t_player, "x", &t_x) || !json_object_get(&doc, t_player, "y", &t_y) || !json_object_get(&doc, t_player, "angle_deg", &t_ang)) {
+		log_error("player_start missing x/y/angle_deg");
+		json_doc_destroy(&doc);
+		return false;
+	}
+	if (!json_get_float(&doc, t_x, &out->player_start_x) || !json_get_float(&doc, t_y, &out->player_start_y) || !json_get_float(&doc, t_ang, &out->player_start_angle_deg)) {
+		log_error("player_start values invalid");
+		json_doc_destroy(&doc);
+		return false;
+	}
+
+	// vertices
+	int vcount = json_array_size(&doc, t_vertices);
+	if (vcount < 3) {
+		log_error("vertices must have at least 3 entries");
+		json_doc_destroy(&doc);
+		return false;
+	}
+	world_alloc_vertices(&out->world, vcount);
+	for (int i = 0; i < vcount; i++) {
+		int tv = json_array_nth(&doc, t_vertices, i);
+		int tx=-1, ty=-1;
+		if (!json_object_get(&doc, tv, "x", &tx) || !json_object_get(&doc, tv, "y", &ty)) {
+			log_error("vertex %d missing x/y", i);
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		float x=0, y=0;
+		if (!json_get_float(&doc, tx, &x) || !json_get_float(&doc, ty, &y)) {
+			log_error("vertex %d x/y invalid", i);
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		out->world.vertices[i].x = x;
+		out->world.vertices[i].y = y;
+	}
+
+	// sectors
+	int scount = json_array_size(&doc, t_sectors);
+	if (scount < 1) {
+		log_error("sectors must have at least 1 entry");
+		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
+		return false;
+	}
+	world_alloc_sectors(&out->world, scount);
+	for (int i = 0; i < scount; i++) {
+		int ts = json_array_nth(&doc, t_sectors, i);
+		int tid=-1, tfloor=-1, tceil=-1, tfloor_tex=-1, tceil_tex=-1, tlight=-1;
+		if (!json_object_get(&doc, ts, "id", &tid) || !json_object_get(&doc, ts, "floor_z", &tfloor) || !json_object_get(&doc, ts, "ceil_z", &tceil) || !json_object_get(&doc, ts, "floor_tex", &tfloor_tex) || !json_object_get(&doc, ts, "ceil_tex", &tceil_tex) || !json_object_get(&doc, ts, "light", &tlight)) {
+			log_error("sector %d missing required fields", i);
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		int id=0;
+		float floor_z=0, ceil_z=0, light=1.0f;
+		StringView sv_floor_tex, sv_ceil_tex;
+		if (!json_get_int(&doc, tid, &id) || !json_get_float(&doc, tfloor, &floor_z) || !json_get_float(&doc, tceil, &ceil_z) || !json_get_float(&doc, tlight, &light) || !json_get_string(&doc, tfloor_tex, &sv_floor_tex) || !json_get_string(&doc, tceil_tex, &sv_ceil_tex)) {
+			log_error("sector %d fields invalid", i);
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		out->world.sectors[i].id = id;
+		out->world.sectors[i].floor_z = floor_z;
+		out->world.sectors[i].ceil_z = ceil_z;
+		out->world.sectors[i].light = light;
+		world_set_sector_tex(&out->world.sectors[i], sv_floor_tex, sv_ceil_tex);
+	}
+
+	// walls
+	int wcount = json_array_size(&doc, t_walls);
+	if (wcount < 1) {
+		log_error("walls must have at least 1 entry");
+		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
+		return false;
+	}
+	world_alloc_walls(&out->world, wcount);
+	for (int i = 0; i < wcount; i++) {
+		int tw = json_array_nth(&doc, t_walls, i);
+		int tv0=-1,tv1=-1,tfs=-1,tbs=-1,ttex=-1;
+		if (!json_object_get(&doc, tw, "v0", &tv0) || !json_object_get(&doc, tw, "v1", &tv1) || !json_object_get(&doc, tw, "front_sector", &tfs) || !json_object_get(&doc, tw, "back_sector", &tbs) || !json_object_get(&doc, tw, "tex", &ttex)) {
+			log_error("wall %d missing required fields", i);
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		int v0=0,v1=0,fs=0,bs=-1;
+		StringView sv_tex;
+		if (!json_get_int(&doc, tv0, &v0) || !json_get_int(&doc, tv1, &v1) || !json_get_int(&doc, tfs, &fs) || !json_get_int(&doc, tbs, &bs) || !json_get_string(&doc, ttex, &sv_tex)) {
+			log_error("wall %d fields invalid", i);
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		out->world.walls[i].v0 = v0;
+		out->world.walls[i].v1 = v1;
+		out->world.walls[i].front_sector = fs;
+		out->world.walls[i].back_sector = bs;
+		world_set_wall_tex(&out->world.walls[i], sv_tex);
+	}
+
+	// entities (minimal)
+	int ecount = json_array_size(&doc, t_entities);
+	for (int i = 0; i < ecount; i++) {
+		int te = json_array_nth(&doc, t_entities, i);
+		int ttype=-1, tx2=-1, ty2=-1;
+		if (!json_object_get(&doc, te, "type", &ttype) || !json_object_get(&doc, te, "x", &tx2) || !json_object_get(&doc, te, "y", &ty2)) {
+			continue;
+		}
+		StringView sv_type;
+		float ex=0, ey=0;
+		if (!json_get_string(&doc, ttype, &sv_type) || !json_get_float(&doc, tx2, &ex) || !json_get_float(&doc, ty2, &ey)) {
+			continue;
+		}
+		Entity ent;
+		entity_init(&ent);
+		entity_set_type(&ent, sv_type);
+		ent.x = ex;
+		ent.y = ey;
+		entity_list_push(&out->entities, &ent);
+	}
+
+	json_doc_destroy(&doc);
+
+	if (!map_validate(&out->world)) {
+		map_load_result_destroy(out);
+		return false;
+	}
+
+	return true;
+}

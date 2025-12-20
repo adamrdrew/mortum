@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mortum.local/schemas/map.schema.json",
+  "title": "Mortum Map (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "name", "player_start", "vertices", "sectors", "walls", "entities"],
+  "properties": {
+    "version": {"type": "integer", "const": 1},
+    "name": {"type": "string", "minLength": 1},
+
+    "player_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "angle_deg"],
+      "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "angle_deg": {"type": "number"}
+      }
+    },
+
+    "textures": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "walls": {"type": "array", "items": {"type": "string"}},
+        "floors": {"type": "array", "items": {"type": "string"}},
+        "ceilings": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+
+    "vertices": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["x", "y"],
+        "properties": {
+          "x": {"type": "number"},
+          "y": {"type": "number"}
+        }
+      }
+    },
+
+    "sectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "floor_z", "ceil_z", "floor_tex", "ceil_tex", "light"],
+        "properties": {
+          "id": {"type": "integer", "minimum": 0},
+          "floor_z": {"type": "number"},
+          "ceil_z": {"type": "number"},
+          "floor_tex": {"type": "string", "minLength": 1},
+          "ceil_tex": {"type": "string", "minLength": 1},
+          "light": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+
+    "walls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["v0", "v1", "front_sector", "back_sector", "tex", "flags"],
+        "properties": {
+          "v0": {"type": "integer", "minimum": 0},
+          "v1": {"type": "integer", "minimum": 0},
+          "front_sector": {"type": "integer", "minimum": 0},
+          "back_sector": {"type": "integer", "minimum": -1},
+          "tex": {"type": "string", "minLength": 1},
+          "flags": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["type", "x", "y"],
+        "properties": {
+          "type": {"type": "string", "minLength": 1},
+          "x": {"type": "number"},
+          "y": {"type": "number"},
+          "z": {"type": "number"}
+        }
+      }
+    }
+  }
+}

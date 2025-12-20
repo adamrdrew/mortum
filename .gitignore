@@ -1,0 +1,32 @@
+# === Universal ===
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.idea/
+.vscode/
+
+# === C / build outputs ===
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Common build dirs
+build/
+dist/
+out/
+
+# === Mortum local artifacts ===
+# (keep repo clean while iterating)
+.bin/
+.cache/
+
+# === SDL / runtime ===
+*.log
+
+# === Assets (keep tracked by default) ===
+# Do NOT ignore Assets/

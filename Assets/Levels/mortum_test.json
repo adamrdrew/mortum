@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "name": "Mortum Test",
+  "player_start": {"x": 2.0, "y": 2.0, "angle_deg": 0},
+  "textures": {
+    "walls": ["brick.bmp"],
+    "floors": ["brick.bmp"],
+    "ceilings": ["brick.bmp"]
+  },
+  "vertices": [
+    {"x": 0, "y": 0},
+    {"x": 12, "y": 0},
+    {"x": 12, "y": 12},
+    {"x": 0, "y": 12}
+  ],
+  "sectors": [
+    {"id": 0, "floor_z": 0, "ceil_z": 4, "floor_tex": "brick.bmp", "ceil_tex": "brick.bmp", "light": 1.0}
+  ],
+  "walls": [
+    {"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
+    {"v0": 1, "v1": 2, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
+    {"v0": 2, "v1": 3, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]},
+    {"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "brick.bmp", "flags": ["solid"]}
+  ],
+  "entities": [
+    {"type": "pickup_health", "x": 2.5, "y": 9.5},
+    {"type": "pickup_ammo", "x": 3.5, "y": 2.5},
+
+    {"type": "hazard_floor_growth", "x": 6.0, "y": 6.0},
+    {"type": "hazard_wall_growth", "x": 6.0, "y": 7.2},
+
+    {"type": "pickup_toxic_medkit", "x": 1.5, "y": 6.0},
+
+    {"type": "enemy_melee", "x": 9.0, "y": 6.0},
+    {"type": "enemy_turret", "x": 10.0, "y": 10.0},
+
+    {"type": "pickup_mortum_small", "x": 6.0, "y": 2.0},
+    {"type": "pickup_mortum_large", "x": 9.5, "y": 2.0}
+  ]
+}
