@@ -1,3 +1,7 @@
+# Fluidsynth for MIDI playback
+FLUIDSYNTH_CFLAGS := $(shell pkg-config --cflags fluidsynth)
+FLUIDSYNTH_LIBS := $(shell pkg-config --libs fluidsynth)
+
 CC ?= clang
 
 # Prefer sdl2-config when available.
@@ -15,7 +19,7 @@ DBG  := -O0 -g
 REL  := -O2
 
 CPPFLAGS := -Iinclude -Ithird_party
-CFLAGS_COMMON := $(CSTD) $(WARN) $(SDL_CFLAGS)
+CFLAGS_COMMON := $(CSTD) $(WARN) $(SDL_CFLAGS) $(FLUIDSYNTH_CFLAGS)
 
 BIN_DIR := build
 BIN := $(BIN_DIR)/mortum
@@ -52,6 +56,7 @@ SRC := \
   src/assets/image_bmp.c \
 	src/assets/image_png.c \
   src/assets/sound_wav.c \
+  src/assets/midi_player.c \
   src/game/world.c \
   src/game/entity.c \
   src/game/player.c \
@@ -114,7 +119,7 @@ validate: $(TOOL_VALIDATE) ; $(TOOL_VALIDATE)
 
 clean: ; @rm -rf $(BIN_DIR)
 
-$(BIN): $(OBJ) ; @mkdir -p $(BIN_DIR) ; $(CC) $(OBJ) -o $@ $(SDL_LIBS)
+$(BIN): $(OBJ) ; @mkdir -p $(BIN_DIR) ; $(CC) $(OBJ) -o $@ $(SDL_LIBS) $(FLUIDSYNTH_LIBS)
 
 $(BIN_DIR)/obj/%.o: src/%.c ; @mkdir -p $(dir $@) ; $(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
@@ -122,4 +127,4 @@ $(BIN_DIR)/obj/third_party/%.o: third_party/%.c ; @mkdir -p $(dir $@) ; $(CC) $(
 
 $(TOOL_VALIDATE_OBJ): tools/validate_assets.c ; @mkdir -p $(dir $@) ; $(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-$(TOOL_VALIDATE): $(LIB_OBJ) $(TOOL_VALIDATE_OBJ) ; @mkdir -p $(BIN_DIR) ; $(CC) $(LIB_OBJ) $(TOOL_VALIDATE_OBJ) -o $@ $(SDL_LIBS)
+$(TOOL_VALIDATE): $(LIB_OBJ) $(TOOL_VALIDATE_OBJ) ; @mkdir -p $(BIN_DIR) ; $(CC) $(LIB_OBJ) $(TOOL_VALIDATE_OBJ) -o $@ $(SDL_LIBS) $(FLUIDSYNTH_LIBS)

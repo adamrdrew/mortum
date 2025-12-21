@@ -1,0 +1,24 @@
+{
+    "name": "Void Lurker",
+    "sprite_sheet": "void_lurker.png",
+    "animations": {
+        "idle": [0],
+        "walking": [1,2],
+        "attack": [3,4],
+        "damage": [5,6],
+        "die": [6,7],
+        "dead": 8
+    },
+    "behavior": {
+        "idle": "seek",
+        "engaged": "avoid",
+        "attack": "shoot",
+        "recovery": "fallback"   
+    },
+    "mortus_percent": "5",
+    "hp": "5",
+    "projectile": {
+        "sprite": "void",
+        "pattern": "spread"
+    }
+}

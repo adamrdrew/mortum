@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "bgmusic": "ACCRETION-DISK.MID",
+  "soundfont": "hl4mgm.sf2",
   "name": "ARENA",
   "player_start": {"x": 2.5, "y": 2.5, "angle_deg": 0},
   "textures": {

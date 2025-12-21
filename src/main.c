@@ -22,6 +22,7 @@
 #include "assets/asset_paths.h"
 #include "assets/episode_loader.h"
 #include "assets/map_loader.h"
+#include "assets/midi_player.h"
 
 #include "game/player.h"
 #include "game/player_controller.h"
@@ -69,6 +70,8 @@ static bool gather_fire(const Input* in) {
 }
 
 int main(int argc, char** argv) {
+	char prev_bgmusic[64] = "";
+	char prev_soundfont[64] = "";
 	(void)argc;
 	(void)argv;
 
@@ -77,7 +80,7 @@ int main(int argc, char** argv) {
 	}
 
 	PlatformConfig pcfg;
-	pcfg.enable_audio = false;
+	pcfg.enable_audio = true;
 	if (!platform_init(&pcfg)) {
 		log_shutdown();
 		return 1;
@@ -147,6 +150,35 @@ int main(int argc, char** argv) {
 	}
 	if (map_name) {
 		map_ok = map_load(&map, &paths, map_name);
+		// Validate MIDI and SoundFont existence for background music
+		if (map_ok) {
+			char midi_path[128], sf_path[128];
+			get_midi_path(map.bgmusic, midi_path, sizeof(midi_path));
+			get_soundfont_path(map.soundfont, sf_path, sizeof(sf_path));
+			bool midi_exists = map.bgmusic[0] != '\0';
+			bool sf_exists = map.soundfont[0] != '\0';
+			if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
+				midi_stop();
+				FILE* mf = fopen(midi_path, "rb");
+				FILE* sf = fopen(sf_path, "rb");
+				if (!mf) {
+					fprintf(stderr, "Warning: MIDI file not found: %s\n", midi_path);
+				} else if (!sf) {
+					fprintf(stderr, "Warning: SoundFont file not found: %s\n", sf_path);
+					fclose(mf);
+				} else {
+					fclose(mf);
+					fclose(sf);
+					if (midi_init(sf_path) == 0) {
+						midi_play(midi_path);
+						strncpy(prev_bgmusic, map.bgmusic, sizeof(prev_bgmusic));
+						strncpy(prev_soundfont, map.soundfont, sizeof(prev_soundfont));
+					} else {
+						fprintf(stderr, "Error: Could not initialize MIDI playback.\n");
+					}
+				}
+			}
+		}
 	}
 
 	LevelMesh mesh;
@@ -197,6 +229,7 @@ int main(int argc, char** argv) {
 		input_poll(&in);
 		if (in.quit_requested || input_key_down(&in, SDL_SCANCODE_ESCAPE)) {
 			running = false;
+			midi_stop(); // Stop music on quit
 		}
 
 		// Dev toggles
@@ -296,6 +329,33 @@ int main(int argc, char** argv) {
 						level_mesh_build(&mesh, &map.world);
 						episode_runner_apply_level_start(&player, &map);
 						gs.mode = GAME_MODE_PLAYING;
+						// --- MUSIC CHANGE LOGIC ---
+						char midi_path[128], sf_path[128];
+						get_midi_path(map.bgmusic, midi_path, sizeof(midi_path));
+						get_soundfont_path(map.soundfont, sf_path, sizeof(sf_path));
+						bool midi_exists = map.bgmusic[0] != '\0';
+						bool sf_exists = map.soundfont[0] != '\0';
+						if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
+							midi_stop();
+							FILE* mf = fopen(midi_path, "rb");
+							FILE* sf = fopen(sf_path, "rb");
+							if (!mf) {
+								fprintf(stderr, "Warning: MIDI file not found: %s\n", midi_path);
+							} else if (!sf) {
+								fprintf(stderr, "Warning: SoundFont file not found: %s\n", sf_path);
+								fclose(mf);
+							} else {
+								fclose(mf);
+								fclose(sf);
+								if (midi_init(sf_path) == 0) {
+									midi_play(midi_path);
+									strncpy(prev_bgmusic, map.bgmusic, sizeof(prev_bgmusic));
+									strncpy(prev_soundfont, map.soundfont, sizeof(prev_soundfont));
+								} else {
+									fprintf(stderr, "Error: Could not initialize MIDI playback.\n");
+								}
+							}
+						}
 					}
 				}
 			}
@@ -342,5 +402,6 @@ int main(int argc, char** argv) {
 	fs_paths_destroy(&fs);
 	platform_shutdown();
 	log_shutdown();
+	midi_shutdown(); // Clean up music resources
 	return 0;
 }

@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "bgmusic": "ALIEN-ACTIVITY.MID",
+  "soundfont": "hl4mgm.sf2",
   "name": "E1M1",
   "player_start": {"x": 2.5, "y": 2.5, "angle_deg": 0},
   "textures": {

@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 static bool json_get_float(const JsonDoc* doc, int tok, float* out) {
 	double d = 0.0;
@@ -60,6 +61,25 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		log_error("Map JSON root must be an object");
 		json_doc_destroy(&doc);
 		return false;
+	}
+
+	// Parse bgmusic and soundfont fields
+	int t_bgmusic = -1, t_soundfont = -1;
+	if (json_object_get(&doc, 0, "bgmusic", &t_bgmusic) && t_bgmusic != -1) {
+		StringView sv_bgmusic;
+		if (json_get_string(&doc, t_bgmusic, &sv_bgmusic)) {
+			snprintf(out->bgmusic, sizeof(out->bgmusic), "%.*s", (int)sv_bgmusic.len, sv_bgmusic.data);
+		}
+	} else {
+		out->bgmusic[0] = '\0';
+	}
+	if (json_object_get(&doc, 0, "soundfont", &t_soundfont) && t_soundfont != -1) {
+		StringView sv_soundfont;
+		if (json_get_string(&doc, t_soundfont, &sv_soundfont)) {
+			snprintf(out->soundfont, sizeof(out->soundfont), "%.*s", (int)sv_soundfont.len, sv_soundfont.data);
+		}
+	} else {
+		snprintf(out->soundfont, sizeof(out->soundfont), "hl4mgm.sf2");
 	}
 
 	int t_player = -1;

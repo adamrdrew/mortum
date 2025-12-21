@@ -1,0 +1,47 @@
+openapi: 3.0.0
+info:
+  title: Background Music API
+  version: 1.0.0
+paths:
+  /music/play:
+    post:
+      summary: Play background music for a level
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                midi:
+                  type: string
+                  description: MIDI filename
+                soundfont:
+                  type: string
+                  description: SoundFont filename
+      responses:
+        '200':
+          description: Music started
+  /music/stop:
+    post:
+      summary: Stop background music
+      responses:
+        '200':
+          description: Music stopped
+  /music/status:
+    get:
+      summary: Get current music status
+      responses:
+        '200':
+          description: Current music info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  playing:
+                    type: boolean
+                  midi:
+                    type: string
+                  soundfont:
+                    type: string

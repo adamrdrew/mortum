@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "bgmusic": "BOUGHS-OF-BLOOD-AND-BONE.MID",
+  "soundfont": "hl4mgm.sf2",
   "name": "Mortum Test",
   "player_start": {"x": 2.0, "y": 2.0, "angle_deg": 0},
   "textures": {

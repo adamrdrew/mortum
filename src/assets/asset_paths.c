@@ -1,4 +1,18 @@
+// asset_paths.c
+
 #include "assets/asset_paths.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+
+void get_midi_path(const char* midi_file, char* out, size_t out_size) {
+    snprintf(out, out_size, "Assets/Sounds/MIDI/%s", midi_file);
+}
+
+
+void get_soundfont_path(const char* sf_file, char* out, size_t out_size) {
+	snprintf(out, out_size, "Assets/Sounds/SoundFonts/%s", sf_file);
+}
 
 #include <stdlib.h>
 #include <string.h>
