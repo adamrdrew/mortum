@@ -28,6 +28,15 @@ Optional fields:
 - `lights`: array of light objects (if supported by the current loader)
 - `bgmusic`: string (MIDI filename)
 - `soundfont`: string (SoundFont filename)
+- `sky`: string (skybox filename, loaded from `Assets/Images/Sky/<sky>`)
+
+## Skybox rendering
+
+If the root `sky` field is provided, any sector can opt into sky rendering by setting:
+
+- `ceil_tex`: `"SKY"`
+
+When `ceil_tex` is `"SKY"`, the ceiling is rendered as a DOOM-style cylindrical sky panorama instead of a textured ceiling plane.
 
 ## Unknown keys
 

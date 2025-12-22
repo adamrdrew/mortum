@@ -387,7 +387,7 @@ int main(int argc, char** argv) {
 			cam.y += ry * bob_side;
 			cam.z = bob_z;
 		}
-		raycast_render_textured(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, wall_depth);
+		raycast_render_textured(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, map_ok ? map.sky : NULL, wall_depth);
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);
 		hud_draw(&fb, &player, &gs, fps, &texreg, &paths);

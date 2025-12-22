@@ -4,6 +4,7 @@
 #include "render/lighting.h"
 
 #include <math.h>
+#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -344,6 +345,10 @@ static int project_y(float half_h, float proj_dist, float cam_z, float z, float 
 	return (int)(half_h - (z - cam_z) * (proj_dist / (dist + 0.001f)));
 }
 
+static bool is_sky_sentinel(const char* s) {
+	return s && (strcmp(s, "SKY") == 0 || strcmp(s, "sky") == 0);
+}
+
 static void draw_sector_ceiling_column(
 	Framebuffer* fb,
 	int x,
@@ -359,6 +364,7 @@ static void draw_sector_ceiling_column(
 	float corr,
 	float ceil_z,
 	const Texture* ceil_tex,
+	const Texture* sky_tex,
 	float sector_intensity,
 	LightColor sector_tint,
 	const PointLight* lights,
@@ -374,6 +380,26 @@ static void draw_sector_ceiling_column(
 		y_bot = fb->height;
 	}
 	if (y_top >= y_bot) {
+		return;
+	}
+
+	// Skybox: cylindrical mapping, no perspective floor-plane math.
+	if (sky_tex) {
+		if (y_top < 0) {
+			y_top = 0;
+		}
+		if (y_bot > fb->height) {
+			y_bot = fb->height;
+		}
+		float ang = atan2f(dy, dx);
+		float u = (ang + (float)M_PI) / (2.0f * (float)M_PI);
+		// y in [0, half_h] -> v in [0, 1]
+		float inv_half = half_h > 1e-6f ? (1.0f / half_h) : 1.0f;
+		for (int y = y_top; y < y_bot; y++) {
+			float v = ((float)y + 0.5f) * inv_half;
+			v = clampf(v, 0.0f, 1.0f);
+			fb->pixels[y * fb->width + x] = texture_sample_nearest(sky_tex, u, v);
+		}
 		return;
 	}
 
@@ -524,6 +550,7 @@ static void render_column_textured_recursive(
 	const Camera* cam,
 	TextureRegistry* texreg,
 	const AssetPaths* paths,
+	const Texture* sky_tex,
 	int x,
 	float half_h,
 	float proj_dist,
@@ -563,11 +590,12 @@ static void render_column_textured_recursive(
 	LightColor sector_tint = s->light_color;
 	const Texture* floor_tex = NULL;
 	const Texture* ceil_tex = NULL;
+	bool ceil_is_sky = is_sky_sentinel(s->ceil_tex);
 	if (texreg && paths) {
 		if (s->floor_tex[0] != '\0') {
 			floor_tex = texture_registry_get(texreg, paths, s->floor_tex);
 		}
-		if (s->ceil_tex[0] != '\0') {
+		if (s->ceil_tex[0] != '\0' && !ceil_is_sky) {
 			ceil_tex = texture_registry_get(texreg, paths, s->ceil_tex);
 		}
 	}
@@ -588,6 +616,7 @@ static void render_column_textured_recursive(
 		corr,
 		s->ceil_z,
 		ceil_tex,
+		(ceil_is_sky ? sky_tex : NULL),
 		sector_intensity,
 		sector_tint,
 		world->lights,
@@ -681,9 +710,10 @@ static void render_column_textured_recursive(
 
 	// Portal wall: draw upper/lower pieces relative to this sector, then recurse through open span.
 	const Sector* so = &world->sectors[other];
+	bool other_ceil_is_sky = is_sky_sentinel(so->ceil_tex);
 
-	// Upper piece (if other ceiling is lower)
-	if (so->ceil_z < s->ceil_z - 1e-4f) {
+	// Upper piece (if other ceiling is lower). If both ceilings are sky, don't draw.
+	if (!((ceil_is_sky && other_ceil_is_sky)) && so->ceil_z < s->ceil_z - 1e-4f) {
 		int y_top = project_y(half_h, proj_dist, cam_z, s->ceil_z, dist);
 		int y_bot = project_y(half_h, proj_dist, cam_z, so->ceil_z, dist);
 		render_wall_span_textured(
@@ -766,6 +796,7 @@ static void render_column_textured_recursive(
 				cam,
 				texreg,
 				paths,
+				sky_tex,
 				x,
 				half_h,
 				proj_dist,
@@ -785,7 +816,15 @@ static void render_column_textured_recursive(
 	}
 }
 
-void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* cam, TextureRegistry* texreg, const AssetPaths* paths, float* out_depth) {
+void raycast_render_textured(
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const char* sky_filename,
+	float* out_depth
+) {
 	// Background: sky (floor/ceiling are drawn per column based on ray hit sector)
 	draw_clear(fb, 0xFF0B0E14u);
 
@@ -806,6 +845,10 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 	int start_sector = world_find_sector_at_point_stable(world, cam->x, cam->y);
 	float cam_z = camera_z_for_sector(world, start_sector, cam->z);
 	float cam_rad = deg_to_rad(cam->angle_deg);
+	const Texture* sky_tex = NULL;
+	if (texreg && paths && sky_filename && sky_filename[0] != '\0') {
+		sky_tex = texture_registry_get(texreg, paths, sky_filename);
+	}
 
 	for (int x = 0; x < fb->width; x++) {
 		if (out_depth) {
@@ -824,6 +867,7 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 			cam,
 			texreg,
 			paths,
+			sky_tex,
 			x,
 			half_h,
 			proj_dist,

@@ -9,26 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static bool ends_with_ci(const char* s, const char* suffix) {
-	if (!s || !suffix) {
-		return false;
-	}
-	size_t ns = strlen(s);
-	size_t nf = strlen(suffix);
-	if (nf > ns) {
-		return false;
-	}
-	const char* tail = s + (ns - nf);
-	for (size_t i = 0; i < nf; i++) {
-		char a = (char)tolower((unsigned char)tail[i]);
-		char b = (char)tolower((unsigned char)suffix[i]);
-		if (a != b) {
-			return false;
-		}
-	}
-	return true;
-}
-
 static bool file_exists(const char* path) {
 	if (!path || path[0] == '\0') {
 		return false;
@@ -114,46 +94,51 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 
 	Image img;
 	bool ok = false;
-	bool enforce_64 = ends_with_ci(filename, ".png") && !strchr(filename, '/') && !strchr(filename, '\\');
+	bool enforce_64 = false;
 
 	char* preferred = asset_path_join(paths, "Images/Textures", filename);
+	char* sky = asset_path_join(paths, "Images/Sky", filename);
 	char* fallback = asset_path_join(paths, "Images", filename);
 	const char* preferred_s = preferred ? preferred : "(alloc failed)";
+	const char* sky_s = sky ? sky : "(alloc failed)";
 	const char* fallback_s = fallback ? fallback : "(alloc failed)";
 
-	// Prefer the new texture library directory.
+	// Prefer the new texture library directory (64x64 enforced here only).
 	if (preferred && file_exists(preferred)) {
 		ok = image_load_auto(&img, preferred);
-		if (ok && enforce_64 && (img.width != 64 || img.height != 64)) {
-			log_error("Texture %s must be 64x64, got %dx%d", filename, img.width, img.height);
-			image_destroy(&img);
-			ok = false;
-		}
+		enforce_64 = true;
+	}
+	if (ok && enforce_64 && (img.width != 64 || img.height != 64)) {
+		log_error("Texture %s must be 64x64, got %dx%d", filename, img.width, img.height);
+		image_destroy(&img);
+		ok = false;
+	}
+
+	// Skybox directory (no size enforcement).
+	if (!ok && sky && file_exists(sky)) {
+		ok = image_load_auto(&img, sky);
 	}
 
 	// Backward-compatible fallback.
 	if (!ok && fallback && file_exists(fallback)) {
 		ok = image_load_auto(&img, fallback);
-		if (ok && enforce_64 && (img.width != 64 || img.height != 64)) {
-			log_error("Texture %s must be 64x64, got %dx%d", filename, img.width, img.height);
-			image_destroy(&img);
-			ok = false;
-		}
 	}
 
 	if (!ok) {
-		log_error("Failed to load texture %s (tried %s; fallback %s)", filename, preferred_s, fallback_s);
+		log_error("Failed to load texture %s (tried %s; sky %s; fallback %s)", filename, preferred_s, sky_s, fallback_s);
 		// Cache miss to avoid repeated disk I/O and log spam every frame.
 		Texture* miss = registry_push(self);
 		if (miss) {
 			strncpy(miss->name, filename, sizeof(miss->name) - 1);
 		}
 		free(preferred);
+		free(sky);
 		free(fallback);
 		return NULL;
 	}
 
 	free(preferred);
+	free(sky);
 	free(fallback);
 
 	Texture* t = registry_push(self);

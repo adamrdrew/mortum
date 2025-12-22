@@ -61,8 +61,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		return false;
 	}
 
-	// Parse bgmusic and soundfont fields
-	int t_bgmusic = -1, t_soundfont = -1;
+	// Parse optional bgmusic/soundfont/sky fields
+	int t_bgmusic = -1, t_soundfont = -1, t_sky = -1;
 	if (json_object_get(&doc, 0, "bgmusic", &t_bgmusic) && t_bgmusic != -1) {
 		StringView sv_bgmusic;
 		if (json_get_string(&doc, t_bgmusic, &sv_bgmusic)) {
@@ -78,6 +78,16 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		}
 	} else {
 		snprintf(out->soundfont, sizeof(out->soundfont), "hl4mgm.sf2");
+	}
+	if (json_object_get(&doc, 0, "sky", &t_sky) && t_sky != -1) {
+		StringView sv_sky;
+		if (json_get_string(&doc, t_sky, &sv_sky)) {
+			snprintf(out->sky, sizeof(out->sky), "%.*s", (int)sv_sky.len, sv_sky.data);
+		} else {
+			out->sky[0] = '\0';
+		}
+	} else {
+		out->sky[0] = '\0';
 	}
 
 	int t_player = -1;

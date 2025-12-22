@@ -3,6 +3,7 @@
     "bgmusic": "ALIEN-ACTIVITY.MID",
     "soundfont": "hl4mgm.sf2",
     "name": "E1M1_STRESS_TEST",
+    "sky": "red.png",
     "player_start": {
         "x": 15,
         "y": 15,
@@ -204,7 +205,7 @@
             "floor_z": 0,
             "ceil_z": 4,
             "floor_tex": "FLOOR_2A.PNG",
-            "ceil_tex": "TECH_1A.PNG",
+            "ceil_tex": "SKY",
             "light": 1
         },
         {

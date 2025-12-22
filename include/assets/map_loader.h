@@ -12,6 +12,7 @@ typedef struct MapLoadResult {
 	float player_start_angle_deg;
 	char bgmusic[64];      // MIDI filename for background music
 	char soundfont[64];    // SoundFont filename for background music
+	char sky[64];          // Optional skybox filename (loaded from Assets/Images/Sky)
 } MapLoadResult;
 
 void map_load_result_destroy(MapLoadResult* self);
