@@ -662,10 +662,10 @@
             "v0": 27,
             "v1": 26,
             "front_sector": 6,
-            "back_sector": -1,
-            "tex": "STEEL_1A.PNG",
+            "back_sector": 7,
+            "tex": "DOORTRIM_1E.PNG",
             "flags": [
-                "solid"
+                "portal"
             ]
         },
         {
@@ -692,10 +692,10 @@
             "v0": 24,
             "v1": 27,
             "front_sector": 6,
-            "back_sector": 7,
-            "tex": "DOORTRIM_1C.PNG",
+            "back_sector": -1,
+            "tex": "STEEL_1C.PNG",
             "flags": [
-                "portal"
+                "solid"
             ]
         },
         {
