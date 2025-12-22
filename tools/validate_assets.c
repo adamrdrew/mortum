@@ -18,6 +18,7 @@ static bool validate_episode_maps(const AssetPaths* paths, const char* episode_f
 	bool ok = true;
 	for (int i = 0; i < ep.map_count; i++) {
 		MapLoadResult map;
+		log_info("Validating map: %s", ep.maps[i]);
 		if (!map_load(&map, paths, ep.maps[i])) {
 			log_error("Failed to load map: %s", ep.maps[i]);
 			ok = false;
@@ -32,6 +33,7 @@ static bool validate_episode_maps(const AssetPaths* paths, const char* episode_f
 
 static bool validate_map(const AssetPaths* paths, const char* map_filename) {
 	MapLoadResult map;
+	log_info("Validating map: %s", map_filename);
 	if (!map_load(&map, paths, map_filename)) {
 		log_error("Failed to load map: %s", map_filename);
 		return false;

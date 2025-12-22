@@ -289,7 +289,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 
 	json_doc_destroy(&doc);
 
-	if (!map_validate(&out->world)) {
+	if (!map_validate(&out->world, out->player_start_x, out->player_start_y)) {
 		map_load_result_destroy(out);
 		return false;
 	}

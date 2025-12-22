@@ -115,7 +115,7 @@ run: $(BIN) ; $(BIN) $(RUN_MAP) $(RUN_ARGS)
 test: ; @echo "No tests wired yet." ; exit 0
 
 validate: CFLAGS := $(CFLAGS_COMMON) $(DBG)
-validate: $(TOOL_VALIDATE) ; $(TOOL_VALIDATE)
+validate: $(TOOL_VALIDATE) ; $(TOOL_VALIDATE) $(RUN_MAP)
 
 clean: ; @rm -rf $(BIN_DIR)
 
