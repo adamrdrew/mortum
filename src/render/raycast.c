@@ -501,7 +501,8 @@ static void render_wall_span_textured(
 	float half_h,
 	float proj_dist,
 	float cam_z,
-	float u,
+	float u_lerp,
+	float u_tex,
 	const Texture* tex,
 	uint32_t base,
 	float dist,
@@ -509,6 +510,8 @@ static void render_wall_span_textured(
 	LightColor wall_mul_v1,
 	RaycastPerf* perf
 ) {
+	(void)z_top;
+	(void)z_bot;
 	if (!fb || x < 0 || x >= fb->width) {
 		return;
 	}
@@ -530,15 +533,11 @@ static void render_wall_span_textured(
 	if (perf) {
 		perf->pixels_wall += (uint32_t)(y_bot - y_top);
 	}
-	float z_span = z_top - z_bot;
-	if (fabsf(z_span) < 1e-6f) {
-		z_span = 1.0f;
-	}
 	float inv_proj = proj_dist > 1e-6f ? (1.0f / proj_dist) : 1.0f;
 
 	// PS1/N64-style Gouraud wall lighting: interpolate endpoint multipliers by wall U,
 	// then quantize to produce visible banding.
-	LightColor mul = lightcolor_lerp(wall_mul_v0, wall_mul_v1, u);
+	LightColor mul = lightcolor_lerp(wall_mul_v0, wall_mul_v1, u_lerp);
 	float r_mul = lighting_quantize_factor(mul.r);
 	float g_mul = lighting_quantize_factor(mul.g);
 	float b_mul = lighting_quantize_factor(mul.b);
@@ -564,20 +563,18 @@ static void render_wall_span_textured(
 		b_mul_i = 256;
 	}
 
-	// Perspective-correct wall V is linear in screen-space y for a given column.
+	// Wall texture mapping: tile in world-space; do not scale with wall height.
+	// We derive world-space Z at each screen pixel and wrap it.
+	const float wall_uv_scale_u = 0.25f; // 1 repeat per 4 world units
+	const float wall_uv_scale_v = 0.25f; // 1 repeat per 4 world units
+	float uu = fractf(u_tex * wall_uv_scale_u);
 	float yf0 = (float)y_top + 0.5f;
 	float z0 = cam_z + (half_h - yf0) * dist * inv_proj;
-	float v = (z_top - z0) / z_span;
-	float dv = (dist * inv_proj) / z_span;
+	float dz = -dist * inv_proj;
 
 	for (int y = y_top; y < y_bot; y++) {
-		float vv = v;
-		if (vv < 0.0f) {
-			vv = 0.0f;
-		} else if (vv > 1.0f) {
-			vv = 1.0f;
-		}
-		uint32_t c = tex ? texture_sample_nearest(tex, u, vv) : base;
+		float vv = fractf(z0 * wall_uv_scale_v);
+		uint32_t c = tex ? texture_sample_nearest(tex, uu, vv) : base;
 		uint8_t a = (uint8_t)((c >> 24) & 0xFF);
 		uint8_t r = (uint8_t)((c >> 16) & 0xFF);
 		uint8_t g = (uint8_t)((c >> 8) & 0xFF);
@@ -586,7 +583,7 @@ static void render_wall_span_textured(
 		int gg = (g * g_mul_i + 128) >> 8;
 		int bb = (b * b_mul_i + 128) >> 8;
 		fb->pixels[y * fb->width + x] = ((uint32_t)a << 24) | ((uint32_t)clamp_u8(rr) << 16) | ((uint32_t)clamp_u8(gg) << 8) | (uint32_t)clamp_u8(bb);
-		v += dv;
+		z0 += dz;
 	}
 }
 
@@ -776,12 +773,15 @@ static void render_column_textured_recursive(
 		}
 	}
 
-	// Compute hit u along segment
+	// Compute hit u along segment (0..1) for lighting interpolation, plus world-space
+	// distance along the wall for texture tiling.
 	Vertex a = world->vertices[w->v0];
 	Vertex b = world->vertices[w->v1];
 	float hit_x = cam->x + ray_dx * hit_t;
 	float hit_y = cam->y + ray_dy * hit_t;
 	float u = segment_u(a.x, a.y, b.x, b.y, hit_x, hit_y);
+	float wall_len = hypotf(b.x - a.x, b.y - a.y);
+	float u_tex = u * wall_len;
 
 	// Per-vertex wall lighting multipliers (Gouraud). Compute once and reuse for spans.
 	float da = hypotf(a.x - cam->x, a.y - cam->y);
@@ -942,6 +942,7 @@ static void render_column_textured_recursive(
 			proj_dist,
 			cam_z,
 			u,
+			u_tex,
 			wall_tex,
 			base,
 			dist,
@@ -1120,6 +1121,7 @@ static void render_column_textured_recursive(
 			proj_dist,
 			cam_z,
 			u,
+			u_tex,
 			wall_tex,
 			base,
 			dist,
@@ -1153,6 +1155,7 @@ static void render_column_textured_recursive(
 			proj_dist,
 			cam_z,
 			u,
+			u_tex,
 			wall_tex,
 			base,
 			dist,
