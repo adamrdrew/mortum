@@ -22,6 +22,7 @@ typedef struct PerfTraceFrame {
 	double rc_hit_test_ms;
 	double rc_walls_ms;
 	double rc_tex_lookup_ms;
+	double rc_light_cull_ms;
 	int rc_texture_get_calls;
 	int rc_registry_compares;
 	int rc_portal_calls;
@@ -30,6 +31,12 @@ typedef struct PerfTraceFrame {
 	int rc_pixels_floor;
 	int rc_pixels_ceil;
 	int rc_pixels_wall;
+	int rc_lights_in_world;
+	int rc_lights_visible;
+	int rc_lighting_apply_calls;
+	int rc_lighting_mul_calls;
+	int rc_lighting_apply_light_iters;
+	int rc_lighting_mul_light_iters;
 } PerfTraceFrame;
 
 typedef struct PerfTrace {

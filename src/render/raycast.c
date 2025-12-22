@@ -550,6 +550,10 @@ static void draw_sector_ceiling_column(
 			float tu = fractf(wx * plane_uv_scale);
 			float tv = fractf(wy * plane_uv_scale);
 			uint32_t c = ceil_tex ? texture_sample_nearest(ceil_tex, tu, tv) : 0xFF0B0E14u;
+			if (perf) {
+				perf->lighting_apply_calls++;
+				perf->lighting_apply_light_iters += (uint64_t)(light_count > 0 ? light_count : 0);
+			}
 			c = lighting_apply(c, row_dist, sector_intensity, sector_tint, lights, light_count, wx, wy);
 			fb->pixels[y * fb->width + x] = c;
 		}
@@ -613,6 +617,10 @@ static void draw_sector_floor_column(
 			float tu = fractf(wx * plane_uv_scale);
 			float tv = fractf(wy * plane_uv_scale);
 			uint32_t c = floor_tex ? texture_sample_nearest(floor_tex, tu, tv) : 0xFF121018u;
+			if (perf) {
+				perf->lighting_apply_calls++;
+				perf->lighting_apply_light_iters += (uint64_t)(light_count > 0 ? light_count : 0);
+			}
 			c = lighting_apply(c, row_dist, sector_intensity, sector_tint, lights, light_count, wx, wy);
 			fb->pixels[y * fb->width + x] = c;
 		}
@@ -927,6 +935,10 @@ static void render_column_textured_recursive(
 		a.x,
 		a.y
 	);
+	if (perf) {
+		perf->lighting_mul_calls++;
+		perf->lighting_mul_light_iters += (uint64_t)(light_count > 0 ? light_count : 0);
+	}
 	LightColor wall_mul_v1 = lighting_compute_multipliers(
 		db,
 		sector_intensity,
@@ -936,6 +948,10 @@ static void render_column_textured_recursive(
 		b.x,
 		b.y
 	);
+	if (perf) {
+		perf->lighting_mul_calls++;
+		perf->lighting_mul_light_iters += (uint64_t)(light_count > 0 ? light_count : 0);
+	}
 	const Texture* wall_tex = NULL;
 	if (texreg && paths) {
 		wall_tex = texture_registry_get(texreg, paths, w->tex);
@@ -1361,7 +1377,16 @@ static void raycast_render_textured_from_sector_internal(
 	}
 
 	PointLight vis_lights[MAX_VISIBLE_LIGHTS];
+	double lcull_t0 = 0.0;
+	if (out_perf) {
+		out_perf->lights_in_world = (uint32_t)(world->lights ? world->light_count : 0);
+		lcull_t0 = platform_time_seconds();
+	}
 	int vis_count = build_visible_lights(vis_lights, MAX_VISIBLE_LIGHTS, world, cam, (float)platform_time_seconds());
+	if (out_perf) {
+		out_perf->light_cull_ms += (platform_time_seconds() - lcull_t0) * 1000.0;
+		out_perf->lights_visible = (uint32_t)vis_count;
+	}
 
 	for (int x = 0; x < fb->width; x++) {
 		if (out_depth) {

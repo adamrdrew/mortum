@@ -12,6 +12,15 @@ typedef struct RaycastPerf {
 	double hit_test_ms;
 	double walls_ms;
 
+	// Lighting-specific perf (captured during perf trace only).
+	double light_cull_ms; // time spent building visible light list (culling + flicker)
+	uint32_t lights_in_world;
+	uint32_t lights_visible;
+	uint64_t lighting_apply_calls;
+	uint64_t lighting_apply_light_iters;
+	uint64_t lighting_mul_calls;
+	uint64_t lighting_mul_light_iters;
+
 	// Texture registry work.
 	double tex_lookup_ms;
 	uint32_t texture_get_calls;

@@ -501,6 +501,7 @@ int main(int argc, char** argv) {
 			pf.rc_hit_test_ms = rc_perf.hit_test_ms;
 			pf.rc_walls_ms = rc_perf.walls_ms;
 			pf.rc_tex_lookup_ms = rc_perf.tex_lookup_ms;
+			pf.rc_light_cull_ms = rc_perf.light_cull_ms;
 			pf.rc_texture_get_calls = (int)rc_perf.texture_get_calls;
 			pf.rc_registry_compares = (int)rc_perf.registry_string_compares;
 			pf.rc_portal_calls = (int)rc_perf.portal_calls;
@@ -509,6 +510,12 @@ int main(int argc, char** argv) {
 			pf.rc_pixels_floor = (int)rc_perf.pixels_floor;
 			pf.rc_pixels_ceil = (int)rc_perf.pixels_ceil;
 			pf.rc_pixels_wall = (int)rc_perf.pixels_wall;
+			pf.rc_lights_in_world = (int)rc_perf.lights_in_world;
+			pf.rc_lights_visible = (int)rc_perf.lights_visible;
+			pf.rc_lighting_apply_calls = (int)rc_perf.lighting_apply_calls;
+			pf.rc_lighting_mul_calls = (int)rc_perf.lighting_mul_calls;
+			pf.rc_lighting_apply_light_iters = (int)rc_perf.lighting_apply_light_iters;
+			pf.rc_lighting_mul_light_iters = (int)rc_perf.lighting_mul_light_iters;
 			perf_trace_record_frame(&perf, &pf, stdout);
 		}
 

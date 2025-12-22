@@ -120,7 +120,7 @@ static bool json_get_light_flicker(const JsonDoc* doc, int tok, LightFlicker* ou
 		*out = LIGHT_FLICKER_FLAME;
 		return true;
 	}
-	if (sv.len == 10 && strncmp(sv.data, "malfunction", 10) == 0) {
+	if (sv.len == 11 && strncmp(sv.data, "malfunction", 11) == 0) {
 		*out = LIGHT_FLICKER_MALFUNCTION;
 		return true;
 	}

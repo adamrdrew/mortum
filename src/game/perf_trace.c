@@ -127,6 +127,7 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	double rc_hit_ms[PERF_TRACE_FRAME_COUNT];
 	double rc_walls_ms[PERF_TRACE_FRAME_COUNT];
 	double rc_tex_lookup_ms[PERF_TRACE_FRAME_COUNT];
+	double rc_light_cull_ms[PERF_TRACE_FRAME_COUNT];
 	double rc_tex_get_calls[PERF_TRACE_FRAME_COUNT];
 	double rc_registry_compares[PERF_TRACE_FRAME_COUNT];
 	double rc_portal_calls[PERF_TRACE_FRAME_COUNT];
@@ -135,6 +136,13 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	double rc_pix_floor[PERF_TRACE_FRAME_COUNT];
 	double rc_pix_ceil[PERF_TRACE_FRAME_COUNT];
 	double rc_pix_wall[PERF_TRACE_FRAME_COUNT];
+	double rc_lights_world[PERF_TRACE_FRAME_COUNT];
+	double rc_lights_visible[PERF_TRACE_FRAME_COUNT];
+	double rc_lighting_apply_calls[PERF_TRACE_FRAME_COUNT];
+	double rc_lighting_mul_calls[PERF_TRACE_FRAME_COUNT];
+	double rc_lighting_apply_iters[PERF_TRACE_FRAME_COUNT];
+	double rc_lighting_mul_iters[PERF_TRACE_FRAME_COUNT];
+	double rc_lighting_total_iters[PERF_TRACE_FRAME_COUNT];
 
 	int worst_i = 0;
 	double worst_frame = t->frames[0].frame_ms;
@@ -152,6 +160,7 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 		rc_hit_ms[i] = f->rc_hit_test_ms;
 		rc_walls_ms[i] = f->rc_walls_ms;
 		rc_tex_lookup_ms[i] = f->rc_tex_lookup_ms;
+		rc_light_cull_ms[i] = f->rc_light_cull_ms;
 		rc_tex_get_calls[i] = (double)f->rc_texture_get_calls;
 		rc_registry_compares[i] = (double)f->rc_registry_compares;
 		rc_portal_calls[i] = (double)f->rc_portal_calls;
@@ -160,6 +169,13 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 		rc_pix_floor[i] = (double)f->rc_pixels_floor;
 		rc_pix_ceil[i] = (double)f->rc_pixels_ceil;
 		rc_pix_wall[i] = (double)f->rc_pixels_wall;
+		rc_lights_world[i] = (double)f->rc_lights_in_world;
+		rc_lights_visible[i] = (double)f->rc_lights_visible;
+		rc_lighting_apply_calls[i] = (double)f->rc_lighting_apply_calls;
+		rc_lighting_mul_calls[i] = (double)f->rc_lighting_mul_calls;
+		rc_lighting_apply_iters[i] = (double)f->rc_lighting_apply_light_iters;
+		rc_lighting_mul_iters[i] = (double)f->rc_lighting_mul_light_iters;
+		rc_lighting_total_iters[i] = rc_lighting_apply_iters[i] + rc_lighting_mul_iters[i];
 		if (f->steps > max_steps) {
 			max_steps = f->steps;
 		}
@@ -179,6 +195,7 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	PerfStats s_rc_hit = compute_stats(rc_hit_ms, n);
 	PerfStats s_rc_walls = compute_stats(rc_walls_ms, n);
 	PerfStats s_rc_tex = compute_stats(rc_tex_lookup_ms, n);
+	PerfStats s_rc_lcull = compute_stats(rc_light_cull_ms, n);
 	PerfStats s_rc_tex_get = compute_stats(rc_tex_get_calls, n);
 	PerfStats s_rc_cmp = compute_stats(rc_registry_compares, n);
 	PerfStats s_rc_portals = compute_stats(rc_portal_calls, n);
@@ -187,9 +204,23 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	PerfStats s_rc_pf = compute_stats(rc_pix_floor, n);
 	PerfStats s_rc_pc = compute_stats(rc_pix_ceil, n);
 	PerfStats s_rc_pw = compute_stats(rc_pix_wall, n);
+	PerfStats s_rc_lw = compute_stats(rc_lights_world, n);
+	PerfStats s_rc_lv = compute_stats(rc_lights_visible, n);
+	PerfStats s_rc_lac = compute_stats(rc_lighting_apply_calls, n);
+	PerfStats s_rc_lmc = compute_stats(rc_lighting_mul_calls, n);
+	PerfStats s_rc_lai = compute_stats(rc_lighting_apply_iters, n);
+	PerfStats s_rc_lmi = compute_stats(rc_lighting_mul_iters, n);
+	PerfStats s_rc_lti = compute_stats(rc_lighting_total_iters, n);
+
+	int max_visible_lights = (int)t->frames[0].rc_lights_visible;
 
 	double avg_fps = (s_frame.avg > 1e-9) ? (1000.0 / s_frame.avg) : 0.0;
 	const PerfTraceFrame* w = &t->frames[worst_i];
+	for (int i = 0; i < n; i++) {
+		if (t->frames[i].rc_lights_visible > max_visible_lights) {
+			max_visible_lights = t->frames[i].rc_lights_visible;
+		}
+	}
 
 	fprintf(out, "\n=== MORTUM PERF TRACE (%d frames) ===\n", n);
 	fprintf(out, "map: %s\n", t->map_name[0] ? t->map_name : "(unknown)");
@@ -205,6 +236,11 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	print_stats_line(out, "  hit", &s_rc_hit);
 	print_stats_line(out, "  walls", &s_rc_walls);
 	print_stats_line(out, "  texget", &s_rc_tex);
+	print_stats_line(out, "  lcull", &s_rc_lcull);
+	fprintf(out, "lighting (point lights):\n");
+	fprintf(out, "  lights avg: world=%.1f  visible=%.1f  max_visible=%d\n", s_rc_lw.avg, s_rc_lv.avg, max_visible_lights);
+	fprintf(out, "  calls avg: apply=%.0f  mul=%.0f\n", s_rc_lac.avg, s_rc_lmc.avg);
+	fprintf(out, "  iters avg: apply=%.0f  mul=%.0f  total=%.0f\n", s_rc_lai.avg, s_rc_lmi.avg, s_rc_lti.avg);
 	print_stats_line(out, "ui_ms", &s_ui);
 	print_stats_line(out, "present", &s_present);
 	fprintf(out, "steps      avg=%6.2f  p95=%6.2f  min=%6.0f  max=%6d\n", s_steps.avg, s_steps.p95, s_steps.min, max_steps);
@@ -229,6 +265,13 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 		w->rc_hit_test_ms,
 		w->rc_walls_ms,
 		w->rc_tex_lookup_ms);
+	fprintf(out,
+		"worst_frame_lighting: lights world=%d visible=%d  lcull=%.2fms  apply_calls=%d  apply_iters=%d\n",
+		w->rc_lights_in_world,
+		w->rc_lights_visible,
+		w->rc_light_cull_ms,
+		w->rc_lighting_apply_calls,
+		w->rc_lighting_apply_light_iters);
 	fprintf(out, "=== END PERF TRACE ===\n");
 	fflush(out);
 }
