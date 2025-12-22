@@ -314,8 +314,12 @@ static int find_nearest_wall_hit_in_sector(
 			continue;
 		}
 		const Wall* w = &world->walls[i];
-		if (w->front_sector != sector && w->back_sector != sector) {
-			continue;
+		// Double-sided solid walls: a "one-sided" wall should still render when viewed
+		// from the back (e.g. if the player ends up in an adjacent sector or outside).
+		if (w->back_sector != -1) {
+			if (w->front_sector != sector && w->back_sector != sector) {
+				continue;
+			}
 		}
 		if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
 			continue;
