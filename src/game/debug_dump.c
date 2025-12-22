@@ -240,6 +240,11 @@ void debug_dump_print(FILE* out, const char* map_name, const World* world, const
 		int sec = world_find_sector_at_point(world, player->x, player->y);
 		fprintf(out, "player_sector_guess:\n");
 		print_sector(out, world, sec);
+		if (sec < 0) {
+			fprintf(out, "  WARNING: player position is not inside any sector.\n");
+			fprintf(out, "  WARNING: this usually means the map has uncovered space at this position (or the player escaped geometry).\n");
+			fprintf(out, "  WARNING: floor/ceiling selection may fall back to last-known sector and rays may hit none.\n");
+		}
 	}
 	if (cam) {
 		fprintf(out, "camera: x=%.4f y=%.4f angle_deg=%.3f fov_deg=%.3f\n", cam->x, cam->y, cam->angle_deg, cam->fov_deg);

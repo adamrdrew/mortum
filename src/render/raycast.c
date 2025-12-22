@@ -109,6 +109,23 @@ static int world_find_sector_at_point(const World* world, float px, float py) {
 	return -1;
 }
 
+static int world_find_sector_at_point_stable(const World* world, float px, float py) {
+	static int s_last_valid_sector = -1;
+	if (!world || world->sector_count <= 0) {
+		s_last_valid_sector = -1;
+		return -1;
+	}
+	if ((unsigned)s_last_valid_sector >= (unsigned)world->sector_count) {
+		s_last_valid_sector = -1;
+	}
+	int s = world_find_sector_at_point(world, px, py);
+	if ((unsigned)s < (unsigned)world->sector_count) {
+		s_last_valid_sector = s;
+		return s;
+	}
+	return s_last_valid_sector;
+}
+
 // Pick which sector is "on the camera side" of the wall.
 // Assumption: wall's (v0->v1) winding defines the half-plane for front/back sectors.
 // If winding is inconsistent, we still fall back to any valid sector index.
@@ -266,7 +283,24 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 	float inv_w = fb->width > 1 ? (1.0f / (float)(fb->width - 1)) : 0.0f;
 	float half_h = 0.5f * (float)fb->height;
 	float proj_z = half_h; // camera height in screen space (Wolf3D-style)
-	int cam_sector = world_find_sector_at_point(world, cam->x, cam->y);
+	int plane_sector = world_find_sector_at_point_stable(world, cam->x, cam->y);
+	float plane_sector_intensity = 1.0f;
+	LightColor plane_sector_tint = light_color_white();
+	const Texture* floor_tex = NULL;
+	const Texture* ceil_tex = NULL;
+	if ((unsigned)plane_sector < (unsigned)world->sector_count) {
+		const Sector* s = &world->sectors[plane_sector];
+		plane_sector_intensity = s->light;
+		plane_sector_tint = s->light_color;
+		if (texreg && paths) {
+			if (s->floor_tex[0] != '\0') {
+				floor_tex = texture_registry_get(texreg, paths, s->floor_tex);
+			}
+			if (s->ceil_tex[0] != '\0') {
+				ceil_tex = texture_registry_get(texreg, paths, s->ceil_tex);
+			}
+		}
+	}
 
 	for (int x = 0; x < fb->width; x++) {
 		if (out_depth) {
@@ -277,6 +311,10 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 		float ray_rad = deg_to_rad(ray_deg);
 		float dx = cosf(ray_rad);
 		float dy = sinf(ray_rad);
+
+		// Fisheye correction term is needed even when no wall is hit (for floor/ceiling sampling).
+		float cam_rad = deg_to_rad(cam->angle_deg);
+		float corr = cosf(ray_rad - cam_rad);
 
 		float best_t = 1e30f;
 		int best_wall = -1;
@@ -296,73 +334,57 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 			}
 		}
 
-		if (best_wall < 0) {
-			continue;
-		}
-
-		// Fisheye correction
-		float cam_rad = deg_to_rad(cam->angle_deg);
-		float corr = cosf(ray_rad - cam_rad);
-		float dist = best_t * (corr > 0.001f ? corr : 0.001f);
-		if (out_depth) {
-			out_depth[x] = dist;
-		}
-
-		float wall_height = 1.0f;
-		int slice_h = (int)((wall_height * (float)fb->height) / (dist + 0.001f));
-		if (slice_h > fb->height * 4) {
-			slice_h = fb->height * 4;
-		}
-		int y0 = (fb->height - slice_h) / 2;
-		int y1 = y0 + slice_h;
-		int y0c = y0 < 0 ? 0 : y0;
-		int y1c = y1 > fb->height ? fb->height : y1;
-		if (y0c >= y1c) {
-			continue;
-		}
-
-		Wall w = world->walls[best_wall];
+		// If no wall is hit, still render floor/ceiling for the whole column.
+		float dist = 1e30f;
+		int y0c = (int)half_h;
+		int y1c = (int)half_h;
+		int y0 = y0c;
+		int slice_h = 1;
+		float hit_x = 0.0f;
+		float hit_y = 0.0f;
+		float u = 0.0f;
+		const Texture* tex = NULL;
 		uint32_t base = 0xFFB0B0B0u;
 		float wall_sector_intensity = 1.0f;
 		LightColor wall_sector_tint = light_color_white();
-		float plane_sector_intensity = 1.0f;
-		LightColor plane_sector_tint = light_color_white();
-		const Texture* floor_tex = NULL;
-		const Texture* ceil_tex = NULL;
-		int view_sector = wall_sector_for_point(world, &w, cam->x, cam->y);
-		if ((unsigned)view_sector < (unsigned)world->sector_count) {
-			const Sector* s = &world->sectors[view_sector];
-			wall_sector_intensity = s->light;
-			wall_sector_tint = s->light_color;
-		}
-		int plane_sector = cam_sector;
-		if ((unsigned)plane_sector >= (unsigned)world->sector_count) {
-			plane_sector = view_sector;
-		}
-		if ((unsigned)plane_sector < (unsigned)world->sector_count) {
-			const Sector* s = &world->sectors[plane_sector];
-			plane_sector_intensity = s->light;
-			plane_sector_tint = s->light_color;
-			if (texreg && paths) {
-				if (s->floor_tex[0] != '\0') {
-					floor_tex = texture_registry_get(texreg, paths, s->floor_tex);
-				}
-				if (s->ceil_tex[0] != '\0') {
-					ceil_tex = texture_registry_get(texreg, paths, s->ceil_tex);
-				}
+		if (best_wall >= 0) {
+			dist = best_t * (corr > 0.001f ? corr : 0.001f);
+			if (out_depth) {
+				out_depth[x] = dist;
 			}
-		}
 
-		// Compute hit u along segment
-		Vertex a = world->vertices[w.v0];
-		Vertex b = world->vertices[w.v1];
-		float hit_x = cam->x + dx * best_t;
-		float hit_y = cam->y + dy * best_t;
-		float u = segment_u(a.x, a.y, b.x, b.y, hit_x, hit_y);
+			float wall_height = 1.0f;
+			slice_h = (int)((wall_height * (float)fb->height) / (dist + 0.001f));
+			if (slice_h > fb->height * 4) {
+				slice_h = fb->height * 4;
+			}
+			y0 = (fb->height - slice_h) / 2;
+			int y1 = y0 + slice_h;
+			y0c = y0 < 0 ? 0 : y0;
+			y1c = y1 > fb->height ? fb->height : y1;
 
-		const Texture* tex = NULL;
-		if (texreg && paths) {
-			tex = texture_registry_get(texreg, paths, w.tex);
+			Wall w = world->walls[best_wall];
+			int view_sector = wall_sector_for_point(world, &w, cam->x, cam->y);
+			if ((unsigned)view_sector < (unsigned)world->sector_count) {
+				const Sector* s = &world->sectors[view_sector];
+				wall_sector_intensity = s->light;
+				wall_sector_tint = s->light_color;
+			}
+
+			// Compute hit u along segment
+			Vertex a = world->vertices[w.v0];
+			Vertex b = world->vertices[w.v1];
+			hit_x = cam->x + dx * best_t;
+			hit_y = cam->y + dy * best_t;
+			u = segment_u(a.x, a.y, b.x, b.y, hit_x, hit_y);
+
+			if (texreg && paths) {
+				tex = texture_registry_get(texreg, paths, w.tex);
+			}
+		} else {
+			if (out_depth) {
+				out_depth[x] = 1e30f;
+			}
 		}
 
 		// Ceiling (textured)
@@ -385,11 +407,13 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 		}
 
 		// Wall slice
-		for (int y = y0c; y < y1c; y++) {
-			float v = (float)(y - y0) / (float)(slice_h ? slice_h : 1);
-			uint32_t c = tex ? texture_sample_nearest(tex, u, v) : base;
-			c = lighting_apply(c, dist, wall_sector_intensity, wall_sector_tint, world->lights, world->light_count, hit_x, hit_y);
-			fb->pixels[y * fb->width + x] = c;
+		if (best_wall >= 0 && y0c < y1c) {
+			for (int y = y0c; y < y1c; y++) {
+				float v = (float)(y - y0) / (float)(slice_h ? slice_h : 1);
+				uint32_t c = tex ? texture_sample_nearest(tex, u, v) : base;
+				c = lighting_apply(c, dist, wall_sector_intensity, wall_sector_tint, world->lights, world->light_count, hit_x, hit_y);
+				fb->pixels[y * fb->width + x] = c;
+			}
 		}
 
 		// Floor (textured)
