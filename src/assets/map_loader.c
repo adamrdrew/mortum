@@ -7,6 +7,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
+
+static uint32_t hash_u32(uint32_t x) {
+	// SplitMix32
+	x += 0x9E3779B9u;
+	x = (x ^ (x >> 16)) * 0x85EBCA6Bu;
+	x = (x ^ (x >> 13)) * 0xC2B2AE35u;
+	return x ^ (x >> 16);
+}
 
 static bool json_get_float(const JsonDoc* doc, int tok, float* out) {
 	double d = 0.0;
@@ -33,6 +42,89 @@ static bool json_get_light_color(const JsonDoc* doc, int tok, LightColor* out) {
 	out->g = g;
 	out->b = b;
 	return true;
+}
+
+static bool hex_nibble(char c, uint8_t* out) {
+	if (c >= '0' && c <= '9') {
+		*out = (uint8_t)(c - '0');
+		return true;
+	}
+	if (c >= 'a' && c <= 'f') {
+		*out = (uint8_t)(10 + (c - 'a'));
+		return true;
+	}
+	if (c >= 'A' && c <= 'F') {
+		*out = (uint8_t)(10 + (c - 'A'));
+		return true;
+	}
+	return false;
+}
+
+static bool parse_hex_color_sv(StringView sv, LightColor* out) {
+	if (!out) {
+		return false;
+	}
+	// Accept "RRGGBB" or "#RRGGBB".
+	if (sv.len == 7 && sv.data[0] == '#') {
+		sv.data++;
+		sv.len--;
+	}
+	if (sv.len != 6) {
+		return false;
+	}
+	uint8_t n0=0,n1=0,n2=0,n3=0,n4=0,n5=0;
+	if (!hex_nibble(sv.data[0], &n0) || !hex_nibble(sv.data[1], &n1) ||
+		!hex_nibble(sv.data[2], &n2) || !hex_nibble(sv.data[3], &n3) ||
+		!hex_nibble(sv.data[4], &n4) || !hex_nibble(sv.data[5], &n5)) {
+		return false;
+	}
+	uint8_t r = (uint8_t)((n0 << 4) | n1);
+	uint8_t g = (uint8_t)((n2 << 4) | n3);
+	uint8_t b = (uint8_t)((n4 << 4) | n5);
+	out->r = (float)r / 255.0f;
+	out->g = (float)g / 255.0f;
+	out->b = (float)b / 255.0f;
+	return true;
+}
+
+static bool json_get_light_color_any(const JsonDoc* doc, int tok, LightColor* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out) {
+		return false;
+	}
+	if (json_token_is_string(doc, tok)) {
+		StringView sv;
+		if (!json_get_string(doc, tok, &sv)) {
+			return false;
+		}
+		return parse_hex_color_sv(sv, out);
+	}
+	return json_get_light_color(doc, tok, out);
+}
+
+static bool json_get_light_flicker(const JsonDoc* doc, int tok, LightFlicker* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out) {
+		return false;
+	}
+	if (!json_token_is_string(doc, tok)) {
+		return false;
+	}
+	StringView sv;
+	if (!json_get_string(doc, tok, &sv)) {
+		return false;
+	}
+	if (sv.len == 4 && strncmp(sv.data, "none", 4) == 0) {
+		*out = LIGHT_FLICKER_NONE;
+		return true;
+	}
+	if (sv.len == 5 && strncmp(sv.data, "flame", 5) == 0) {
+		*out = LIGHT_FLICKER_FLAME;
+		return true;
+	}
+	if (sv.len == 10 && strncmp(sv.data, "malfunction", 10) == 0) {
+		*out = LIGHT_FLICKER_MALFUNCTION;
+		return true;
+	}
+	return false;
 }
 
 static bool json_get_bool(const JsonDoc* doc, int tok, bool* out) {
@@ -270,23 +362,57 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 					map_load_result_destroy(out);
 					return false;
 				}
-				int tx=-1, ty=-1, tz=-1, tradius=-1, tintensity=-1, tcolor=-1;
-				if (!json_object_get(&doc, tl, "x", &tx) || !json_object_get(&doc, tl, "y", &ty) || !json_object_get(&doc, tl, "radius", &tradius) || !json_object_get(&doc, tl, "intensity", &tintensity)) {
-					log_error("light %d missing required fields", i);
+				int tx=-1, ty=-1, tz=-1, tradius=-1;
+				int tbrightness=-1, tintensity=-1;
+				int tcolor=-1, tflicker=-1, tseed=-1;
+				if (!json_object_get(&doc, tl, "x", &tx) || !json_object_get(&doc, tl, "y", &ty) || !json_object_get(&doc, tl, "radius", &tradius)) {
+					log_error("light %d missing required fields (x,y,radius)", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				(void)json_object_get(&doc, tl, "brightness", &tbrightness);
+				(void)json_object_get(&doc, tl, "intensity", &tintensity);
+				if (tbrightness == -1 && tintensity == -1) {
+					log_error("light %d missing required field (brightness)", i);
 					json_doc_destroy(&doc);
 					map_load_result_destroy(out);
 					return false;
 				}
 				(void)json_object_get(&doc, tl, "z", &tz);
 				(void)json_object_get(&doc, tl, "color", &tcolor);
+				(void)json_object_get(&doc, tl, "flicker", &tflicker);
+				(void)json_object_get(&doc, tl, "seed", &tseed);
 
 				float x=0, y=0, z=0, radius=0, intensity=0;
-				if (!json_get_float(&doc, tx, &x) || !json_get_float(&doc, ty, &y) || !json_get_float(&doc, tradius, &radius) || !json_get_float(&doc, tintensity, &intensity)) {
+				if (!json_get_float(&doc, tx, &x) || !json_get_float(&doc, ty, &y) || !json_get_float(&doc, tradius, &radius)) {
 					log_error("light %d fields invalid", i);
 					json_doc_destroy(&doc);
 					map_load_result_destroy(out);
 					return false;
 				}
+				if (tbrightness != -1) {
+					if (!json_get_float(&doc, tbrightness, &intensity)) {
+						log_error("light %d brightness invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				} else {
+					if (!json_get_float(&doc, tintensity, &intensity)) {
+						log_error("light %d intensity invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				}
+				if (intensity < 0.0f) {
+					intensity = 0.0f;
+				}
+				if (radius < 0.0f) {
+					radius = 0.0f;
+				}
+
 				if (tz != -1) {
 					if (!json_get_float(&doc, tz, &z)) {
 						log_error("light %d z invalid", i);
@@ -297,12 +423,40 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 				}
 				LightColor lc = light_color_white();
 				if (tcolor != -1) {
-					if (!json_get_light_color(&doc, tcolor, &lc)) {
-						log_error("light %d color invalid", i);
+					if (!json_get_light_color_any(&doc, tcolor, &lc)) {
+						log_error("light %d color invalid (expected hex string like \"EE0000\" or {r,g,b})", i);
 						json_doc_destroy(&doc);
 						map_load_result_destroy(out);
 						return false;
 					}
+				}
+
+				LightFlicker flicker = LIGHT_FLICKER_NONE;
+				if (tflicker != -1) {
+					if (!json_get_light_flicker(&doc, tflicker, &flicker)) {
+						log_error("light %d flicker invalid (none|flame|malfunction)", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				}
+
+				uint32_t seed = 0u;
+				if (tseed != -1) {
+					int s = 0;
+					if (!json_get_int(&doc, tseed, &s)) {
+						log_error("light %d seed invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					seed = (uint32_t)s;
+				} else {
+					// Derive a stable-ish seed from authored properties to avoid sync.
+					uint32_t hx = (uint32_t)lroundf(x * 1024.0f);
+					uint32_t hy = (uint32_t)lroundf(y * 1024.0f);
+					uint32_t hr = (uint32_t)lroundf(radius * 256.0f);
+					seed = hash_u32((uint32_t)i ^ (hx * 0x9E3779B1u) ^ (hy * 0x85EBCA77u) ^ (hr * 0xC2B2AE3Du));
 				}
 
 				out->world.lights[i].x = x;
@@ -311,6 +465,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 				out->world.lights[i].radius = radius;
 				out->world.lights[i].intensity = intensity;
 				out->world.lights[i].color = lc;
+				out->world.lights[i].flicker = flicker;
+				out->world.lights[i].seed = seed;
 			}
 		}
 	}

@@ -12,6 +12,133 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define MAX_VISIBLE_LIGHTS 96
+
+static float deg_to_rad(float deg);
+
+static uint32_t hash_u32(uint32_t x) {
+	// SplitMix32
+	x += 0x9E3779B9u;
+	x = (x ^ (x >> 16)) * 0x85EBCA6Bu;
+	x = (x ^ (x >> 13)) * 0xC2B2AE35u;
+	return x ^ (x >> 16);
+}
+
+static float rand01(uint32_t seed) {
+	uint32_t x = hash_u32(seed);
+	return (float)(x & 0x00FFFFFFu) / (float)0x01000000u;
+}
+
+static float smoothstep(float t) {
+	if (t < 0.0f) {
+		return 0.0f;
+	}
+	if (t > 1.0f) {
+		return 1.0f;
+	}
+	return t * t * (3.0f - 2.0f * t);
+}
+
+static float flicker_factor_flame(uint32_t seed, float time_s) {
+	// Smooth value-noise: ~8 Hz.
+	const float freq = 8.0f;
+	float t = time_s * freq;
+	float ti = floorf(t);
+	float tf = t - ti;
+	uint32_t step = (uint32_t)ti;
+	float a = rand01(seed ^ (step * 0xA511E9B3u));
+	float b = rand01(seed ^ ((step + 1u) * 0xA511E9B3u));
+	float n = a + (b - a) * smoothstep(tf);
+	// Bias bright with occasional dips.
+	return 0.65f + 0.45f * (n * n);
+}
+
+static float flicker_factor_malfunction(uint32_t seed, float time_s) {
+	// Abrupt spurts: mostly on, occasional off/strobe.
+	const float freq = 22.0f;
+	float t = time_s * freq;
+	float ti = floorf(t);
+	float tf = t - ti;
+	uint32_t step = (uint32_t)ti;
+	float r = rand01(seed ^ (step * 0xD1B54A35u));
+	if (r < 0.06f) {
+		return 0.0f;
+	}
+	if (r < 0.10f) {
+		float s = rand01(seed ^ (step * 0x94D049BBu));
+		float hz = 8.0f + 24.0f * s;
+		float p = sinf(tf * (float)M_PI * 2.0f * hz);
+		return (p > 0.0f) ? 1.0f : 0.0f;
+	}
+	return 0.90f + 0.10f * rand01(seed ^ (step * 0x9E3779B9u));
+}
+
+static int build_visible_lights(
+	PointLight* out,
+	int out_cap,
+	const World* world,
+	const Camera* cam,
+	float time_s
+) {
+	if (!out || out_cap <= 0 || !world || !cam || !world->lights || world->light_count <= 0) {
+		return 0;
+	}
+
+	float cam_rad = deg_to_rad(cam->angle_deg);
+	float fwdx = cosf(cam_rad);
+	float fwdy = sinf(cam_rad);
+	float fov_half = 0.5f * deg_to_rad(cam->fov_deg);
+	float margin = deg_to_rad(12.0f);
+	float cos_min = cosf(fov_half + margin);
+
+	int n = 0;
+	for (int i = 0; i < world->light_count && n < out_cap; i++) {
+		const PointLight* L = &world->lights[i];
+		if (L->radius <= 0.0f || L->intensity <= 0.0f) {
+			continue;
+		}
+		float vx = L->x - cam->x;
+		float vy = L->y - cam->y;
+		float d2 = vx * vx + vy * vy;
+		float max_dist = 32.0f + L->radius;
+		if (d2 > max_dist * max_dist) {
+			continue;
+		}
+		float d = sqrtf(d2);
+		float cos_ang = 1.0f;
+		if (d > 1e-5f) {
+			cos_ang = (vx * fwdx + vy * fwdy) / d;
+		}
+		if (!(cos_ang >= cos_min || d <= L->radius)) {
+			continue;
+		}
+
+		PointLight tmp = *L;
+		uint32_t seed = tmp.seed ? tmp.seed : (uint32_t)i;
+		float f = 1.0f;
+		switch (tmp.flicker) {
+			case LIGHT_FLICKER_NONE:
+				f = 1.0f;
+				break;
+			case LIGHT_FLICKER_FLAME:
+				f = flicker_factor_flame(seed, time_s);
+				break;
+			case LIGHT_FLICKER_MALFUNCTION:
+				f = flicker_factor_malfunction(seed, time_s);
+				break;
+			default:
+				f = 1.0f;
+				break;
+		}
+		if (f < 0.0f) {
+			f = 0.0f;
+		}
+		tmp.intensity *= f;
+		out[n++] = tmp;
+	}
+	return n;
+}
+
 static void raycast_perf_reset(RaycastPerf* p) {
 	if (!p) {
 		return;
@@ -156,6 +283,9 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 	int plane_sector = raycast_find_sector_at_point_stable(world, cam->x, cam->y);
 	float cam_z = camera_z_for_sector(world, plane_sector, cam->z);
 
+	PointLight vis_lights[MAX_VISIBLE_LIGHTS];
+	int vis_count = build_visible_lights(vis_lights, MAX_VISIBLE_LIGHTS, world, cam, (float)platform_time_seconds());
+
 	for (int x = 0; x < fb->width; x++) {
 		float lerp = (float)x * inv_w;
 		float ray_deg = angle0 + lerp * cam->fov_deg;
@@ -218,7 +348,7 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 		}
 		float hit_x = cam->x + dx * best_t;
 		float hit_y = cam->y + dy * best_t;
-		uint32_t c = lighting_apply(base, dist, sector_intensity, sector_tint, world->lights, world->light_count, hit_x, hit_y);
+		uint32_t c = lighting_apply(base, dist, sector_intensity, sector_tint, vis_lights, vis_count, hit_x, hit_y);
 
 		for (int y = y_top; y < y_bot; y++) {
 			fb->pixels[y * fb->width + x] = c;
@@ -663,6 +793,8 @@ static void render_column_textured_recursive(
 	TextureRegistry* texreg,
 	const AssetPaths* paths,
 	const Texture* sky_tex,
+	const PointLight* lights,
+	int light_count,
 	int x,
 	float half_h,
 	float proj_dist,
@@ -753,8 +885,8 @@ static void render_column_textured_recursive(
 			(ceil_is_sky ? sky_tex : NULL),
 			sector_intensity,
 			sector_tint,
-			world->lights,
-			world->light_count,
+			lights,
+			light_count,
 			perf
 		);
 		if (perf) {
@@ -790,8 +922,8 @@ static void render_column_textured_recursive(
 		da,
 		sector_intensity,
 		sector_tint,
-		world->lights,
-		world->light_count,
+		lights,
+		light_count,
 		a.x,
 		a.y
 	);
@@ -799,8 +931,8 @@ static void render_column_textured_recursive(
 		db,
 		sector_intensity,
 		sector_tint,
-		world->lights,
-		world->light_count,
+		lights,
+		light_count,
 		b.x,
 		b.y
 	);
@@ -868,8 +1000,8 @@ static void render_column_textured_recursive(
 					(ceil_is_sky ? sky_tex : NULL),
 					sector_intensity,
 					sector_tint,
-					world->lights,
-					world->light_count,
+					lights,
+					light_count,
 					perf
 				);
 			}
@@ -894,8 +1026,8 @@ static void render_column_textured_recursive(
 					(ceil_is_sky ? sky_tex : NULL),
 					sector_intensity,
 					sector_tint,
-					world->lights,
-					world->light_count,
+					lights,
+					light_count,
 					perf
 				);
 			}
@@ -920,8 +1052,8 @@ static void render_column_textured_recursive(
 				(ceil_is_sky ? sky_tex : NULL),
 				sector_intensity,
 				sector_tint,
-				world->lights,
-				world->light_count,
+				lights,
+				light_count,
 				perf
 			);
 		}
@@ -995,6 +1127,8 @@ static void render_column_textured_recursive(
 			texreg,
 			paths,
 			sky_tex,
+			lights,
+			light_count,
 			x,
 			half_h,
 			proj_dist,
@@ -1039,8 +1173,8 @@ static void render_column_textured_recursive(
 				(ceil_is_sky ? sky_tex : NULL),
 				sector_intensity,
 				sector_tint,
-				world->lights,
-				world->light_count,
+				lights,
+				light_count,
 				perf
 			);
 		}
@@ -1065,8 +1199,8 @@ static void render_column_textured_recursive(
 				(ceil_is_sky ? sky_tex : NULL),
 				sector_intensity,
 				sector_tint,
-				world->lights,
-				world->light_count,
+				lights,
+				light_count,
 				perf
 			);
 		}
@@ -1091,8 +1225,8 @@ static void render_column_textured_recursive(
 			(ceil_is_sky ? sky_tex : NULL),
 			sector_intensity,
 			sector_tint,
-			world->lights,
-			world->light_count,
+			lights,
+			light_count,
 			perf
 		);
 	}
@@ -1226,6 +1360,9 @@ static void raycast_render_textured_from_sector_internal(
 		sky_tex = texture_registry_get(texreg, paths, sky_filename);
 	}
 
+	PointLight vis_lights[MAX_VISIBLE_LIGHTS];
+	int vis_count = build_visible_lights(vis_lights, MAX_VISIBLE_LIGHTS, world, cam, (float)platform_time_seconds());
+
 	for (int x = 0; x < fb->width; x++) {
 		if (out_depth) {
 			out_depth[x] = 1e30f;
@@ -1244,6 +1381,8 @@ static void raycast_render_textured_from_sector_internal(
 			texreg,
 			paths,
 			sky_tex,
+			vis_lights,
+			vis_count,
 			x,
 			half_h,
 			proj_dist,

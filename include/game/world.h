@@ -60,6 +60,7 @@ typedef struct World {
 	int sector_wall_index_count;
 	PointLight* lights; // owned
 	int light_count;
+	int light_capacity;
 } World;
 
 void world_init_empty(World* self);
@@ -69,6 +70,13 @@ bool world_alloc_vertices(World* self, int count);
 bool world_alloc_sectors(World* self, int count);
 bool world_alloc_walls(World* self, int count);
 bool world_alloc_lights(World* self, int count);
+
+// Programmatic light emitters (runtime).
+// Returns light index on success, or -1 on failure.
+int world_light_spawn(World* self, PointLight light);
+bool world_light_remove(World* self, int light_index);
+bool world_light_set_pos(World* self, int light_index, float x, float y, float z);
+bool world_light_set_intensity(World* self, int light_index, float intensity);
 
 // Build a per-sector wall index (acceleration structure).
 // Safe to call multiple times; frees/rebuilds any existing index.

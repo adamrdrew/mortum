@@ -473,6 +473,26 @@ bool map_validate(const World* world, float player_start_x, float player_start_y
 		}
 	}
 
+	// Optional: validate authored point lights (emitters).
+	if (world->lights && world->light_count > 0) {
+		for (int i = 0; i < world->light_count; i++) {
+			const PointLight* L = &world->lights[i];
+			if (L->radius < 0.0f) {
+				log_error("light %d radius < 0", i);
+				return false;
+			}
+			if (L->intensity < 0.0f) {
+				log_error("light %d brightness/intensity < 0", i);
+				return false;
+			}
+			// Authoring sanity: warn if light is outside the map.
+			int s = world_find_sector_at_point(world, L->x, L->y);
+			if (s < 0) {
+				log_warn("light %d at (%.3f, %.3f) is not inside any sector", i, L->x, L->y);
+			}
+		}
+	}
+
 	// Contiguity: all sectors reachable from player_start through portals.
 	int start_sector = map_validate_find_sector_at_point(world, player_start_x, player_start_y);
 	if (start_sector < 0) {

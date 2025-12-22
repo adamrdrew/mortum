@@ -17,13 +17,22 @@ typedef struct LightColor {
 	float b;
 } LightColor;
 
+typedef enum LightFlicker {
+	LIGHT_FLICKER_NONE = 0,
+	LIGHT_FLICKER_FLAME = 1,
+	LIGHT_FLICKER_MALFUNCTION = 2,
+} LightFlicker;
+
 typedef struct PointLight {
 	float x;
 	float y;
 	float z;
 	float radius;
+	// Base brightness/intensity in [0,+inf). Runtime flicker is applied at render time.
 	float intensity;
 	LightColor color;
+	LightFlicker flicker;
+	uint32_t seed;
 } PointLight;
 
 LightColor light_color_white(void);

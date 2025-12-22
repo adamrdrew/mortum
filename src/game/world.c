@@ -142,15 +142,102 @@ bool world_build_sector_wall_index(World* self) {
 }
 
 bool world_alloc_lights(World* self, int count) {
+	if (!self) {
+		return false;
+	}
+	free(self->lights);
+	self->lights = NULL;
+	self->light_count = 0;
+	self->light_capacity = 0;
+
+	if (count <= 0) {
+		return true;
+	}
 	self->lights = (PointLight*)calloc((size_t)count, sizeof(PointLight));
 	if (!self->lights) {
 		self->light_count = 0;
+		self->light_capacity = 0;
 		return false;
 	}
 	self->light_count = count;
+	self->light_capacity = count;
 	for (int i = 0; i < count; i++) {
 		self->lights[i].color = light_color_white();
+		self->lights[i].flicker = LIGHT_FLICKER_NONE;
+		self->lights[i].seed = 0u;
 	}
+	return true;
+}
+
+static bool world_lights_reserve(World* self, int want_capacity) {
+	if (!self) {
+		return false;
+	}
+	if (want_capacity <= self->light_capacity) {
+		return true;
+	}
+	int new_cap = self->light_capacity > 0 ? self->light_capacity : 8;
+	while (new_cap < want_capacity) {
+		new_cap *= 2;
+		if (new_cap < 0) {
+			return false;
+		}
+	}
+	PointLight* p = (PointLight*)realloc(self->lights, (size_t)new_cap * sizeof(PointLight));
+	if (!p) {
+		return false;
+	}
+	// Zero-init the new tail.
+	if (new_cap > self->light_capacity) {
+		size_t old_bytes = (size_t)self->light_capacity * sizeof(PointLight);
+		size_t new_bytes = (size_t)new_cap * sizeof(PointLight);
+		memset((uint8_t*)p + old_bytes, 0, new_bytes - old_bytes);
+	}
+	self->lights = p;
+	self->light_capacity = new_cap;
+	return true;
+}
+
+int world_light_spawn(World* self, PointLight light) {
+	if (!self) {
+		return -1;
+	}
+	if (!world_lights_reserve(self, self->light_count + 1)) {
+		return -1;
+	}
+	int idx = self->light_count++;
+	self->lights[idx] = light;
+	return idx;
+}
+
+bool world_light_remove(World* self, int light_index) {
+	if (!self || light_index < 0 || light_index >= self->light_count) {
+		return false;
+	}
+	int last = self->light_count - 1;
+	if (light_index != last) {
+		self->lights[light_index] = self->lights[last];
+	}
+	memset(&self->lights[last], 0, sizeof(self->lights[last]));
+	self->light_count--;
+	return true;
+}
+
+bool world_light_set_pos(World* self, int light_index, float x, float y, float z) {
+	if (!self || light_index < 0 || light_index >= self->light_count) {
+		return false;
+	}
+	self->lights[light_index].x = x;
+	self->lights[light_index].y = y;
+	self->lights[light_index].z = z;
+	return true;
+}
+
+bool world_light_set_intensity(World* self, int light_index, float intensity) {
+	if (!self || light_index < 0 || light_index >= self->light_count) {
+		return false;
+	}
+	self->lights[light_index].intensity = intensity;
 	return true;
 }
 
