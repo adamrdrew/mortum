@@ -6,6 +6,26 @@
 
 #include "render/texture.h"
 
+typedef struct RaycastPerf {
+	// Time spent inside raycaster (ms). Note: planes/walls timings include texture sampling + lighting.
+	double planes_ms;
+	double hit_test_ms;
+	double walls_ms;
+
+	// Texture registry work.
+	double tex_lookup_ms;
+	uint32_t texture_get_calls;
+	uint32_t registry_string_compares;
+
+	// Counters to help explain where time goes.
+	uint32_t portal_calls;
+	uint32_t portal_max_depth;
+	uint32_t wall_ray_tests; // number of ray/segment tests performed
+	uint32_t pixels_floor;
+	uint32_t pixels_ceil;
+	uint32_t pixels_wall;
+} RaycastPerf;
+
 // Untextured baseline raycast renderer.
 void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera* cam);
 
@@ -35,4 +55,17 @@ void raycast_render_textured_from_sector(
 	const char* sky_filename,
 	float* out_depth,
 	int start_sector
+);
+
+// Profiled version: fills `out_perf` when non-NULL.
+void raycast_render_textured_from_sector_profiled(
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const char* sky_filename,
+	float* out_depth,
+	int start_sector,
+	RaycastPerf* out_perf
 );

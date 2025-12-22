@@ -3,12 +3,21 @@
 #include "render/draw.h"
 #include "render/lighting.h"
 
+#include "platform/time.h"
+
 #include "game/world.h"
 
 #include <math.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+static void raycast_perf_reset(RaycastPerf* p) {
+	if (!p) {
+		return;
+	}
+	memset(p, 0, sizeof(*p));
+}
 
 static float deg_to_rad(float deg) {
 	return deg * (float)M_PI / 180.0f;
@@ -227,7 +236,8 @@ static int find_nearest_wall_hit_in_sector(
 	float dy,
 	float t_min,
 	int ignore_wall_index,
-	float* out_t
+	float* out_t,
+	RaycastPerf* perf
 ) {
 	if (!world || (unsigned)sector >= (unsigned)world->sector_count || !out_t) {
 		return -1;
@@ -252,6 +262,9 @@ static int find_nearest_wall_hit_in_sector(
 		Vertex a = world->vertices[w->v0];
 		Vertex b = world->vertices[w->v1];
 		float t = 0.0f;
+		if (perf) {
+			perf->wall_ray_tests++;
+		}
 		if (ray_segment_hit(ox, oy, dx, dy, a.x, a.y, b.x, b.y, &t)) {
 			if (t > t_min && t < best_t) {
 				best_t = t;
@@ -292,7 +305,8 @@ static void draw_sector_ceiling_column(
 	float sector_intensity,
 	LightColor sector_tint,
 	const PointLight* lights,
-	int light_count
+	int light_count,
+	RaycastPerf* perf
 ) {
 	if (!fb || x < 0 || x >= fb->width) {
 		return;
@@ -305,6 +319,9 @@ static void draw_sector_ceiling_column(
 	}
 	if (y_top >= y_bot) {
 		return;
+	}
+	if (perf) {
+		perf->pixels_ceil += (uint32_t)(y_bot - y_top);
 	}
 
 	// Skybox: cylindrical mapping, no perspective floor-plane math.
@@ -374,7 +391,8 @@ static void draw_sector_floor_column(
 	float sector_intensity,
 	LightColor sector_tint,
 	const PointLight* lights,
-	int light_count
+	int light_count,
+	RaycastPerf* perf
 ) {
 	if (!fb || x < 0 || x >= fb->width) {
 		return;
@@ -387,6 +405,9 @@ static void draw_sector_floor_column(
 	}
 	if (y_top >= y_bot) {
 		return;
+	}
+	if (perf) {
+		perf->pixels_floor += (uint32_t)(y_bot - y_top);
 	}
 
 	float corr_safe = corr > 0.001f ? corr : 0.001f;
@@ -436,7 +457,8 @@ static void render_wall_span_textured(
 	const PointLight* lights,
 	int light_count,
 	float hit_x,
-	float hit_y
+	float hit_y,
+	RaycastPerf* perf
 ) {
 	if (!fb || x < 0 || x >= fb->width) {
 		return;
@@ -455,6 +477,9 @@ static void render_wall_span_textured(
 	}
 	if (y_top >= y_bot) {
 		return;
+	}
+	if (perf) {
+		perf->pixels_wall += (uint32_t)(y_bot - y_top);
 	}
 	float z_span = z_top - z_bot;
 	if (fabsf(z_span) < 1e-6f) {
@@ -493,13 +518,20 @@ static void render_column_textured_recursive(
 	float t_min,
 	int ignore_wall,
 	int depth,
-	float* out_depth
+	float* out_depth,
+	RaycastPerf* perf
 ) {
 	if (!fb || !world || !cam) {
 		return;
 	}
 	if (depth > 8) {
 		return;
+	}
+	if (perf) {
+		perf->portal_calls++;
+		if ((uint32_t)depth > perf->portal_max_depth) {
+			perf->portal_max_depth = (uint32_t)depth;
+		}
 	}
 	if ((unsigned)sector >= (unsigned)world->sector_count) {
 		return;
@@ -530,6 +562,10 @@ static void render_column_textured_recursive(
 	}
 
 	// Fill planes for this sector first; portals will overwrite the open span.
+	double planes_t0 = 0.0;
+	if (perf) {
+		planes_t0 = platform_time_seconds();
+	}
 	draw_sector_ceiling_column(
 		fb,
 		x,
@@ -549,7 +585,8 @@ static void render_column_textured_recursive(
 		sector_intensity,
 		sector_tint,
 		world->lights,
-		world->light_count
+		world->light_count,
+		perf
 	);
 	draw_sector_floor_column(
 		fb,
@@ -569,11 +606,22 @@ static void render_column_textured_recursive(
 		sector_intensity,
 		sector_tint,
 		world->lights,
-		world->light_count
+		world->light_count,
+		perf
 	);
+	if (perf) {
+		perf->planes_ms += (platform_time_seconds() - planes_t0) * 1000.0;
+	}
 
 	float hit_t = 0.0f;
-	int hit_wall = find_nearest_wall_hit_in_sector(world, sector, cam->x, cam->y, ray_dx, ray_dy, t_min, ignore_wall, &hit_t);
+	double hit_t0 = 0.0;
+	if (perf) {
+		hit_t0 = platform_time_seconds();
+	}
+	int hit_wall = find_nearest_wall_hit_in_sector(world, sector, cam->x, cam->y, ray_dx, ray_dy, t_min, ignore_wall, &hit_t, perf);
+	if (perf) {
+		perf->hit_test_ms += (platform_time_seconds() - hit_t0) * 1000.0;
+	}
 	if (hit_wall < 0) {
 		return;
 	}
@@ -609,6 +657,10 @@ static void render_column_textured_recursive(
 
 	// Solid wall
 	if ((unsigned)other >= (unsigned)world->sector_count) {
+		double walls_t0 = 0.0;
+		if (perf) {
+			walls_t0 = platform_time_seconds();
+		}
 		int y_top = project_y(half_h, proj_dist, cam_z, s->ceil_z, dist);
 		int y_bot = project_y(half_h, proj_dist, cam_z, s->floor_z, dist);
 		render_wall_span_textured(
@@ -632,8 +684,12 @@ static void render_column_textured_recursive(
 			world->lights,
 			world->light_count,
 			hit_x,
-			hit_y
+			hit_y,
+			perf
 		);
+		if (perf) {
+			perf->walls_ms += (platform_time_seconds() - walls_t0) * 1000.0;
+		}
 		return;
 	}
 
@@ -643,6 +699,10 @@ static void render_column_textured_recursive(
 
 	// Upper piece (if other ceiling is lower). If both ceilings are sky, don't draw.
 	if (!((ceil_is_sky && other_ceil_is_sky)) && so->ceil_z < s->ceil_z - 1e-4f) {
+		double walls_t0 = 0.0;
+		if (perf) {
+			walls_t0 = platform_time_seconds();
+		}
 		int y_top = project_y(half_h, proj_dist, cam_z, s->ceil_z, dist);
 		int y_bot = project_y(half_h, proj_dist, cam_z, so->ceil_z, dist);
 		render_wall_span_textured(
@@ -666,12 +726,20 @@ static void render_column_textured_recursive(
 			world->lights,
 			world->light_count,
 			hit_x,
-			hit_y
+			hit_y,
+			perf
 		);
+		if (perf) {
+			perf->walls_ms += (platform_time_seconds() - walls_t0) * 1000.0;
+		}
 	}
 
 	// Lower piece (if other floor is higher)
 	if (so->floor_z > s->floor_z + 1e-4f) {
+		double walls_t0 = 0.0;
+		if (perf) {
+			walls_t0 = platform_time_seconds();
+		}
 		int y_top = project_y(half_h, proj_dist, cam_z, so->floor_z, dist);
 		int y_bot = project_y(half_h, proj_dist, cam_z, s->floor_z, dist);
 		render_wall_span_textured(
@@ -695,8 +763,12 @@ static void render_column_textured_recursive(
 			world->lights,
 			world->light_count,
 			hit_x,
-			hit_y
+			hit_y,
+			perf
 		);
+		if (perf) {
+			perf->walls_ms += (platform_time_seconds() - walls_t0) * 1000.0;
+		}
 	}
 
 	float z_open_top = s->ceil_z < so->ceil_z ? s->ceil_z : so->ceil_z;
@@ -739,25 +811,15 @@ static void render_column_textured_recursive(
 				hit_t + 1e-4f,
 				hit_wall,
 				depth + 1,
-				out_depth
+					out_depth,
+					perf
 			);
 		}
 	}
 }
 
-void raycast_render_textured(
-	Framebuffer* fb,
-	const World* world,
-	const Camera* cam,
-	TextureRegistry* texreg,
-	const AssetPaths* paths,
-	const char* sky_filename,
-	float* out_depth
-) {
-	raycast_render_textured_from_sector(fb, world, cam, texreg, paths, sky_filename, out_depth, -1);
-}
 
-void raycast_render_textured_from_sector(
+static void raycast_render_textured_from_sector_internal(
 	Framebuffer* fb,
 	const World* world,
 	const Camera* cam,
@@ -765,8 +827,15 @@ void raycast_render_textured_from_sector(
 	const AssetPaths* paths,
 	const char* sky_filename,
 	float* out_depth,
-	int start_sector
+	int start_sector,
+	RaycastPerf* out_perf
 ) {
+	TextureRegistryPerf texperf;
+	if (out_perf) {
+		raycast_perf_reset(out_perf);
+		texture_registry_perf_begin(&texperf);
+	}
+
 	// Background: sky (floor/ceiling are drawn per column based on ray hit sector)
 	draw_clear(fb, 0xFF0B0E14u);
 
@@ -775,6 +844,12 @@ void raycast_render_textured_from_sector(
 			for (int x = 0; x < fb->width; x++) {
 				out_depth[x] = 1e30f;
 			}
+		}
+		if (out_perf) {
+			out_perf->tex_lookup_ms = texperf.get_ms;
+			out_perf->texture_get_calls = texperf.get_calls;
+			out_perf->registry_string_compares = texperf.registry_string_compares;
+			texture_registry_perf_end();
 		}
 		return;
 	}
@@ -829,7 +904,53 @@ void raycast_render_textured_from_sector(
 			0.0f,
 			-1,
 			0,
-			out_depth
+			out_depth,
+			out_perf
 		);
 	}
+
+	if (out_perf) {
+		out_perf->tex_lookup_ms = texperf.get_ms;
+		out_perf->texture_get_calls = texperf.get_calls;
+		out_perf->registry_string_compares = texperf.registry_string_compares;
+		texture_registry_perf_end();
+	}
+}
+void raycast_render_textured(
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const char* sky_filename,
+	float* out_depth
+) {
+	raycast_render_textured_from_sector(fb, world, cam, texreg, paths, sky_filename, out_depth, -1);
+}
+
+void raycast_render_textured_from_sector(
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const char* sky_filename,
+	float* out_depth,
+	int start_sector
+) {
+	raycast_render_textured_from_sector_internal(fb, world, cam, texreg, paths, sky_filename, out_depth, start_sector, NULL);
+}
+
+void raycast_render_textured_from_sector_profiled(
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const char* sky_filename,
+	float* out_depth,
+	int start_sector,
+	RaycastPerf* out_perf
+) {
+	raycast_render_textured_from_sector_internal(fb, world, cam, texreg, paths, sky_filename, out_depth, start_sector, out_perf);
 }

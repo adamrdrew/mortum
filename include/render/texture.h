@@ -18,6 +18,17 @@ typedef struct TextureRegistry {
 	int capacity;
 } TextureRegistry;
 
+// Optional perf counters for profiling. Only active when explicitly enabled.
+typedef struct TextureRegistryPerf {
+	uint32_t get_calls;
+	uint32_t registry_string_compares;
+	double get_ms;
+} TextureRegistryPerf;
+
+// Enable perf capture for texture lookups. Passing NULL disables.
+void texture_registry_perf_begin(TextureRegistryPerf* perf);
+void texture_registry_perf_end(void);
+
 void texture_registry_init(TextureRegistry* self);
 void texture_registry_destroy(TextureRegistry* self);
 

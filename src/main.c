@@ -434,10 +434,23 @@ int main(int argc, char** argv) {
 		if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
 			start_sector = player.body.sector;
 		}
+		RaycastPerf rc_perf;
+		RaycastPerf* rc_perf_ptr = NULL;
 		if (perf_trace_is_active(&perf)) {
 			render3d_t0 = platform_time_seconds();
+			rc_perf_ptr = &rc_perf;
 		}
-		raycast_render_textured_from_sector(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, map_ok ? map.sky : NULL, wall_depth, start_sector);
+		raycast_render_textured_from_sector_profiled(
+			&fb,
+			map_ok ? &map.world : NULL,
+			&cam,
+			&texreg,
+			&paths,
+			map_ok ? map.sky : NULL,
+			wall_depth,
+			start_sector,
+			rc_perf_ptr
+		);
 		if (perf_trace_is_active(&perf)) {
 			render3d_t1 = platform_time_seconds();
 			ui_t0 = render3d_t1;
@@ -475,6 +488,18 @@ int main(int argc, char** argv) {
 			pf.ui_ms = (ui_t1 - ui_t0) * 1000.0;
 			pf.present_ms = (present_t1 - present_t0) * 1000.0;
 			pf.steps = steps;
+			pf.rc_planes_ms = rc_perf.planes_ms;
+			pf.rc_hit_test_ms = rc_perf.hit_test_ms;
+			pf.rc_walls_ms = rc_perf.walls_ms;
+			pf.rc_tex_lookup_ms = rc_perf.tex_lookup_ms;
+			pf.rc_texture_get_calls = (int)rc_perf.texture_get_calls;
+			pf.rc_registry_compares = (int)rc_perf.registry_string_compares;
+			pf.rc_portal_calls = (int)rc_perf.portal_calls;
+			pf.rc_portal_max_depth = (int)rc_perf.portal_max_depth;
+			pf.rc_wall_ray_tests = (int)rc_perf.wall_ray_tests;
+			pf.rc_pixels_floor = (int)rc_perf.pixels_floor;
+			pf.rc_pixels_ceil = (int)rc_perf.pixels_ceil;
+			pf.rc_pixels_wall = (int)rc_perf.pixels_wall;
 			perf_trace_record_frame(&perf, &pf, stdout);
 		}
 

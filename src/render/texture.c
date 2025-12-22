@@ -4,10 +4,27 @@
 
 #include "core/log.h"
 
+#include "platform/time.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static TextureRegistryPerf* g_perf = NULL;
+
+void texture_registry_perf_begin(TextureRegistryPerf* perf) {
+	g_perf = perf;
+	if (g_perf) {
+		g_perf->get_calls = 0;
+		g_perf->registry_string_compares = 0;
+		g_perf->get_ms = 0.0;
+	}
+}
+
+void texture_registry_perf_end(void) {
+	g_perf = NULL;
+}
 
 static bool file_exists(const char* path) {
 	if (!path || path[0] == '\0') {
@@ -59,6 +76,9 @@ void texture_registry_destroy(TextureRegistry* self) {
 
 static Texture* registry_find(TextureRegistry* self, const char* filename) {
 	for (int i = 0; i < self->count; i++) {
+		if (g_perf) {
+			g_perf->registry_string_compares++;
+		}
 		if (strncmp(self->items[i].name, filename, sizeof(self->items[i].name)) == 0) {
 			return &self->items[i];
 		}
@@ -82,13 +102,24 @@ static Texture* registry_push(TextureRegistry* self) {
 }
 
 const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* paths, const char* filename) {
+	double t0 = 0.0;
+	if (g_perf) {
+		g_perf->get_calls++;
+		t0 = platform_time_seconds();
+	}
 	if (!self || !paths || !filename || filename[0] == '\0') {
+		if (g_perf) {
+			g_perf->get_ms += (platform_time_seconds() - t0) * 1000.0;
+		}
 		return NULL;
 	}
 
 	Texture* existing = registry_find(self, filename);
 	if (existing) {
 		// Cache negative lookups as entries with NULL pixels.
+		if (g_perf) {
+			g_perf->get_ms += (platform_time_seconds() - t0) * 1000.0;
+		}
 		return existing->pixels ? existing : NULL;
 	}
 
@@ -134,6 +165,9 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 		free(preferred);
 		free(sky);
 		free(fallback);
+		if (g_perf) {
+			g_perf->get_ms += (platform_time_seconds() - t0) * 1000.0;
+		}
 		return NULL;
 	}
 
@@ -144,6 +178,9 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 	Texture* t = registry_push(self);
 	if (!t) {
 		image_destroy(&img);
+		if (g_perf) {
+			g_perf->get_ms += (platform_time_seconds() - t0) * 1000.0;
+		}
 		return NULL;
 	}
 
@@ -152,7 +189,9 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 	t->pixels = img.pixels;
 	img.pixels = NULL;
 	strncpy(t->name, filename, sizeof(t->name) - 1);
-
+	if (g_perf) {
+		g_perf->get_ms += (platform_time_seconds() - t0) * 1000.0;
+	}
 	return t;
 }
 

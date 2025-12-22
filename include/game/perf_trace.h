@@ -16,6 +16,20 @@ typedef struct PerfTraceFrame {
 	double ui_ms;
 	double present_ms;
 	int steps;
+
+	// Renderer breakdown (captured during perf trace only).
+	double rc_planes_ms;
+	double rc_hit_test_ms;
+	double rc_walls_ms;
+	double rc_tex_lookup_ms;
+	int rc_texture_get_calls;
+	int rc_registry_compares;
+	int rc_portal_calls;
+	int rc_portal_max_depth;
+	int rc_wall_ray_tests;
+	int rc_pixels_floor;
+	int rc_pixels_ceil;
+	int rc_pixels_wall;
 } PerfTraceFrame;
 
 typedef struct PerfTrace {

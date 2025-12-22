@@ -123,6 +123,19 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	double present_ms[PERF_TRACE_FRAME_COUNT];
 	double steps_d[PERF_TRACE_FRAME_COUNT];
 
+	double rc_planes_ms[PERF_TRACE_FRAME_COUNT];
+	double rc_hit_ms[PERF_TRACE_FRAME_COUNT];
+	double rc_walls_ms[PERF_TRACE_FRAME_COUNT];
+	double rc_tex_lookup_ms[PERF_TRACE_FRAME_COUNT];
+	double rc_tex_get_calls[PERF_TRACE_FRAME_COUNT];
+	double rc_registry_compares[PERF_TRACE_FRAME_COUNT];
+	double rc_portal_calls[PERF_TRACE_FRAME_COUNT];
+	double rc_portal_depth[PERF_TRACE_FRAME_COUNT];
+	double rc_wall_tests[PERF_TRACE_FRAME_COUNT];
+	double rc_pix_floor[PERF_TRACE_FRAME_COUNT];
+	double rc_pix_ceil[PERF_TRACE_FRAME_COUNT];
+	double rc_pix_wall[PERF_TRACE_FRAME_COUNT];
+
 	int worst_i = 0;
 	double worst_frame = t->frames[0].frame_ms;
 	int max_steps = t->frames[0].steps;
@@ -135,6 +148,18 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 		ui_ms[i] = f->ui_ms;
 		present_ms[i] = f->present_ms;
 		steps_d[i] = (double)f->steps;
+		rc_planes_ms[i] = f->rc_planes_ms;
+		rc_hit_ms[i] = f->rc_hit_test_ms;
+		rc_walls_ms[i] = f->rc_walls_ms;
+		rc_tex_lookup_ms[i] = f->rc_tex_lookup_ms;
+		rc_tex_get_calls[i] = (double)f->rc_texture_get_calls;
+		rc_registry_compares[i] = (double)f->rc_registry_compares;
+		rc_portal_calls[i] = (double)f->rc_portal_calls;
+		rc_portal_depth[i] = (double)f->rc_portal_max_depth;
+		rc_wall_tests[i] = (double)f->rc_wall_ray_tests;
+		rc_pix_floor[i] = (double)f->rc_pixels_floor;
+		rc_pix_ceil[i] = (double)f->rc_pixels_ceil;
+		rc_pix_wall[i] = (double)f->rc_pixels_wall;
 		if (f->steps > max_steps) {
 			max_steps = f->steps;
 		}
@@ -150,6 +175,18 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	PerfStats s_ui = compute_stats(ui_ms, n);
 	PerfStats s_present = compute_stats(present_ms, n);
 	PerfStats s_steps = compute_stats(steps_d, n);
+	PerfStats s_rc_planes = compute_stats(rc_planes_ms, n);
+	PerfStats s_rc_hit = compute_stats(rc_hit_ms, n);
+	PerfStats s_rc_walls = compute_stats(rc_walls_ms, n);
+	PerfStats s_rc_tex = compute_stats(rc_tex_lookup_ms, n);
+	PerfStats s_rc_tex_get = compute_stats(rc_tex_get_calls, n);
+	PerfStats s_rc_cmp = compute_stats(rc_registry_compares, n);
+	PerfStats s_rc_portals = compute_stats(rc_portal_calls, n);
+	PerfStats s_rc_depth = compute_stats(rc_portal_depth, n);
+	PerfStats s_rc_tests = compute_stats(rc_wall_tests, n);
+	PerfStats s_rc_pf = compute_stats(rc_pix_floor, n);
+	PerfStats s_rc_pc = compute_stats(rc_pix_ceil, n);
+	PerfStats s_rc_pw = compute_stats(rc_pix_wall, n);
 
 	double avg_fps = (s_frame.avg > 1e-9) ? (1000.0 / s_frame.avg) : 0.0;
 	const PerfTraceFrame* w = &t->frames[worst_i];
@@ -163,18 +200,35 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	print_stats_line(out, "frame_ms", &s_frame);
 	print_stats_line(out, "update_ms", &s_update);
 	print_stats_line(out, "render3d", &s_r3d);
+	fprintf(out, "render3d_breakdown (includes sampling+lighting):\n");
+	print_stats_line(out, "  planes", &s_rc_planes);
+	print_stats_line(out, "  hit", &s_rc_hit);
+	print_stats_line(out, "  walls", &s_rc_walls);
+	print_stats_line(out, "  texget", &s_rc_tex);
 	print_stats_line(out, "ui_ms", &s_ui);
 	print_stats_line(out, "present", &s_present);
 	fprintf(out, "steps      avg=%6.2f  p95=%6.2f  min=%6.0f  max=%6d\n", s_steps.avg, s_steps.p95, s_steps.min, max_steps);
 	fprintf(out,
-		"worst_frame i=%d  frame_ms=%.2f  steps=%d  update=%.2f  render3d=%.2f  ui=%.2f  present=%.2f\n",
+		"renderer_counts avg: portals=%.1f depth=%.1f  tex_get=%.0f  strcmps=%.0f  wall_tests=%.0f\n",
+		s_rc_portals.avg,
+		s_rc_depth.avg,
+		s_rc_tex_get.avg,
+		s_rc_cmp.avg,
+		s_rc_tests.avg);
+	fprintf(out,
+		"pixels_written avg: floor=%.0f  ceil=%.0f  wall=%.0f\n",
+		s_rc_pf.avg,
+		s_rc_pc.avg,
+		s_rc_pw.avg);
+	fprintf(out,
+		"worst_frame i=%d  frame_ms=%.2f  render3d=%.2f (planes=%.2f hit=%.2f walls=%.2f texget=%.2f)\n",
 		worst_i,
 		w->frame_ms,
-		w->steps,
-		w->update_ms,
 		w->render3d_ms,
-		w->ui_ms,
-		w->present_ms);
+		w->rc_planes_ms,
+		w->rc_hit_test_ms,
+		w->rc_walls_ms,
+		w->rc_tex_lookup_ms);
 	fprintf(out, "=== END PERF TRACE ===\n");
 	fflush(out);
 }
