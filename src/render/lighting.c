@@ -114,7 +114,7 @@ LightColor lighting_compute_multipliers(
 
 	LightColor out;
 	// Raise the black level slightly ("lift"), but keep it fogged so distance still goes black.
-	const float min_visibility = 0.185f;
+	const float min_visibility = 0.485f;
 	out.r = clampf(r_mul, 0.0f, 1.0f);
 	out.g = clampf(g_mul, 0.0f, 1.0f);
 	out.b = clampf(b_mul, 0.0f, 1.0f);
