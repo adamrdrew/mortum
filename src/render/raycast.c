@@ -28,6 +28,36 @@ static float fractf(float v) {
 	return v - floorf(v);
 }
 
+// Pick which sector is "on the camera side" of the wall.
+// Assumption: wall's (v0->v1) winding defines the half-plane for front/back sectors.
+// If winding is inconsistent, we still fall back to any valid sector index.
+static int wall_sector_for_point(const World* world, const Wall* w, float px, float py) {
+	if (!world || !w) {
+		return -1;
+	}
+	if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
+		return w->front_sector;
+	}
+	Vertex a = world->vertices[w->v0];
+	Vertex b = world->vertices[w->v1];
+	float ex = b.x - a.x;
+	float ey = b.y - a.y;
+	float apx = px - a.x;
+	float apy = py - a.y;
+	float side = cross2(ex, ey, apx, apy);
+
+	int s0 = (side >= 0.0f) ? w->front_sector : w->back_sector;
+	int s1 = (side >= 0.0f) ? w->back_sector : w->front_sector;
+
+	if ((unsigned)s0 < (unsigned)world->sector_count) {
+		return s0;
+	}
+	if ((unsigned)s1 < (unsigned)world->sector_count) {
+		return s1;
+	}
+	return -1;
+}
+
 // Ray: o + t*d, segment: a + u*s
 static bool ray_segment_hit(float ox, float oy, float dx, float dy, float ax, float ay, float bx, float by, float* out_t) {
 	float sx = bx - ax;
@@ -111,8 +141,9 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 		uint32_t base = 0xFFB0B0B0u;
 		float sector_intensity = 1.0f;
 		LightColor sector_tint = light_color_white();
-		if ((unsigned)w.front_sector < (unsigned)world->sector_count) {
-			const Sector* s = &world->sectors[w.front_sector];
+		int view_sector = wall_sector_for_point(world, &w, cam->x, cam->y);
+		if ((unsigned)view_sector < (unsigned)world->sector_count) {
+			const Sector* s = &world->sectors[view_sector];
 			sector_intensity = s->light;
 			sector_tint = s->light_color;
 		}
@@ -214,8 +245,9 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 		LightColor sector_tint = light_color_white();
 		const Texture* floor_tex = NULL;
 		const Texture* ceil_tex = NULL;
-		if ((unsigned)w.front_sector < (unsigned)world->sector_count) {
-			const Sector* s = &world->sectors[w.front_sector];
+		int view_sector = wall_sector_for_point(world, &w, cam->x, cam->y);
+		if ((unsigned)view_sector < (unsigned)world->sector_count) {
+			const Sector* s = &world->sectors[view_sector];
 			sector_intensity = s->light;
 			sector_tint = s->light_color;
 			if (texreg && paths) {
