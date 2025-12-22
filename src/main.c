@@ -249,7 +249,7 @@ int main(int argc, char** argv) {
 		bool dump_pressed = dump_down && !dump_prev_down;
 		dump_prev_down = dump_down;
 		if (debug_dump_enabled && dump_pressed) {
-			Camera cam = camera_make(player.x, player.y, player.angle_deg, cfg->fov_deg);
+			Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->fov_deg);
 			{
 				float phase = player.weapon_view_bob_phase;
 				float amp = player.weapon_view_bob_amp;
@@ -263,7 +263,11 @@ int main(int argc, char** argv) {
 				float bob_z = sinf(phase) * bob_amp * 0.006f;
 				cam.x += rx * bob_side;
 				cam.y += ry * bob_side;
-				cam.z = bob_z;
+				float floor_z = 0.0f;
+				if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
+					floor_z = map.world.sectors[player.body.sector].floor_z;
+				}
+				cam.z = (player.body.z - floor_z) + bob_z;
 			}
 			debug_dump_print(stdout, map_name, map_ok ? &map.world : NULL, &player, &cam);
 		}
@@ -371,7 +375,7 @@ int main(int argc, char** argv) {
 		}
 		win_prev = win_now;
 
-		Camera cam = camera_make(player.x, player.y, player.angle_deg, cfg->fov_deg);
+		Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->fov_deg);
 		{
 			float phase = player.weapon_view_bob_phase;
 			float amp = player.weapon_view_bob_amp;
@@ -385,7 +389,11 @@ int main(int argc, char** argv) {
 			float bob_z = sinf(phase) * bob_amp * 0.006f;
 			cam.x += rx * bob_side;
 			cam.y += ry * bob_side;
-			cam.z = bob_z;
+			float floor_z = 0.0f;
+			if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
+				floor_z = map.world.sectors[player.body.sector].floor_z;
+			}
+			cam.z = (player.body.z - floor_z) + bob_z;
 		}
 		raycast_render_textured(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, map_ok ? map.sky : NULL, wall_depth);
 

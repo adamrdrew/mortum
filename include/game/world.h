@@ -49,3 +49,14 @@ bool world_alloc_lights(World* self, int count);
 
 void world_set_sector_tex(Sector* s, StringView floor_tex, StringView ceil_tex);
 void world_set_wall_tex(Wall* w, StringView tex);
+
+// Point-in-sector queries.
+// Uses an even-odd test on wall edges belonging to the sector.
+bool world_sector_contains_point(const World* world, int sector, float x, float y);
+
+// Returns a sector *index* in [0, world->sector_count), or -1 if not inside any sector.
+int world_find_sector_at_point(const World* world, float x, float y);
+
+// Like world_find_sector_at_point, but falls back to last_valid_sector when the point is not
+// inside any sector. Pass last_valid_sector as the last known-good sector index, or -1.
+int world_find_sector_at_point_stable(const World* world, float x, float y, int last_valid_sector);

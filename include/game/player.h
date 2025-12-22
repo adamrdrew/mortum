@@ -4,12 +4,10 @@
 
 #include "game/ammo.h"
 #include "game/weapon_defs.h"
+#include "game/physics_body.h"
 
 typedef struct Player {
-	float x;
-	float y;
-	float vx;
-	float vy;
+	PhysicsBody body;
 	float angle_deg;
 	int health;
 	int health_max;

@@ -210,7 +210,7 @@ static bool sector_contains_point(const World* world, int sector, float px, floa
 	return inside;
 }
 
-static int world_find_sector_at_point(const World* world, float px, float py) {
+static int map_validate_find_sector_at_point(const World* world, float px, float py) {
 	if (!world || world->sector_count <= 0) {
 		return -1;
 	}
@@ -441,7 +441,7 @@ bool map_validate(const World* world, float player_start_x, float player_start_y
 	}
 
 	// Contiguity: all sectors reachable from player_start through portals.
-	int start_sector = world_find_sector_at_point(world, player_start_x, player_start_y);
+	int start_sector = map_validate_find_sector_at_point(world, player_start_x, player_start_y);
 	if (start_sector < 0) {
 		log_error("player_start is not inside any sector (x=%.3f y=%.3f)", player_start_x, player_start_y);
 		return false;

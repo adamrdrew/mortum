@@ -218,7 +218,7 @@
         },
         {
             "id": 2,
-            "floor_z": 2,
+            "floor_z": 1,
             "ceil_z": 6,
             "floor_tex": "TILE_2A.PNG",
             "ceil_tex": "TECH_2A.PNG",
@@ -234,7 +234,7 @@
         },
         {
             "id": 4,
-            "floor_z": -2,
+            "floor_z": -1,
             "ceil_z": 4,
             "floor_tex": "CONCRETE_4A.PNG",
             "ceil_tex": "TECH_2C.PNG",
@@ -290,7 +290,7 @@
         },
         {
             "id": 11,
-            "floor_z": 2,
+            "floor_z": 1,
             "ceil_z": 4,
             "floor_tex": "TILE_4E.PNG",
             "ceil_tex": "TECH_1F.PNG",

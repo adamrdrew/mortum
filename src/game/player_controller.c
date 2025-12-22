@@ -1,7 +1,7 @@
 #include "game/player_controller.h"
 
-#include "game/collision.h"
 #include "game/dash.h"
+#include "game/physics_body.h"
 
 #include <math.h>
 
@@ -23,8 +23,8 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 		return;
 	}
 
-	float x0 = player->x;
-	float y0 = player->y;
+	float x0 = player->body.x;
+	float y0 = player->body.y;
 
 	// Mouse look (yaw)
 	const float mouse_sens_deg_per_px = 0.12f;
@@ -59,8 +59,7 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 	float rx = -fy;
 	float ry = fx;
 
-	// Collision resolve (circle radius tuned for corridors)
-	const float radius = 0.20f;
+	PhysicsBodyParams phys = physics_body_params_default();
 
 	if (!player->noclip) {
 		// Dash/quick-step: impulse-like move with cooldown.
@@ -71,22 +70,19 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 			dir_x = fx;
 			dir_y = fy;
 		}
-		(void)dash_update(player, world, in->dash, radius, dir_x, dir_y, dt_s);
+		(void)dash_update(player, world, in->dash, dir_x, dir_y, dt_s, &phys);
 	}
 
 	float vx = (fx * forward + rx * right) * move_speed;
 	float vy = (fy * forward + ry * right) * move_speed;
 
-	float to_x = player->x + vx * (float)dt_s;
-	float to_y = player->y + vy * (float)dt_s;
-
 	if (player->noclip || !world) {
-		player->x = to_x;
-		player->y = to_y;
-		player->vx = (player->x - x0) / (float)dt_s;
-		player->vy = (player->y - y0) / (float)dt_s;
+		player->body.x += vx * (float)dt_s;
+		player->body.y += vy * (float)dt_s;
+		player->body.vx = (player->body.x - x0) / (float)dt_s;
+		player->body.vy = (player->body.y - y0) / (float)dt_s;
 
-		float speed = sqrtf(player->vx * player->vx + player->vy * player->vy);
+		float speed = sqrtf(player->body.vx * player->body.vx + player->body.vy * player->body.vy);
 		float target_amp = speed / move_speed;
 		if (target_amp < 0.0f) {
 			target_amp = 0.0f;
@@ -103,14 +99,10 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 		return;
 	}
 
-	CollisionMoveResult r = collision_move_circle(world, radius, player->x, player->y, to_x, to_y);
-	player->x = r.out_x;
-	player->y = r.out_y;
-	player->vx = (player->x - x0) / (float)dt_s;
-	player->vy = (player->y - y0) / (float)dt_s;
+	physics_body_update(&player->body, world, vx, vy, dt_s, &phys);
 
 	// Weapon view bob inputs.
-	float speed = sqrtf(player->vx * player->vx + player->vy * player->vy);
+	float speed = sqrtf(player->body.vx * player->body.vx + player->body.vy * player->body.vy);
 	float target_amp = speed / move_speed;
 	if (target_amp < 0.0f) {
 		target_amp = 0.0f;

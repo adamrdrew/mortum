@@ -66,6 +66,7 @@ SRC := \
   src/assets/sound_wav.c \
   src/assets/midi_player.c \
   src/game/world.c \
+  src/game/physics_body.c \
   src/game/player.c \
   src/game/game_state.c \
   src/game/hud.c \

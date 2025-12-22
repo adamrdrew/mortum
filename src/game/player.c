@@ -7,6 +7,9 @@
 
 void player_init(Player* p) {
 	memset(p, 0, sizeof(*p));
+	// Player body defaults (world units).
+	// radius: corridor clearance; height: used for headroom checks; step_height: "knee height".
+	physics_body_init(&p->body, 0.0f, 0.0f, 0.0f, 0.20f, 1.75f, 1.00f);
 	p->health_max = 100;
 	p->health = 100;
 

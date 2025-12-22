@@ -1,6 +1,6 @@
 #include "game/dash.h"
 
-#include "game/collision.h"
+#include "game/physics_body.h"
 
 #include <math.h>
 
@@ -8,9 +8,13 @@ static float clamp_min0(float v) {
 	return v < 0.0f ? 0.0f : v;
 }
 
-bool dash_update(Player* player, const World* world, bool dash_down, float radius, float dir_x, float dir_y, double dt_s) {
+bool dash_update(Player* player, const World* world, bool dash_down, float dir_x, float dir_y, double dt_s, const PhysicsBodyParams* params) {
 	if (!player) {
 		return false;
+	}
+	if (!params) {
+		PhysicsBodyParams tmp = physics_body_params_default();
+		params = &tmp;
 	}
 
 	// Cooldown tick
@@ -38,17 +42,7 @@ bool dash_update(Player* player, const World* world, bool dash_down, float radiu
 	const float dash_distance = 0.85f;
 	const float dash_cooldown_s = 0.65f;
 
-	float to_x = player->x + dir_x * dash_distance;
-	float to_y = player->y + dir_y * dash_distance;
-
-	if (world) {
-		CollisionMoveResult r = collision_move_circle(world, radius, player->x, player->y, to_x, to_y);
-		player->x = r.out_x;
-		player->y = r.out_y;
-	} else {
-		player->x = to_x;
-		player->y = to_y;
-	}
+	physics_body_move_delta(&player->body, world, dir_x * dash_distance, dir_y * dash_distance, params);
 
 	player->dash_cooldown_s = dash_cooldown_s;
 	return true;

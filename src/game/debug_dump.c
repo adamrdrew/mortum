@@ -52,85 +52,6 @@ static float segment_u(float ax, float ay, float bx, float by, float px, float p
 	return clampf(t, 0.0f, 1.0f);
 }
 
-// Even-odd point-in-polygon test using all edges that touch a sector.
-// Assumes walls form a closed boundary for each sector.
-static bool sector_contains_point(const World* world, int sector, float px, float py) {
-	if (!world || (unsigned)sector >= (unsigned)world->sector_count) {
-		return false;
-	}
-
-	// Prefer using only edges where this sector is the wall's front side.
-	// Many portal boundaries are represented by two directed walls (A->B and B->A);
-	// counting both would double-count the segment and break even-odd classification.
-	int crossings = 0;
-	int edge_count = 0;
-	for (int i = 0; i < world->wall_count; i++) {
-		const Wall* w = &world->walls[i];
-		if (w->front_sector != sector) {
-			continue;
-		}
-		edge_count++;
-		if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
-			continue;
-		}
-		Vertex a = world->vertices[w->v0];
-		Vertex b = world->vertices[w->v1];
-		if (fabsf(a.y - b.y) < 1e-8f) {
-			continue;
-		}
-		bool cond = (a.y > py) != (b.y > py);
-		if (!cond) {
-			continue;
-		}
-		float x_int = (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x;
-		if (px < x_int) {
-			crossings ^= 1;
-		}
-	}
-	if (edge_count > 0) {
-		return crossings != 0;
-	}
-
-	// Fallback: if a sector has no front edges (older maps or malformed data),
-	// include any wall that references the sector.
-	crossings = 0;
-	for (int i = 0; i < world->wall_count; i++) {
-		const Wall* w = &world->walls[i];
-		if (w->front_sector != sector && w->back_sector != sector) {
-			continue;
-		}
-		if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
-			continue;
-		}
-		Vertex a = world->vertices[w->v0];
-		Vertex b = world->vertices[w->v1];
-		if (fabsf(a.y - b.y) < 1e-8f) {
-			continue;
-		}
-		bool cond = (a.y > py) != (b.y > py);
-		if (!cond) {
-			continue;
-		}
-		float x_int = (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x;
-		if (px < x_int) {
-			crossings ^= 1;
-		}
-	}
-	return crossings != 0;
-}
-
-static int world_find_sector_at_point(const World* world, float px, float py) {
-	if (!world || world->sector_count <= 0) {
-		return -1;
-	}
-	for (int s = 0; s < world->sector_count; s++) {
-		if (sector_contains_point(world, s, px, py)) {
-			return s;
-		}
-	}
-	return -1;
-}
-
 // Matches the renderer's assumption: wall winding defines which side is front/back.
 static int wall_sector_for_point(const World* world, const Wall* w, float px, float py) {
 	if (!world || !w) {
@@ -233,11 +154,11 @@ void debug_dump_print(FILE* out, const char* map_name, const World* world, const
 	}
 	fprintf(out, "world: vertices=%d walls=%d sectors=%d lights=%d\n", world->vertex_count, world->wall_count, world->sector_count, world->light_count);
 	if (player) {
-		fprintf(out, "player: x=%.4f y=%.4f angle_deg=%.3f\n", player->x, player->y, player->angle_deg);
+		fprintf(out, "player: x=%.4f y=%.4f z=%.4f angle_deg=%.3f\n", player->body.x, player->body.y, player->body.z, player->angle_deg);
 		float ar = deg_to_rad(player->angle_deg);
 		fprintf(out, "player_fwd: dx=%.6f dy=%.6f\n", cosf(ar), sinf(ar));
 
-		int sec = world_find_sector_at_point(world, player->x, player->y);
+		int sec = world_find_sector_at_point(world, player->body.x, player->body.y);
 		fprintf(out, "player_sector_guess:\n");
 		print_sector(out, world, sec);
 		if (sec < 0) {
