@@ -12,8 +12,24 @@ void world_destroy(World* self) {
 	free(self->vertices);
 	free(self->sectors);
 	free(self->walls);
+	free(self->sector_wall_offsets);
+	free(self->sector_wall_counts);
+	free(self->sector_wall_indices);
 	free(self->lights);
 	memset(self, 0, sizeof(*self));
+}
+
+static void world_free_sector_wall_index(World* self) {
+	if (!self) {
+		return;
+	}
+	free(self->sector_wall_offsets);
+	free(self->sector_wall_counts);
+	free(self->sector_wall_indices);
+	self->sector_wall_offsets = NULL;
+	self->sector_wall_counts = NULL;
+	self->sector_wall_indices = NULL;
+	self->sector_wall_index_count = 0;
 }
 
 bool world_alloc_vertices(World* self, int count) {
@@ -27,6 +43,7 @@ bool world_alloc_vertices(World* self, int count) {
 }
 
 bool world_alloc_sectors(World* self, int count) {
+	world_free_sector_wall_index(self);
 	self->sectors = (Sector*)calloc((size_t)count, sizeof(Sector));
 	if (!self->sectors) {
 		self->sector_count = 0;
@@ -41,12 +58,86 @@ bool world_alloc_sectors(World* self, int count) {
 }
 
 bool world_alloc_walls(World* self, int count) {
+	world_free_sector_wall_index(self);
 	self->walls = (Wall*)calloc((size_t)count, sizeof(Wall));
 	if (!self->walls) {
 		self->wall_count = 0;
 		return false;
 	}
 	self->wall_count = count;
+	return true;
+}
+
+bool world_build_sector_wall_index(World* self) {
+	if (!self || self->sector_count <= 0 || self->wall_count <= 0 || !self->walls) {
+		if (self) {
+			world_free_sector_wall_index(self);
+		}
+		return false;
+	}
+
+	world_free_sector_wall_index(self);
+
+	int* counts = (int*)calloc((size_t)self->sector_count, sizeof(int));
+	if (!counts) {
+		return false;
+	}
+
+	int total = 0;
+	for (int i = 0; i < self->wall_count; i++) {
+		const Wall* w = &self->walls[i];
+		if ((unsigned)w->front_sector < (unsigned)self->sector_count) {
+			counts[w->front_sector]++;
+		}
+		if ((unsigned)w->back_sector < (unsigned)self->sector_count) {
+			counts[w->back_sector]++;
+		}
+	}
+	for (int s = 0; s < self->sector_count; s++) {
+		total += counts[s];
+	}
+	if (total <= 0) {
+		free(counts);
+		return false;
+	}
+
+	self->sector_wall_counts = counts;
+	self->sector_wall_offsets = (int*)calloc((size_t)self->sector_count + 1u, sizeof(int));
+	self->sector_wall_indices = (int*)calloc((size_t)total, sizeof(int));
+	if (!self->sector_wall_offsets || !self->sector_wall_indices) {
+		world_free_sector_wall_index(self);
+		return false;
+	}
+	self->sector_wall_index_count = total;
+
+	int running = 0;
+	for (int s = 0; s < self->sector_count; s++) {
+		self->sector_wall_offsets[s] = running;
+		running += self->sector_wall_counts[s];
+	}
+	self->sector_wall_offsets[self->sector_count] = running;
+
+	int* cursor = (int*)calloc((size_t)self->sector_count, sizeof(int));
+	if (!cursor) {
+		world_free_sector_wall_index(self);
+		return false;
+	}
+	for (int s = 0; s < self->sector_count; s++) {
+		cursor[s] = self->sector_wall_offsets[s];
+	}
+	for (int i = 0; i < self->wall_count; i++) {
+		const Wall* w = &self->walls[i];
+		if ((unsigned)w->front_sector < (unsigned)self->sector_count) {
+			int p = cursor[w->front_sector]++;
+			self->sector_wall_indices[p] = i;
+		}
+		if ((unsigned)w->back_sector < (unsigned)self->sector_count) {
+			int p = cursor[w->back_sector]++;
+			self->sector_wall_indices[p] = i;
+		}
+	}
+	free(cursor);
+
 	return true;
 }
 

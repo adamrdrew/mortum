@@ -244,31 +244,61 @@ static int find_nearest_wall_hit_in_sector(
 	}
 	float best_t = 1e30f;
 	int best_wall = -1;
-	for (int i = 0; i < world->wall_count; i++) {
-		if (i == ignore_wall_index) {
-			continue;
-		}
-		const Wall* w = &world->walls[i];
-		// Double-sided solid walls: a "one-sided" wall should still render when viewed
-		// from the back (e.g. if the player ends up in an adjacent sector or outside).
-		if (w->back_sector != -1) {
-			if (w->front_sector != sector && w->back_sector != sector) {
+	if (world->sector_wall_offsets && world->sector_wall_counts && world->sector_wall_indices) {
+		int start = world->sector_wall_offsets[sector];
+		int count = world->sector_wall_counts[sector];
+		for (int wi = 0; wi < count; wi++) {
+			int i = world->sector_wall_indices[start + wi];
+			if (i == ignore_wall_index) {
 				continue;
 			}
+			if ((unsigned)i >= (unsigned)world->wall_count) {
+				continue;
+			}
+			const Wall* w = &world->walls[i];
+			if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
+				continue;
+			}
+			Vertex a = world->vertices[w->v0];
+			Vertex b = world->vertices[w->v1];
+			float t = 0.0f;
+			if (perf) {
+				perf->wall_ray_tests++;
+			}
+			if (ray_segment_hit(ox, oy, dx, dy, a.x, a.y, b.x, b.y, &t)) {
+				if (t > t_min && t < best_t) {
+					best_t = t;
+					best_wall = i;
+				}
+			}
 		}
-		if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
-			continue;
-		}
-		Vertex a = world->vertices[w->v0];
-		Vertex b = world->vertices[w->v1];
-		float t = 0.0f;
-		if (perf) {
-			perf->wall_ray_tests++;
-		}
-		if (ray_segment_hit(ox, oy, dx, dy, a.x, a.y, b.x, b.y, &t)) {
-			if (t > t_min && t < best_t) {
-				best_t = t;
-				best_wall = i;
+	} else {
+		for (int i = 0; i < world->wall_count; i++) {
+			if (i == ignore_wall_index) {
+				continue;
+			}
+			const Wall* w = &world->walls[i];
+			// Double-sided solid walls: a "one-sided" wall should still render when viewed
+			// from the back (e.g. if the player ends up in an adjacent sector or outside).
+			if (w->back_sector != -1) {
+				if (w->front_sector != sector && w->back_sector != sector) {
+					continue;
+				}
+			}
+			if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
+				continue;
+			}
+			Vertex a = world->vertices[w->v0];
+			Vertex b = world->vertices[w->v1];
+			float t = 0.0f;
+			if (perf) {
+				perf->wall_ray_tests++;
+			}
+			if (ray_segment_hit(ox, oy, dx, dy, a.x, a.y, b.x, b.y, &t)) {
+				if (t > t_min && t < best_t) {
+					best_t = t;
+					best_wall = i;
+				}
 			}
 		}
 	}
@@ -498,6 +528,75 @@ static void render_wall_span_textured(
 	}
 }
 
+static void draw_sector_planes_column(
+	Framebuffer* fb,
+	int x,
+	int y_top,
+	int y_bot,
+	float half_h,
+	float proj_dist,
+	float cam_x,
+	float cam_y,
+	float cam_z,
+	float dx,
+	float dy,
+	float corr,
+	float floor_z,
+	float ceil_z,
+	const Texture* floor_tex,
+	const Texture* ceil_tex,
+	const Texture* sky_tex,
+	float sector_intensity,
+	LightColor sector_tint,
+	const PointLight* lights,
+	int light_count,
+	RaycastPerf* perf
+) {
+	draw_sector_ceiling_column(
+		fb,
+		x,
+		y_top,
+		y_bot,
+		half_h,
+		proj_dist,
+		cam_x,
+		cam_y,
+		cam_z,
+		dx,
+		dy,
+		corr,
+		ceil_z,
+		ceil_tex,
+		sky_tex,
+		sector_intensity,
+		sector_tint,
+		lights,
+		light_count,
+		perf
+	);
+	draw_sector_floor_column(
+		fb,
+		x,
+		y_top,
+		y_bot,
+		half_h,
+		proj_dist,
+		cam_x,
+		cam_y,
+		cam_z,
+		dx,
+		dy,
+		corr,
+		floor_z,
+		floor_tex,
+		sector_intensity,
+		sector_tint,
+		lights,
+		light_count,
+		perf
+	);
+}
+
 static void render_column_textured_recursive(
 	Framebuffer* fb,
 	const World* world,
@@ -561,58 +660,6 @@ static void render_column_textured_recursive(
 		}
 	}
 
-	// Fill planes for this sector first; portals will overwrite the open span.
-	double planes_t0 = 0.0;
-	if (perf) {
-		planes_t0 = platform_time_seconds();
-	}
-	draw_sector_ceiling_column(
-		fb,
-		x,
-		y_clip_top,
-		y_clip_bot,
-		half_h,
-		proj_dist,
-		cam->x,
-		cam->y,
-		cam_z,
-		ray_dx,
-		ray_dy,
-		corr,
-		s->ceil_z,
-		ceil_tex,
-		(ceil_is_sky ? sky_tex : NULL),
-		sector_intensity,
-		sector_tint,
-		world->lights,
-		world->light_count,
-		perf
-	);
-	draw_sector_floor_column(
-		fb,
-		x,
-		y_clip_top,
-		y_clip_bot,
-		half_h,
-		proj_dist,
-		cam->x,
-		cam->y,
-		cam_z,
-		ray_dx,
-		ray_dy,
-		corr,
-		s->floor_z,
-		floor_tex,
-		sector_intensity,
-		sector_tint,
-		world->lights,
-		world->light_count,
-		perf
-	);
-	if (perf) {
-		perf->planes_ms += (platform_time_seconds() - planes_t0) * 1000.0;
-	}
-
 	float hit_t = 0.0f;
 	double hit_t0 = 0.0;
 	if (perf) {
@@ -623,6 +670,37 @@ static void render_column_textured_recursive(
 		perf->hit_test_ms += (platform_time_seconds() - hit_t0) * 1000.0;
 	}
 	if (hit_wall < 0) {
+		double planes_t0 = 0.0;
+		if (perf) {
+			planes_t0 = platform_time_seconds();
+		}
+		draw_sector_planes_column(
+			fb,
+			x,
+			y_clip_top,
+			y_clip_bot,
+			half_h,
+			proj_dist,
+			cam->x,
+			cam->y,
+			cam_z,
+			ray_dx,
+			ray_dy,
+			corr,
+			s->floor_z,
+			s->ceil_z,
+			floor_tex,
+			ceil_tex,
+			(ceil_is_sky ? sky_tex : NULL),
+			sector_intensity,
+			sector_tint,
+			world->lights,
+			world->light_count,
+			perf
+		);
+		if (perf) {
+			perf->planes_ms += (platform_time_seconds() - planes_t0) * 1000.0;
+		}
 		return;
 	}
 
@@ -663,6 +741,110 @@ static void render_column_textured_recursive(
 		}
 		int y_top = project_y(half_h, proj_dist, cam_z, s->ceil_z, dist);
 		int y_bot = project_y(half_h, proj_dist, cam_z, s->floor_z, dist);
+
+		// Draw planes only outside the wall span (the wall will overwrite its pixels).
+		int y_wall0 = y_top;
+		int y_wall1 = y_bot;
+		if (y_wall0 < y_clip_top) {
+			y_wall0 = y_clip_top;
+		}
+		if (y_wall1 > y_clip_bot) {
+			y_wall1 = y_clip_bot;
+		}
+		if (y_wall0 < 0) {
+			y_wall0 = 0;
+		}
+		if (y_wall1 > fb->height) {
+			y_wall1 = fb->height;
+		}
+
+		double planes_t0 = 0.0;
+		if (perf) {
+			planes_t0 = platform_time_seconds();
+		}
+		if (y_wall0 < y_wall1) {
+			if (y_clip_top < y_wall0) {
+				draw_sector_planes_column(
+					fb,
+					x,
+					y_clip_top,
+					y_wall0,
+					half_h,
+					proj_dist,
+					cam->x,
+					cam->y,
+					cam_z,
+					ray_dx,
+					ray_dy,
+					corr,
+					s->floor_z,
+					s->ceil_z,
+					floor_tex,
+					ceil_tex,
+					(ceil_is_sky ? sky_tex : NULL),
+					sector_intensity,
+					sector_tint,
+					world->lights,
+					world->light_count,
+					perf
+				);
+			}
+			if (y_wall1 < y_clip_bot) {
+				draw_sector_planes_column(
+					fb,
+					x,
+					y_wall1,
+					y_clip_bot,
+					half_h,
+					proj_dist,
+					cam->x,
+					cam->y,
+					cam_z,
+					ray_dx,
+					ray_dy,
+					corr,
+					s->floor_z,
+					s->ceil_z,
+					floor_tex,
+					ceil_tex,
+					(ceil_is_sky ? sky_tex : NULL),
+					sector_intensity,
+					sector_tint,
+					world->lights,
+					world->light_count,
+					perf
+				);
+			}
+		} else {
+			draw_sector_planes_column(
+				fb,
+				x,
+				y_clip_top,
+				y_clip_bot,
+				half_h,
+				proj_dist,
+				cam->x,
+				cam->y,
+				cam_z,
+				ray_dx,
+				ray_dy,
+				corr,
+				s->floor_z,
+				s->ceil_z,
+				floor_tex,
+				ceil_tex,
+				(ceil_is_sky ? sky_tex : NULL),
+				sector_intensity,
+				sector_tint,
+				world->lights,
+				world->light_count,
+				perf
+			);
+		}
+		if (perf) {
+			perf->planes_ms += (platform_time_seconds() - planes_t0) * 1000.0;
+		}
+
 		render_wall_span_textured(
 			fb,
 			x,
@@ -696,6 +878,146 @@ static void render_column_textured_recursive(
 	// Portal wall: draw upper/lower pieces relative to this sector, then recurse through open span.
 	const Sector* so = &world->sectors[other];
 	bool other_ceil_is_sky = is_sky_sentinel(so->ceil_tex);
+
+	float z_open_top = s->ceil_z < so->ceil_z ? s->ceil_z : so->ceil_z;
+	float z_open_bot = s->floor_z > so->floor_z ? s->floor_z : so->floor_z;
+	int y_open0 = 0;
+	int y_open1 = 0;
+	bool has_open = false;
+	if (z_open_top > z_open_bot + 1e-4f) {
+		int y_open_top = project_y(half_h, proj_dist, cam_z, z_open_top, dist);
+		int y_open_bot = project_y(half_h, proj_dist, cam_z, z_open_bot, dist);
+		y_open0 = y_open_top;
+		y_open1 = y_open_bot;
+		if (y_open0 < y_clip_top) {
+			y_open0 = y_clip_top;
+		}
+		if (y_open1 > y_clip_bot) {
+			y_open1 = y_clip_bot;
+		}
+		if (y_open0 < 0) {
+			y_open0 = 0;
+		}
+		if (y_open1 > fb->height) {
+			y_open1 = fb->height;
+		}
+		has_open = (y_open0 < y_open1);
+	}
+
+	// Recurse through the open span first, then draw this sector's planes only outside
+	// that span. This avoids heavy portal-induced plane overdraw.
+	if (has_open) {
+		render_column_textured_recursive(
+			fb,
+			world,
+			cam,
+			texreg,
+			paths,
+			sky_tex,
+			x,
+			half_h,
+			proj_dist,
+			cam_z,
+			ray_dx,
+			ray_dy,
+			corr,
+			other,
+			y_open0,
+			y_open1,
+			hit_t + 1e-4f,
+			hit_wall,
+			depth + 1,
+			out_depth,
+			perf
+		);
+	}
+
+	double planes_t0 = 0.0;
+	if (perf) {
+		planes_t0 = platform_time_seconds();
+	}
+	if (has_open) {
+		if (y_clip_top < y_open0) {
+			draw_sector_planes_column(
+				fb,
+				x,
+				y_clip_top,
+				y_open0,
+				half_h,
+				proj_dist,
+				cam->x,
+				cam->y,
+				cam_z,
+				ray_dx,
+				ray_dy,
+				corr,
+				s->floor_z,
+				s->ceil_z,
+				floor_tex,
+				ceil_tex,
+				(ceil_is_sky ? sky_tex : NULL),
+				sector_intensity,
+				sector_tint,
+				world->lights,
+				world->light_count,
+				perf
+			);
+		}
+		if (y_open1 < y_clip_bot) {
+			draw_sector_planes_column(
+				fb,
+				x,
+				y_open1,
+				y_clip_bot,
+				half_h,
+				proj_dist,
+				cam->x,
+				cam->y,
+				cam_z,
+				ray_dx,
+				ray_dy,
+				corr,
+				s->floor_z,
+				s->ceil_z,
+				floor_tex,
+				ceil_tex,
+				(ceil_is_sky ? sky_tex : NULL),
+				sector_intensity,
+				sector_tint,
+				world->lights,
+				world->light_count,
+				perf
+			);
+		}
+	} else {
+		draw_sector_planes_column(
+			fb,
+			x,
+			y_clip_top,
+			y_clip_bot,
+			half_h,
+			proj_dist,
+			cam->x,
+			cam->y,
+			cam_z,
+			ray_dx,
+			ray_dy,
+			corr,
+			s->floor_z,
+			s->ceil_z,
+			floor_tex,
+			ceil_tex,
+			(ceil_is_sky ? sky_tex : NULL),
+			sector_intensity,
+			sector_tint,
+			world->lights,
+			world->light_count,
+			perf
+		);
+	}
+	if (perf) {
+		perf->planes_ms += (platform_time_seconds() - planes_t0) * 1000.0;
+	}
 
 	// Upper piece (if other ceiling is lower). If both ceilings are sky, don't draw.
 	if (!((ceil_is_sky && other_ceil_is_sky)) && so->ceil_z < s->ceil_z - 1e-4f) {
@@ -771,51 +1093,7 @@ static void render_column_textured_recursive(
 		}
 	}
 
-	float z_open_top = s->ceil_z < so->ceil_z ? s->ceil_z : so->ceil_z;
-	float z_open_bot = s->floor_z > so->floor_z ? s->floor_z : so->floor_z;
-	if (z_open_top > z_open_bot + 1e-4f) {
-		int y_open_top = project_y(half_h, proj_dist, cam_z, z_open_top, dist);
-		int y_open_bot = project_y(half_h, proj_dist, cam_z, z_open_bot, dist);
-		int y0 = y_open_top;
-		int y1 = y_open_bot;
-		if (y0 < y_clip_top) {
-			y0 = y_clip_top;
-		}
-		if (y1 > y_clip_bot) {
-			y1 = y_clip_bot;
-		}
-		if (y0 < 0) {
-			y0 = 0;
-		}
-		if (y1 > fb->height) {
-			y1 = fb->height;
-		}
-		if (y0 < y1) {
-			render_column_textured_recursive(
-				fb,
-				world,
-				cam,
-				texreg,
-				paths,
-				sky_tex,
-				x,
-				half_h,
-				proj_dist,
-				cam_z,
-				ray_dx,
-				ray_dy,
-				corr,
-				other,
-				y0,
-				y1,
-				hit_t + 1e-4f,
-				hit_wall,
-				depth + 1,
-					out_depth,
-					perf
-			);
-		}
-	}
+	(void)other_ceil_is_sky;
 }
 
 

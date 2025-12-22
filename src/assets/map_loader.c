@@ -304,5 +304,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		return false;
 	}
 
+	(void)world_build_sector_wall_index(&out->world);
+
 	return true;
 }

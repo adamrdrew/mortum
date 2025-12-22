@@ -35,6 +35,12 @@ typedef struct World {
 	int sector_count;
 	Wall* walls;      // owned
 	int wall_count;
+	// Optional acceleration structure: for each sector, a packed list of wall indices
+	// that reference that sector (front and/or back). Built by world_build_sector_wall_index.
+	int* sector_wall_offsets;      // owned, length sector_count+1
+	int* sector_wall_counts;       // owned, length sector_count
+	int* sector_wall_indices;      // owned, length sector_wall_index_count
+	int sector_wall_index_count;
 	PointLight* lights; // owned
 	int light_count;
 } World;
@@ -46,6 +52,10 @@ bool world_alloc_vertices(World* self, int count);
 bool world_alloc_sectors(World* self, int count);
 bool world_alloc_walls(World* self, int count);
 bool world_alloc_lights(World* self, int count);
+
+// Build a per-sector wall index (acceleration structure).
+// Safe to call multiple times; frees/rebuilds any existing index.
+bool world_build_sector_wall_index(World* self);
 
 void world_set_sector_tex(Sector* s, StringView floor_tex, StringView ceil_tex);
 void world_set_wall_tex(Wall* w, StringView tex);
