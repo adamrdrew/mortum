@@ -156,17 +156,17 @@ static int wall_sector_for_point(const World* world, const Wall* w, float px, fl
 	return -1;
 }
 
-static float camera_z_for_sector(const World* world, int sector) {
+static float camera_z_for_sector(const World* world, int sector, float z_offset) {
 	// World units: sector floor/ceil are in the same units as map vertices.
 	// We currently render with a fixed eye height above the sector floor.
 	// (Player has no z yet; this is purely for rendering.)
 	const float eye_height = 1.5f;
 	const float headroom = 0.1f;
 	if (!world || (unsigned)sector >= (unsigned)world->sector_count) {
-		return eye_height;
+		return eye_height + z_offset;
 	}
 	const Sector* s = &world->sectors[sector];
-	float z = s->floor_z + eye_height;
+	float z = s->floor_z + eye_height + z_offset;
 	float z_max = s->ceil_z - headroom;
 	if (z > z_max) {
 		z = z_max;
@@ -210,7 +210,7 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 	float half_h = 0.5f * (float)fb->height;
 	float proj_z = half_h;
 	int plane_sector = world_find_sector_at_point_stable(world, cam->x, cam->y);
-	float cam_z = camera_z_for_sector(world, plane_sector);
+	float cam_z = camera_z_for_sector(world, plane_sector, cam->z);
 
 	for (int x = 0; x < fb->width; x++) {
 		float lerp = (float)x * inv_w;
@@ -800,7 +800,7 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 	float fov_rad = deg_to_rad(cam->fov_deg);
 	float proj_dist = (0.5f * (float)fb->width) / tanf(0.5f * fov_rad);
 	int start_sector = world_find_sector_at_point_stable(world, cam->x, cam->y);
-	float cam_z = camera_z_for_sector(world, start_sector);
+	float cam_z = camera_z_for_sector(world, start_sector, cam->z);
 	float cam_rad = deg_to_rad(cam->angle_deg);
 
 	for (int x = 0; x < fb->width; x++) {

@@ -250,6 +250,21 @@ int main(int argc, char** argv) {
 		dump_prev_down = dump_down;
 		if (debug_dump_enabled && dump_pressed) {
 			Camera cam = camera_make(player.x, player.y, player.angle_deg, cfg->fov_deg);
+			{
+				float phase = player.weapon_view_bob_phase;
+				float amp = player.weapon_view_bob_amp;
+				float bob_amp = amp * amp;
+				float ang = player.angle_deg * (float)M_PI / 180.0f;
+				float fx = cosf(ang);
+				float fy = sinf(ang);
+				float rx = -fy;
+				float ry = fx;
+				float bob_side = sinf(phase) * bob_amp * 0.03f;
+				float bob_z = sinf(phase) * bob_amp * 0.006f;
+				cam.x += rx * bob_side;
+				cam.y += ry * bob_side;
+				cam.z = bob_z;
+			}
 			debug_dump_print(stdout, map_name, map_ok ? &map.world : NULL, &player, &cam);
 		}
 
@@ -357,6 +372,21 @@ int main(int argc, char** argv) {
 		win_prev = win_now;
 
 		Camera cam = camera_make(player.x, player.y, player.angle_deg, cfg->fov_deg);
+		{
+			float phase = player.weapon_view_bob_phase;
+			float amp = player.weapon_view_bob_amp;
+			float bob_amp = amp * amp;
+			float ang = player.angle_deg * (float)M_PI / 180.0f;
+			float fx = cosf(ang);
+			float fy = sinf(ang);
+			float rx = -fy;
+			float ry = fx;
+			float bob_side = sinf(phase) * bob_amp * 0.03f;
+			float bob_z = sinf(phase) * bob_amp * 0.006f;
+			cam.x += rx * bob_side;
+			cam.y += ry * bob_side;
+			cam.z = bob_z;
+		}
 		raycast_render_textured(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, wall_depth);
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);

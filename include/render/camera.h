@@ -4,6 +4,7 @@
 typedef struct Camera {
 	float x;
 	float y;
+	float z;
 	float angle_deg;
 	float fov_deg;
 } Camera;

@@ -52,7 +52,7 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 		right /= len;
 	}
 
-	const float move_speed = 2.5f; // units per second
+	const float move_speed = 4.7f; // units per second
 	float ang = player->angle_deg * (float)M_PI / 180.0f;
 	float fx = cosf(ang);
 	float fy = sinf(ang);
