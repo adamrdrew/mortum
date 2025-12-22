@@ -9,7 +9,7 @@ This feature adds level-specific background music using MIDI files played throug
 - Default SoundFont: `Assets/Sounds/SoundFonts/hl4mgm.sf2`
 
 ## Map Configuration
-Each map JSON now includes:
+Each map JSON may include:
 ```json
 {
   "bgmusic": "<MIDI filename>",

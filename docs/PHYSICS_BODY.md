@@ -9,7 +9,7 @@ Goals:
   - Stepping **up** is allowed only for small height deltas (currently one world unit).
   - Stepping **down** triggers **falling** with gravity (no snapping).
 - Never allow falling acceleration to clip below floors.
-- Keep rendering + map formats unchanged (physics is gameplay-only).
+- Keep physics decoupled from rendering; physics should not depend on renderer internals.
 
 ## High-level model
 
@@ -39,6 +39,8 @@ Maps already store per-sector vertical bounds:
 
 - `Sector.floor_z`
 - `Sector.ceil_z`
+
+Note: `Sector.floor_z` can be modified at runtime by gameplay systems (e.g. movable floors / sector height manipulation). `PhysicsBody` always queries the current values each tick.
 
 Walls define adjacency:
 

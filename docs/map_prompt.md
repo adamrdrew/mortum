@@ -92,13 +92,14 @@ Each sector object has required fields:
 
 - `id` (integer): metadata only; not used for indexing.
 	- Recommended: set `id` equal to the sector’s array index.
+	- If you use wall `toggle_sector_id`, ensure every sector `id` is unique.
 - `floor_z` (number)
 - `ceil_z` (number)
 - `floor_tex` (string): texture filename
 - `ceil_tex` (string): texture filename
 - `light` (number): scalar intensity used by rendering
 
-Optional field:
+Optional fields:
 
 - `light_color` (object):
 	- `r` (number)
@@ -106,11 +107,23 @@ Optional field:
 	- `b` (number)
 	- Recommended range: `0.0`–`1.0` (not strictly enforced, but expected).
 
+- `movable` (boolean): enables sector floor height manipulation.
+	- If `true`, the sector’s floor can move between its authored `floor_z` and `floor_z_toggled_pos`.
+	- If omitted: treated as `false`.
+	- If `true`, `floor_z_toggled_pos` **must** be present.
+
+- `floor_z_toggled_pos` (number): target floor height for the toggled state.
+	- If present, it implies the sector is movable (equivalent to `movable: true`).
+	- The floor toggles between:
+		- **origin** = `floor_z`
+		- **toggled** = `floor_z_toggled_pos`
+
 Hard requirements:
 
 - Must contain at least **1** sector.
 - For every sector:
 	- `ceil_z` must be **greater than** `floor_z`.
+	- If the sector is movable, `ceil_z` must be above the *maximum* of `floor_z` and `floor_z_toggled_pos`.
 	- `floor_tex` and `ceil_tex` must be **non-empty strings**.
 	- The sector must have at least one **closed boundary loop** formed by its walls where `wall.front_sector == this sector index`.
 
@@ -131,6 +144,22 @@ Array of wall objects. Each wall has required fields:
 	- `-1` for solid boundary
 	- otherwise a valid sector index `0..sectors.length-1` for a portal
 - `tex` (string): wall texture filename (non-empty)
+
+Optional fields (gameplay triggers):
+
+- `toggle_sector` (boolean): if `true`, this wall can be used as an action-trigger.
+	- Triggering is done in-game by pressing the action key while touching the wall.
+	- If omitted: treated as `false`.
+
+- `toggle_sector_id` (integer): which sector to control **by sector `id`**.
+	- If omitted, the wall toggles the player’s current sector.
+	- Note: this is intentionally **not** a sector array index.
+
+- `toggle_sector_oneshot` (boolean): if `true`, the wall can only be used once.
+	- After the controlled sector reaches `floor_z_toggled_pos`, further uses do nothing.
+
+- `active_tex` (string): optional alternate wall texture to display when the controlled sector is in the toggled position.
+	- When the sector is at origin, the wall displays its normal `tex`.
 
 Hard requirements (validated):
 
@@ -202,8 +231,10 @@ The engine will reject the map if any of these fail:
 - `sectors.length >= 1`
 - `walls.length >= 1`
 - Every sector has `ceil_z > floor_z` and non-empty `floor_tex` and `ceil_tex`.
+- If a sector is movable, it must specify `floor_z_toggled_pos`, and `ceil_z` must be above the max of its origin/toggled floor.
 - Every sector has at least one closed boundary loop (built from its `front_sector` walls).
 - Every wall references valid vertex indices, valid `front_sector`, valid `back_sector` (or `-1`), and has non-empty `tex`.
+- If a wall specifies `toggle_sector_id`, it must match some sector object’s `id`.
 - `player_start` must be inside some sector.
 - **All sectors must be reachable** from the player’s starting sector by traversing portal connectivity (any wall where `back_sector != -1` creates adjacency).
 
@@ -219,6 +250,40 @@ The engine will reject the map if any of these fail:
 	 - For every outside edge, set `back_sector: -1`.
 6. Place `player_start` strictly inside the intended sector.
 7. Ensure every sector has at least one portal path (directly or indirectly) to the player sector.
+
+## Example: one-shot floor toggle switch (snippet)
+
+This is a focused snippet showing only the new fields. Integrate it into a valid map with correct vertices/walls.
+
+```json
+{
+	"sectors": [
+		{
+			"id": 5,
+			"floor_z": -6,
+			"floor_z_toggled_pos": -1,
+			"movable": true,
+			"ceil_z": 4,
+			"floor_tex": "SLIME_1A.PNG",
+			"ceil_tex": "TECH_2E.PNG",
+			"light": 0.55
+		}
+	],
+	"walls": [
+		{
+			"v0": 20,
+			"v1": 21,
+			"front_sector": 5,
+			"back_sector": 4,
+			"tex": "SWITCH_1B.PNG",
+			"active_tex": "SWITCH_1A.PNG",
+			"toggle_sector": true,
+			"toggle_sector_id": 5,
+			"toggle_sector_oneshot": true
+		}
+	]
+}
+```
 
 ## Minimal valid example (single square sector)
 

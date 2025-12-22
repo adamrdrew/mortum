@@ -13,6 +13,8 @@ Required fields:
 - `sectors`: array of sector objects
   - `id`: integer
   - `floor_z`: number
+  - optional `floor_z_toggled_pos`: number
+  - optional `movable`: boolean
   - `ceil_z`: number
   - `floor_tex`: string
   - `ceil_tex`: string
@@ -23,6 +25,10 @@ Required fields:
   - `front_sector`: integer
   - `back_sector`: integer (-1 for solid)
   - `tex`: string
+  - optional `active_tex`: string
+  - optional `toggle_sector`: boolean
+  - optional `toggle_sector_id`: integer (references a sector by `id`, not array index)
+  - optional `toggle_sector_oneshot`: boolean
 
 Optional fields:
 - `lights`: array of light objects (if supported by the current loader)

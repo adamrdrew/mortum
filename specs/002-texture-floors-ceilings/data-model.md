@@ -30,6 +30,8 @@ This feature is primarily an asset + rendering change. The “data model” is t
 - **Fields**:
   - `id`: integer
   - `floor_z`: number
+  - `floor_z_toggled_pos`: optional number
+  - `movable`: optional boolean
   - `ceil_z`: number
   - `floor_tex`: string (texture filename)
   - `ceil_tex`: string (texture filename)
@@ -46,6 +48,10 @@ This feature is primarily an asset + rendering change. The “data model” is t
   - `v0`, `v1`: vertex indices
   - `front_sector`, `back_sector`
   - `tex`: string (texture filename)
+  - `active_tex`: optional string
+  - `toggle_sector`: optional boolean
+  - `toggle_sector_id`: optional integer (references a sector by `id`, not array index)
+  - `toggle_sector_oneshot`: optional boolean
   - `flags`: array of strings
 
 - **In-memory**: `Wall` in `include/game/world.h`
