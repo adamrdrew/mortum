@@ -156,6 +156,27 @@ static int wall_sector_for_point(const World* world, const Wall* w, float px, fl
 	return -1;
 }
 
+static float camera_z_for_sector(const World* world, int sector) {
+	// World units: sector floor/ceil are in the same units as map vertices.
+	// We currently render with a fixed eye height above the sector floor.
+	// (Player has no z yet; this is purely for rendering.)
+	const float eye_height = 1.5f;
+	const float headroom = 0.1f;
+	if (!world || (unsigned)sector >= (unsigned)world->sector_count) {
+		return eye_height;
+	}
+	const Sector* s = &world->sectors[sector];
+	float z = s->floor_z + eye_height;
+	float z_max = s->ceil_z - headroom;
+	if (z > z_max) {
+		z = z_max;
+	}
+	if (z < s->floor_z + headroom) {
+		z = s->floor_z + headroom;
+	}
+	return z;
+}
+
 // Ray: o + t*d, segment: a + u*s
 static bool ray_segment_hit(float ox, float oy, float dx, float dy, float ax, float ay, float bx, float by, float* out_t) {
 	float sx = bx - ax;
@@ -186,6 +207,10 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 
 	float angle0 = cam->angle_deg - cam->fov_deg * 0.5f;
 	float inv_w = fb->width > 1 ? (1.0f / (float)(fb->width - 1)) : 0.0f;
+	float half_h = 0.5f * (float)fb->height;
+	float proj_z = half_h;
+	int plane_sector = world_find_sector_at_point_stable(world, cam->x, cam->y);
+	float cam_z = camera_z_for_sector(world, plane_sector);
 
 	for (int x = 0; x < fb->width; x++) {
 		float lerp = (float)x * inv_w;
@@ -221,20 +246,6 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 		float corr = cosf(ray_rad - cam_rad);
 		float dist = best_t * (corr > 0.001f ? corr : 0.001f);
 
-		float wall_height = 1.0f;
-		int slice_h = (int)((wall_height * (float)fb->height) / (dist + 0.001f));
-		if (slice_h > fb->height * 4) {
-			slice_h = fb->height * 4;
-		}
-		int y0 = (fb->height - slice_h) / 2;
-		int y1 = y0 + slice_h;
-		if (y0 < 0) {
-			y0 = 0;
-		}
-		if (y1 > fb->height) {
-			y1 = fb->height;
-		}
-
 		Wall w = world->walls[best_wall];
 		uint32_t base = 0xFFB0B0B0u;
 		float sector_intensity = 1.0f;
@@ -245,11 +256,27 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 			sector_intensity = s->light;
 			sector_tint = s->light_color;
 		}
+
+		float wall_floor_z = 0.0f;
+		float wall_ceil_z = 4.0f;
+		if ((unsigned)view_sector < (unsigned)world->sector_count) {
+			const Sector* s = &world->sectors[view_sector];
+			wall_floor_z = s->floor_z;
+			wall_ceil_z = s->ceil_z;
+		}
+		int y_top = (int)(half_h - (wall_ceil_z - cam_z) * (proj_z / (dist + 0.001f)));
+		int y_bot = (int)(half_h - (wall_floor_z - cam_z) * (proj_z / (dist + 0.001f)));
+		if (y_top < 0) {
+			y_top = 0;
+		}
+		if (y_bot > fb->height) {
+			y_bot = fb->height;
+		}
 		float hit_x = cam->x + dx * best_t;
 		float hit_y = cam->y + dy * best_t;
 		uint32_t c = lighting_apply(base, dist, sector_intensity, sector_tint, world->lights, world->light_count, hit_x, hit_y);
 
-		for (int y = y0; y < y1; y++) {
+		for (int y = y_top; y < y_bot; y++) {
 			fb->pixels[y * fb->width + x] = c;
 		}
 	}
@@ -284,12 +311,16 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 	float half_h = 0.5f * (float)fb->height;
 	float proj_z = half_h; // camera height in screen space (Wolf3D-style)
 	int plane_sector = world_find_sector_at_point_stable(world, cam->x, cam->y);
+	float plane_floor_z = 0.0f;
+	float plane_ceil_z = 4.0f;
 	float plane_sector_intensity = 1.0f;
 	LightColor plane_sector_tint = light_color_white();
 	const Texture* floor_tex = NULL;
 	const Texture* ceil_tex = NULL;
 	if ((unsigned)plane_sector < (unsigned)world->sector_count) {
 		const Sector* s = &world->sectors[plane_sector];
+		plane_floor_z = s->floor_z;
+		plane_ceil_z = s->ceil_z;
 		plane_sector_intensity = s->light;
 		plane_sector_tint = s->light_color;
 		if (texreg && paths) {
@@ -301,6 +332,7 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 			}
 		}
 	}
+	float cam_z = camera_z_for_sector(world, plane_sector);
 
 	for (int x = 0; x < fb->width; x++) {
 		if (out_depth) {
@@ -353,22 +385,41 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 				out_depth[x] = dist;
 			}
 
-			float wall_height = 1.0f;
-			slice_h = (int)((wall_height * (float)fb->height) / (dist + 0.001f));
-			if (slice_h > fb->height * 4) {
-				slice_h = fb->height * 4;
-			}
-			y0 = (fb->height - slice_h) / 2;
-			int y1 = y0 + slice_h;
-			y0c = y0 < 0 ? 0 : y0;
-			y1c = y1 > fb->height ? fb->height : y1;
-
 			Wall w = world->walls[best_wall];
 			int view_sector = wall_sector_for_point(world, &w, cam->x, cam->y);
 			if ((unsigned)view_sector < (unsigned)world->sector_count) {
 				const Sector* s = &world->sectors[view_sector];
 				wall_sector_intensity = s->light;
 				wall_sector_tint = s->light_color;
+			}
+
+			float wall_floor_z = plane_floor_z;
+			float wall_ceil_z = plane_ceil_z;
+			if ((unsigned)view_sector < (unsigned)world->sector_count) {
+				const Sector* s = &world->sectors[view_sector];
+				wall_floor_z = s->floor_z;
+				wall_ceil_z = s->ceil_z;
+			}
+			int y_top = (int)(half_h - (wall_ceil_z - cam_z) * (proj_z / (dist + 0.001f)));
+			int y_bot = (int)(half_h - (wall_floor_z - cam_z) * (proj_z / (dist + 0.001f)));
+			y0 = y_top;
+			slice_h = y_bot - y_top;
+			if (slice_h < 1) {
+				slice_h = 1;
+			}
+			y0c = y_top < 0 ? 0 : y_top;
+			y1c = y_bot > fb->height ? fb->height : y_bot;
+			if (y0c < 0) {
+				y0c = 0;
+			}
+			if (y1c < 0) {
+				y1c = 0;
+			}
+			if (y0c > fb->height) {
+				y0c = fb->height;
+			}
+			if (y1c > fb->height) {
+				y1c = fb->height;
 			}
 
 			// Compute hit u along segment
@@ -394,7 +445,11 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 				if (denom <= 0.001f) {
 					continue;
 				}
-				float row_dist = proj_z / denom;
+				float zdelta = plane_ceil_z - cam_z;
+				if (zdelta <= 0.001f) {
+					continue;
+				}
+				float row_dist = (zdelta * proj_z) / denom;
 				float t = row_dist / (corr > 0.001f ? corr : 0.001f);
 				float wx = cam->x + dx * t;
 				float wy = cam->y + dy * t;
@@ -423,7 +478,11 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 				if (denom <= 0.001f) {
 					continue;
 				}
-				float row_dist = proj_z / denom;
+				float zdelta = cam_z - plane_floor_z;
+				if (zdelta <= 0.001f) {
+					continue;
+				}
+				float row_dist = (zdelta * proj_z) / denom;
 				float t = row_dist / (corr > 0.001f ? corr : 0.001f);
 				float wx = cam->x + dx * t;
 				float wy = cam->y + dy * t;
