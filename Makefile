@@ -27,6 +27,9 @@ BIN := $(BIN_DIR)/mortum
 # Optional: run a specific map via `make run MAP=arena.json`
 RUN_MAP ?=
 
+# Optional: pass extra args to the binary via `make run RUN_ARGS="--flag"`
+RUN_ARGS ?=
+
 # Back-compat alias (some docs/specs use MAP=...)
 MAP ?=
 ifneq ($(strip $(MAP)),)
@@ -81,6 +84,9 @@ SRC := \
   src/game/player_controller.c
 
 SRC := $(SRC) \
+  src/game/debug_dump.c
+
+SRC := $(SRC) \
   src/game/episode_runner.c \
   src/game/debug_overlay.c
 
@@ -104,7 +110,7 @@ release: CFLAGS := $(CFLAGS_COMMON) $(REL)
 release: $(BIN)
 
 run: CFLAGS := $(CFLAGS_COMMON) $(DBG)
-run: $(BIN) ; $(BIN) $(RUN_MAP)
+run: $(BIN) ; $(BIN) $(RUN_MAP) $(RUN_ARGS)
 
 test: ; @echo "No tests wired yet." ; exit 0
 

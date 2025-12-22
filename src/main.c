@@ -32,6 +32,7 @@
 #include "game/weapons.h"
 
 #include "game/debug_overlay.h"
+#include "game/debug_dump.h"
 #include "game/episode_runner.h"
 #include "game/purge_item.h"
 #include "game/rules.h"
@@ -60,8 +61,23 @@ static bool gather_fire(const Input* in) {
 int main(int argc, char** argv) {
 	char prev_bgmusic[64] = "";
 	char prev_soundfont[64] = "";
-	(void)argc;
-	(void)argv;
+
+	bool debug_dump_enabled = false;
+	const char* map_name_arg = NULL;
+	for (int i = 1; i < argc; i++) {
+		const char* a = argv[i];
+		if (!a || a[0] == '\0') {
+			continue;
+		}
+		if (strcmp(a, "--debug-dump") == 0) {
+			debug_dump_enabled = true;
+			continue;
+		}
+		// Treat non-flag args as a map filename relative to Assets/Levels/.
+		if (a[0] != '-') {
+			map_name_arg = a;
+		}
+	}
 
 	if (!log_init(LOG_LEVEL_INFO)) {
 		return 1;
@@ -129,9 +145,9 @@ int main(int argc, char** argv) {
 	EpisodeRunner runner;
 	episode_runner_init(&runner);
 	bool using_episode = false;
-	if (argc > 1 && argv[1] && argv[1][0] != '\0') {
-		// argv[1] is a filename relative to Assets/Levels/ (e.g. "mortum_test.json").
-		map_name = argv[1];
+	if (map_name_arg) {
+		// A filename relative to Assets/Levels/ (e.g. "mortum_test.json").
+		map_name = map_name_arg;
 	} else if (ep_ok && episode_runner_start(&runner, &ep)) {
 		using_episode = true;
 		map_name = episode_runner_current_map(&runner, &ep);
@@ -204,6 +220,7 @@ int main(int argc, char** argv) {
 	int fps = 0;
 	bool debug_overlay_enabled = false;
 	bool debug_prev_down = false;
+	bool dump_prev_down = false;
 	bool q_prev_down = false;
 	bool e_prev_down = false;
 	bool win_prev = false;
@@ -225,6 +242,15 @@ int main(int argc, char** argv) {
 		debug_prev_down = dbg_down;
 		if (dbg_pressed) {
 			debug_overlay_enabled = !debug_overlay_enabled;
+		}
+
+		// Debug dump: only when enabled via CLI and user presses `~` (grave).
+		bool dump_down = input_key_down(&in, SDL_SCANCODE_GRAVE);
+		bool dump_pressed = dump_down && !dump_prev_down;
+		dump_prev_down = dump_down;
+		if (debug_dump_enabled && dump_pressed) {
+			Camera cam = camera_make(player.x, player.y, player.angle_deg, cfg->fov_deg);
+			debug_dump_print(stdout, map_name, map_ok ? &map.world : NULL, &player, &cam);
 		}
 
 		bool noclip_down = input_key_down(&in, SDL_SCANCODE_F2);
