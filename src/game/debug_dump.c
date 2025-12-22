@@ -58,7 +58,42 @@ static bool sector_contains_point(const World* world, int sector, float px, floa
 	if (!world || (unsigned)sector >= (unsigned)world->sector_count) {
 		return false;
 	}
+
+	// Prefer using only edges where this sector is the wall's front side.
+	// Many portal boundaries are represented by two directed walls (A->B and B->A);
+	// counting both would double-count the segment and break even-odd classification.
 	int crossings = 0;
+	int edge_count = 0;
+	for (int i = 0; i < world->wall_count; i++) {
+		const Wall* w = &world->walls[i];
+		if (w->front_sector != sector) {
+			continue;
+		}
+		edge_count++;
+		if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
+			continue;
+		}
+		Vertex a = world->vertices[w->v0];
+		Vertex b = world->vertices[w->v1];
+		if (fabsf(a.y - b.y) < 1e-8f) {
+			continue;
+		}
+		bool cond = (a.y > py) != (b.y > py);
+		if (!cond) {
+			continue;
+		}
+		float x_int = (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x;
+		if (px < x_int) {
+			crossings ^= 1;
+		}
+	}
+	if (edge_count > 0) {
+		return crossings != 0;
+	}
+
+	// Fallback: if a sector has no front edges (older maps or malformed data),
+	// include any wall that references the sector.
+	crossings = 0;
 	for (int i = 0; i < world->wall_count; i++) {
 		const Wall* w = &world->walls[i];
 		if (w->front_sector != sector && w->back_sector != sector) {
