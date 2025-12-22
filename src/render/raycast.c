@@ -5,6 +5,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 static float deg_to_rad(float deg) {
 	return deg * (float)M_PI / 180.0f;
@@ -26,6 +27,51 @@ static float clampf(float v, float lo, float hi) {
 
 static float fractf(float v) {
 	return v - floorf(v);
+}
+
+// Even-odd point-in-polygon test using all edges that touch a sector.
+// Assumes walls form a closed boundary for each sector.
+static bool sector_contains_point(const World* world, int sector, float px, float py) {
+	if (!world || (unsigned)sector >= (unsigned)world->sector_count) {
+		return false;
+	}
+	int crossings = 0;
+	for (int i = 0; i < world->wall_count; i++) {
+		const Wall* w = &world->walls[i];
+		if (w->front_sector != sector && w->back_sector != sector) {
+			continue;
+		}
+		if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
+			continue;
+		}
+		Vertex a = world->vertices[w->v0];
+		Vertex b = world->vertices[w->v1];
+		// Skip horizontal edges.
+		if (fabsf(a.y - b.y) < 1e-8f) {
+			continue;
+		}
+		bool cond = (a.y > py) != (b.y > py);
+		if (!cond) {
+			continue;
+		}
+		float x_int = (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x;
+		if (px < x_int) {
+			crossings ^= 1;
+		}
+	}
+	return crossings != 0;
+}
+
+static int world_find_sector_at_point(const World* world, float px, float py) {
+	if (!world || world->sector_count <= 0) {
+		return -1;
+	}
+	for (int s = 0; s < world->sector_count; s++) {
+		if (sector_contains_point(world, s, px, py)) {
+			return s;
+		}
+	}
+	return -1;
 }
 
 // Pick which sector is "on the camera side" of the wall.
@@ -185,6 +231,7 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 	float inv_w = fb->width > 1 ? (1.0f / (float)(fb->width - 1)) : 0.0f;
 	float half_h = 0.5f * (float)fb->height;
 	float proj_z = half_h; // camera height in screen space (Wolf3D-style)
+	int cam_sector = world_find_sector_at_point(world, cam->x, cam->y);
 
 	for (int x = 0; x < fb->width; x++) {
 		if (out_depth) {
@@ -241,15 +288,26 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 
 		Wall w = world->walls[best_wall];
 		uint32_t base = 0xFFB0B0B0u;
-		float sector_intensity = 1.0f;
-		LightColor sector_tint = light_color_white();
+		float wall_sector_intensity = 1.0f;
+		LightColor wall_sector_tint = light_color_white();
+		float plane_sector_intensity = 1.0f;
+		LightColor plane_sector_tint = light_color_white();
 		const Texture* floor_tex = NULL;
 		const Texture* ceil_tex = NULL;
 		int view_sector = wall_sector_for_point(world, &w, cam->x, cam->y);
 		if ((unsigned)view_sector < (unsigned)world->sector_count) {
 			const Sector* s = &world->sectors[view_sector];
-			sector_intensity = s->light;
-			sector_tint = s->light_color;
+			wall_sector_intensity = s->light;
+			wall_sector_tint = s->light_color;
+		}
+		int plane_sector = cam_sector;
+		if ((unsigned)plane_sector >= (unsigned)world->sector_count) {
+			plane_sector = view_sector;
+		}
+		if ((unsigned)plane_sector < (unsigned)world->sector_count) {
+			const Sector* s = &world->sectors[plane_sector];
+			plane_sector_intensity = s->light;
+			plane_sector_tint = s->light_color;
 			if (texreg && paths) {
 				if (s->floor_tex[0] != '\0') {
 					floor_tex = texture_registry_get(texreg, paths, s->floor_tex);
@@ -286,7 +344,7 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 				float tu = fractf(wx);
 				float tv = fractf(wy);
 				uint32_t c = ceil_tex ? texture_sample_nearest(ceil_tex, tu, tv) : 0xFF0B0E14u;
-				c = lighting_apply(c, row_dist, sector_intensity, sector_tint, world->lights, world->light_count, wx, wy);
+				c = lighting_apply(c, row_dist, plane_sector_intensity, plane_sector_tint, world->lights, world->light_count, wx, wy);
 				fb->pixels[y * fb->width + x] = c;
 			}
 		}
@@ -295,7 +353,7 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 		for (int y = y0c; y < y1c; y++) {
 			float v = (float)(y - y0) / (float)(slice_h ? slice_h : 1);
 			uint32_t c = tex ? texture_sample_nearest(tex, u, v) : base;
-			c = lighting_apply(c, dist, sector_intensity, sector_tint, world->lights, world->light_count, hit_x, hit_y);
+			c = lighting_apply(c, dist, wall_sector_intensity, wall_sector_tint, world->lights, world->light_count, hit_x, hit_y);
 			fb->pixels[y * fb->width + x] = c;
 		}
 
@@ -313,7 +371,7 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 				float tu = fractf(wx);
 				float tv = fractf(wy);
 				uint32_t c = floor_tex ? texture_sample_nearest(floor_tex, tu, tv) : 0xFF121018u;
-				c = lighting_apply(c, row_dist, sector_intensity, sector_tint, world->lights, world->light_count, wx, wy);
+				c = lighting_apply(c, row_dist, plane_sector_intensity, plane_sector_tint, world->lights, world->light_count, wx, wy);
 				fb->pixels[y * fb->width + x] = c;
 			}
 		}
