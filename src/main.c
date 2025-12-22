@@ -33,6 +33,7 @@
 
 #include "game/debug_overlay.h"
 #include "game/debug_dump.h"
+#include "game/perf_trace.h"
 #include "game/episode_runner.h"
 #include "game/purge_item.h"
 #include "game/rules.h"
@@ -221,12 +222,22 @@ int main(int argc, char** argv) {
 	bool debug_overlay_enabled = false;
 	bool debug_prev_down = false;
 	bool dump_prev_down = false;
+	bool fps_overlay_enabled = false;
+	bool fps_prev_down = false;
+	bool perf_prev_down = false;
+	PerfTrace perf;
+	perf_trace_init(&perf);
 	bool q_prev_down = false;
 	bool e_prev_down = false;
 	bool win_prev = false;
 
 	while (running) {
-		double now = platform_time_seconds();
+		double frame_t0 = platform_time_seconds();
+		double now = frame_t0;
+		double update_t0 = 0.0, update_t1 = 0.0;
+		double render3d_t0 = 0.0, render3d_t1 = 0.0;
+		double ui_t0 = 0.0, ui_t1 = 0.0;
+		double present_t0 = 0.0, present_t1 = 0.0;
 		int steps = game_loop_begin_frame(&loop, now);
 
 		input_begin_frame(&in);
@@ -242,6 +253,24 @@ int main(int argc, char** argv) {
 		debug_prev_down = dbg_down;
 		if (dbg_pressed) {
 			debug_overlay_enabled = !debug_overlay_enabled;
+		}
+
+		// FPS overlay toggle (upper-right).
+		bool fps_down = input_key_down(&in, SDL_SCANCODE_P);
+		bool fps_pressed = fps_down && !fps_prev_down;
+		fps_prev_down = fps_down;
+		if (fps_pressed) {
+			fps_overlay_enabled = !fps_overlay_enabled;
+		}
+
+		// Performance trace capture: press O to gather 60 frames then dump a summary.
+		bool perf_down = input_key_down(&in, SDL_SCANCODE_O);
+		bool perf_pressed = perf_down && !perf_prev_down;
+		perf_prev_down = perf_down;
+		if (perf_pressed) {
+			perf_trace_start(&perf, map_name, fb.width, fb.height);
+			fprintf(stdout, "\n(perf trace) capturing %d frames...\n", PERF_TRACE_FRAME_COUNT);
+			fflush(stdout);
 		}
 
 		// Debug dump: only when enabled via CLI and user presses `~` (grave).
@@ -310,6 +339,9 @@ int main(int argc, char** argv) {
 		if (e_pressed) {
 			weapon_wheel_delta += 1;
 		}
+		if (perf_trace_is_active(&perf)) {
+			update_t0 = platform_time_seconds();
+		}
 		for (int i = 0; i < steps; i++) {
 			if (gs.mode == GAME_MODE_PLAYING) {
 				player_controller_update(&player, map_ok ? &map.world : NULL, &ci, loop.fixed_dt_s);
@@ -324,6 +356,9 @@ int main(int argc, char** argv) {
 					gs.mode = GAME_MODE_LOSE;
 				}
 			}
+		}
+		if (perf_trace_is_active(&perf)) {
+			update_t1 = platform_time_seconds();
 		}
 
 		// Episode progression on win edge.
@@ -399,15 +434,49 @@ int main(int argc, char** argv) {
 		if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
 			start_sector = player.body.sector;
 		}
+		if (perf_trace_is_active(&perf)) {
+			render3d_t0 = platform_time_seconds();
+		}
 		raycast_render_textured_from_sector(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, map_ok ? map.sky : NULL, wall_depth, start_sector);
+		if (perf_trace_is_active(&perf)) {
+			render3d_t1 = platform_time_seconds();
+			ui_t0 = render3d_t1;
+		}
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);
 		hud_draw(&fb, &player, &gs, fps, &texreg, &paths);
 		if (debug_overlay_enabled) {
 			debug_overlay_draw(&fb, &player, map_ok ? &map.world : NULL, fps);
 		}
+		if (fps_overlay_enabled) {
+			char fps_text[32];
+			snprintf(fps_text, sizeof(fps_text), "FPS: %d", fps);
+			int w = (int)strlen(fps_text) * 7;
+			int x = fb.width - 8 - w;
+			int y = 8;
+			if (x < 0) {
+				x = 0;
+			}
+			font_draw_text(&fb, x, y, fps_text, 0xFFFFFFFFu);
+		}
+		if (perf_trace_is_active(&perf)) {
+			ui_t1 = platform_time_seconds();
+			present_t0 = ui_t1;
+		}
 
 		present_frame(&presenter, &win, &fb);
+		if (perf_trace_is_active(&perf)) {
+			present_t1 = platform_time_seconds();
+			double frame_t1 = present_t1;
+			PerfTraceFrame pf;
+			pf.frame_ms = (frame_t1 - frame_t0) * 1000.0;
+			pf.update_ms = (update_t1 - update_t0) * 1000.0;
+			pf.render3d_ms = (render3d_t1 - render3d_t0) * 1000.0;
+			pf.ui_ms = (ui_t1 - ui_t0) * 1000.0;
+			pf.present_ms = (present_t1 - present_t0) * 1000.0;
+			pf.steps = steps;
+			perf_trace_record_frame(&perf, &pf, stdout);
+		}
 
 		frames++;
 		if (now - fps_t0 >= 1.0) {
