@@ -408,6 +408,10 @@ static void draw_sector_ceiling_column(
 
 	// Ceiling
 	if (ceil_z > cam_z + 0.001f) {
+		// Plane texture mapping: previously used fractf(wx/wy) which repeats every 1 world unit
+		// and makes floor/ceiling textures look extremely small. Scale UVs so one tile spans
+		// multiple world units (closer to typical wall texel density).
+		const float plane_uv_scale = 0.25f; // 1 repeat per 4 world units
 		int cy0 = y_top;
 		int cy1 = y_bot < y_horizon ? y_bot : y_horizon;
 		for (int y = cy0; y < cy1; y++) {
@@ -419,8 +423,8 @@ static void draw_sector_ceiling_column(
 			float t = row_dist / corr_safe;
 			float wx = cam_x + dx * t;
 			float wy = cam_y + dy * t;
-			float tu = fractf(wx);
-			float tv = fractf(wy);
+			float tu = fractf(wx * plane_uv_scale);
+			float tv = fractf(wy * plane_uv_scale);
 			uint32_t c = ceil_tex ? texture_sample_nearest(ceil_tex, tu, tv) : 0xFF0B0E14u;
 			c = lighting_apply(c, row_dist, sector_intensity, sector_tint, lights, light_count, wx, wy);
 			fb->pixels[y * fb->width + x] = c;
@@ -466,6 +470,7 @@ static void draw_sector_floor_column(
 
 	// Floor
 	if (cam_z > floor_z + 0.001f) {
+		const float plane_uv_scale = 0.25f; // 1 repeat per 4 world units
 		int fy0 = y_top > y_horizon ? y_top : y_horizon;
 		int fy1 = y_bot;
 		for (int y = fy0; y < fy1; y++) {
@@ -477,8 +482,8 @@ static void draw_sector_floor_column(
 			float t = row_dist / corr_safe;
 			float wx = cam_x + dx * t;
 			float wy = cam_y + dy * t;
-			float tu = fractf(wx);
-			float tv = fractf(wy);
+			float tu = fractf(wx * plane_uv_scale);
+			float tv = fractf(wy * plane_uv_scale);
 			uint32_t c = floor_tex ? texture_sample_nearest(floor_tex, tu, tv) : 0xFF121018u;
 			c = lighting_apply(c, row_dist, sector_intensity, sector_tint, lights, light_count, wx, wy);
 			fb->pixels[y * fb->width + x] = c;
