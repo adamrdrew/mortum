@@ -7,3 +7,6 @@
 #define UNDEAD_SHARDS_REQUIRED 3
 
 #define PURGE_ITEM_MORTUM_REDUCE 35
+
+// Movable sector floor speed (world units per second).
+#define MORTUM_SECTOR_FLOOR_SPEED 2.5f

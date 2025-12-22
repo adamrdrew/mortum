@@ -167,6 +167,7 @@ void world_set_sector_tex(Sector* s, StringView floor_tex, StringView ceil_tex) 
 
 void world_set_wall_tex(Wall* w, StringView tex) {
 	copy_sv(w->tex, tex);
+	copy_sv(w->base_tex, tex);
 }
 
 bool world_sector_contains_point(const World* world, int sector, float px, float py) {

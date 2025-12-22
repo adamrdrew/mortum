@@ -83,6 +83,7 @@ SRC := \
   src/game/tuning.c \
   src/game/collision.c \
   src/game/dash.c \
+  src/game/sector_height.c \
   src/game/player_controller.c
 
 SRC := $(SRC) \

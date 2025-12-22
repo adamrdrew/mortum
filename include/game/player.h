@@ -32,6 +32,7 @@ typedef struct Player {
 	bool dash_prev_down;
 	bool noclip;
 	bool noclip_prev_down;
+	bool action_prev_down;
 } Player;
 
 void player_init(Player* p);

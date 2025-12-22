@@ -12,7 +12,16 @@ typedef struct Vertex {
 
 typedef struct Sector {
 	int id;
+	// Runtime floor height (can change for movable sectors).
 	float floor_z;
+	// Floor height as authored in the map file.
+	float floor_z_origin;
+	// Optional alternate floor height for toggleable/movable sectors.
+	float floor_z_toggled_pos;
+	bool movable;
+	bool floor_moving;
+	float floor_z_target;
+	int floor_toggle_wall_index; // wall index that initiated current movement, or -1
 	float ceil_z;
 	float light;
 	LightColor light_color;
@@ -25,7 +34,15 @@ typedef struct Wall {
 	int v1;
 	int front_sector;
 	int back_sector; // -1 for solid
+	// Current wall texture (may change at runtime).
 	char tex[64];
+	// Inactive/base texture from the map file.
+	char base_tex[64];
+	// Optional active texture for toggle walls.
+	char active_tex[64];
+	bool toggle_sector;
+	int toggle_sector_id; // -1 means "use default" (sector on player side)
+	bool toggle_sector_oneshot;
 } Wall;
 
 typedef struct World {

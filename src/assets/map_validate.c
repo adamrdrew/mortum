@@ -404,17 +404,29 @@ bool map_validate(const World* world, float player_start_x, float player_start_y
 		return false;
 	}
 	for (int i = 0; i < world->sector_count; i++) {
-		if (world->sectors[i].ceil_z <= world->sectors[i].floor_z) {
+		const Sector* s = &world->sectors[i];
+		if (s->ceil_z <= s->floor_z) {
 			log_error("Sector %d has ceil_z <= floor_z", i);
 			return false;
 		}
-		if (world->sectors[i].floor_tex[0] == '\0') {
+		if (s->floor_tex[0] == '\0') {
 			log_error("Sector %d missing floor_tex", i);
 			return false;
 		}
-		if (world->sectors[i].ceil_tex[0] == '\0') {
+		if (s->ceil_tex[0] == '\0') {
 			log_error("Sector %d missing ceil_tex", i);
 			return false;
+		}
+		if (s->movable) {
+			float max_floor = s->floor_z_origin;
+			if (s->floor_z_toggled_pos > max_floor) {
+				max_floor = s->floor_z_toggled_pos;
+			}
+			// Minimal clearance check: avoid impossible floor positions.
+			if (s->ceil_z <= max_floor + 0.10f) {
+				log_error("Sector %d movable floor reaches/overlaps ceiling (ceil_z=%.3f max_floor=%.3f)", i, s->ceil_z, max_floor);
+				return false;
+			}
 		}
 		if (!validate_sector_boundary(world, i)) {
 			return false;
@@ -437,6 +449,27 @@ bool map_validate(const World* world, float player_start_x, float player_start_y
 		if (w.tex[0] == '\0') {
 			log_error("Wall %d missing tex", i);
 			return false;
+		}
+		if (w.toggle_sector) {
+			if (w.toggle_sector_id != -1) {
+				bool found = false;
+				for (int s = 0; s < world->sector_count; s++) {
+					if (world->sectors[s].id == w.toggle_sector_id) {
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					log_error("Wall %d toggle_sector_id refers to missing sector id: %d", i, w.toggle_sector_id);
+					return false;
+				}
+			}
+			// If active_tex is present, it must be non-empty.
+			if (w.active_tex[0] == '\0') {
+				// Allowed: empty means "no alternate texture".
+			} else {
+				// ok
+			}
 		}
 	}
 

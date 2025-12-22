@@ -243,6 +243,8 @@
         {
             "id": 5,
             "floor_z": -6,
+            "floor_z_toggled_pos": -1,
+            "movable": true,
             "ceil_z": 4,
             "floor_tex": "SLIME_1A.PNG",
             "ceil_tex": "TECH_2E.PNG",
@@ -623,7 +625,11 @@
             "v1": 21,
             "front_sector": 5,
             "back_sector": 4,
-            "tex": "BLOOD_1A.PNG",
+            "tex": "SWITCH_1B.PNG",
+            "active_tex": "SWITCH_1A.PNG",
+            "toggle_sector": true,
+            "toggle_sector_id": 5,
+            "toggle_sector_oneshot": true,
             "flags": [
                 "portal"
             ]

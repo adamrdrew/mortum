@@ -35,6 +35,22 @@ static bool json_get_light_color(const JsonDoc* doc, int tok, LightColor* out) {
 	return true;
 }
 
+static bool json_get_bool(const JsonDoc* doc, int tok, bool* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out) {
+		return false;
+	}
+	StringView sv = json_token_sv(doc, tok);
+	if (sv.len == 4 && strncmp(sv.data, "true", 4) == 0) {
+		*out = true;
+		return true;
+	}
+	if (sv.len == 5 && strncmp(sv.data, "false", 5) == 0) {
+		*out = false;
+		return true;
+	}
+	return false;
+}
+
 void map_load_result_destroy(MapLoadResult* self) {
 	world_destroy(&self->world);
 	memset(self, 0, sizeof(*self));
@@ -161,6 +177,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		int ts = json_array_nth(&doc, t_sectors, i);
 		int tid=-1, tfloor=-1, tceil=-1, tfloor_tex=-1, tceil_tex=-1, tlight=-1;
 		int tlight_color = -1;
+		int tmovable = -1;
+		int tfloor_toggled = -1;
 		if (!json_object_get(&doc, ts, "id", &tid) || !json_object_get(&doc, ts, "floor_z", &tfloor) || !json_object_get(&doc, ts, "ceil_z", &tceil) || !json_object_get(&doc, ts, "floor_tex", &tfloor_tex) || !json_object_get(&doc, ts, "ceil_tex", &tceil_tex) || !json_object_get(&doc, ts, "light", &tlight)) {
 			log_error("sector %d missing required fields", i);
 			json_doc_destroy(&doc);
@@ -168,6 +186,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 			return false;
 		}
 		(void)json_object_get(&doc, ts, "light_color", &tlight_color);
+		(void)json_object_get(&doc, ts, "movable", &tmovable);
+		(void)json_object_get(&doc, ts, "floor_z_toggled_pos", &tfloor_toggled);
 		int id=0;
 		float floor_z=0, ceil_z=0, light=1.0f;
 		StringView sv_floor_tex, sv_ceil_tex;
@@ -177,8 +197,39 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 			map_load_result_destroy(out);
 			return false;
 		}
+		bool movable = false;
+		float floor_z_toggled_pos = floor_z;
+		if (tmovable != -1) {
+			if (!json_get_bool(&doc, tmovable, &movable)) {
+				log_error("sector %d movable invalid (must be true/false)", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+		}
+		if (tfloor_toggled != -1) {
+			if (!json_get_float(&doc, tfloor_toggled, &floor_z_toggled_pos)) {
+				log_error("sector %d floor_z_toggled_pos invalid", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			movable = true; // presence implies movable
+		}
+		if (movable && tfloor_toggled == -1) {
+			log_error("sector %d is movable but missing floor_z_toggled_pos", i);
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
 		out->world.sectors[i].id = id;
 		out->world.sectors[i].floor_z = floor_z;
+		out->world.sectors[i].floor_z_origin = floor_z;
+		out->world.sectors[i].floor_z_toggled_pos = floor_z_toggled_pos;
+		out->world.sectors[i].movable = movable;
+		out->world.sectors[i].floor_moving = false;
+		out->world.sectors[i].floor_z_target = floor_z;
+		out->world.sectors[i].floor_toggle_wall_index = -1;
 		out->world.sectors[i].ceil_z = ceil_z;
 		out->world.sectors[i].light = light;
 		out->world.sectors[i].light_color = light_color_white();
@@ -276,12 +327,20 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	for (int i = 0; i < wcount; i++) {
 		int tw = json_array_nth(&doc, t_walls, i);
 		int tv0=-1,tv1=-1,tfs=-1,tbs=-1,ttex=-1;
+		int t_toggle_sector = -1;
+		int t_toggle_sector_id = -1;
+		int t_toggle_sector_oneshot = -1;
+		int t_active_tex = -1;
 		if (!json_object_get(&doc, tw, "v0", &tv0) || !json_object_get(&doc, tw, "v1", &tv1) || !json_object_get(&doc, tw, "front_sector", &tfs) || !json_object_get(&doc, tw, "back_sector", &tbs) || !json_object_get(&doc, tw, "tex", &ttex)) {
 			log_error("wall %d missing required fields", i);
 			json_doc_destroy(&doc);
 			map_load_result_destroy(out);
 			return false;
 		}
+		(void)json_object_get(&doc, tw, "toggle_sector", &t_toggle_sector);
+		(void)json_object_get(&doc, tw, "toggle_sector_id", &t_toggle_sector_id);
+		(void)json_object_get(&doc, tw, "toggle_sector_oneshot", &t_toggle_sector_oneshot);
+		(void)json_object_get(&doc, tw, "active_tex", &t_active_tex);
 		int v0=0,v1=0,fs=0,bs=-1;
 		StringView sv_tex;
 		if (!json_get_int(&doc, tv0, &v0) || !json_get_int(&doc, tv1, &v1) || !json_get_int(&doc, tfs, &fs) || !json_get_int(&doc, tbs, &bs) || !json_get_string(&doc, ttex, &sv_tex)) {
@@ -290,11 +349,58 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 			map_load_result_destroy(out);
 			return false;
 		}
+		bool toggle_sector = false;
+		int toggle_sector_id = -1;
+		bool toggle_sector_oneshot = false;
+		if (t_toggle_sector != -1) {
+			if (!json_get_bool(&doc, t_toggle_sector, &toggle_sector)) {
+				log_error("wall %d toggle_sector invalid (must be true/false)", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+		}
+		if (t_toggle_sector_id != -1) {
+			if (!json_get_int(&doc, t_toggle_sector_id, &toggle_sector_id)) {
+				log_error("wall %d toggle_sector_id invalid", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+		}
+		if (t_toggle_sector_oneshot != -1) {
+			if (!json_get_bool(&doc, t_toggle_sector_oneshot, &toggle_sector_oneshot)) {
+				log_error("wall %d toggle_sector_oneshot invalid (must be true/false)", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+		}
+		StringView sv_active_tex;
+		bool has_active_tex = false;
+		if (t_active_tex != -1) {
+			if (!json_get_string(&doc, t_active_tex, &sv_active_tex)) {
+				log_error("wall %d active_tex invalid", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			has_active_tex = true;
+		}
 		out->world.walls[i].v0 = v0;
 		out->world.walls[i].v1 = v1;
 		out->world.walls[i].front_sector = fs;
 		out->world.walls[i].back_sector = bs;
+		out->world.walls[i].toggle_sector = toggle_sector;
+		out->world.walls[i].toggle_sector_id = toggle_sector_id;
+		out->world.walls[i].toggle_sector_oneshot = toggle_sector_oneshot;
+		out->world.walls[i].active_tex[0] = '\0';
 		world_set_wall_tex(&out->world.walls[i], sv_tex);
+		if (has_active_tex) {
+			size_t n = sv_active_tex.len < 63 ? sv_active_tex.len : 63;
+			memcpy(out->world.walls[i].active_tex, sv_active_tex.data, n);
+			out->world.walls[i].active_tex[n] = '\0';
+		}
 	}
 
 	json_doc_destroy(&doc);

@@ -37,6 +37,7 @@
 #include "game/episode_runner.h"
 #include "game/purge_item.h"
 #include "game/rules.h"
+#include "game/sector_height.h"
 
 #include <SDL.h>
 #include <stdbool.h>
@@ -344,6 +345,14 @@ int main(int argc, char** argv) {
 		}
 		for (int i = 0; i < steps; i++) {
 			if (gs.mode == GAME_MODE_PLAYING) {
+				bool action_down = input_key_down(&in, SDL_SCANCODE_SPACE);
+				bool action_pressed = action_down && !player.action_prev_down;
+				player.action_prev_down = action_down;
+				if (action_pressed) {
+					(void)sector_height_try_toggle_touching_wall(map_ok ? &map.world : NULL, &player);
+				}
+				sector_height_update(map_ok ? &map.world : NULL, &player, loop.fixed_dt_s);
+
 				player_controller_update(&player, map_ok ? &map.world : NULL, &ci, loop.fixed_dt_s);
 				weapons_update(&player, map_ok ? &map.world : NULL, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
 				bool use_down = input_key_down(&in, SDL_SCANCODE_F);
