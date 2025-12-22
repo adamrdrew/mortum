@@ -53,14 +53,35 @@ void episode_runner_apply_level_start(Player* player, const MapLoadResult* map) 
 	player->body.step_up.active = false;
 	player->body.on_ground = true;
 
-	// Initialize z to the start sector floor (best-effort).
+	// Initialize z to the start sector floor.
+	// NOTE: Some maps intentionally have nested/overlapping sectors (e.g. a raised platform inside a room).
+	// A pure point-in-polygon search can match multiple sectors; for spawn we pick the highest floor the
+	// body fits under.
 	player->body.sector = -1;
 	player->body.last_valid_sector = -1;
-	int s = world_find_sector_at_point(&map->world, player->body.x, player->body.y);
-	if ((unsigned)s < (unsigned)map->world.sector_count) {
-		player->body.sector = s;
-		player->body.last_valid_sector = s;
-		player->body.z = map->world.sectors[s].floor_z;
+	int best = -1;
+	float best_floor = -1e30f;
+	for (int i = 0; i < map->world.sector_count; i++) {
+		if (!world_sector_contains_point(&map->world, i, player->body.x, player->body.y)) {
+			continue;
+		}
+		const Sector* s = &map->world.sectors[i];
+		// Conservative headroom check (mirrors physics epsilon).
+		if (s->floor_z + player->body.height > s->ceil_z - 0.08f) {
+			continue;
+		}
+		if (best < 0 || s->floor_z > best_floor) {
+			best = i;
+			best_floor = s->floor_z;
+		}
+	}
+	if (best < 0) {
+		best = world_find_sector_at_point(&map->world, player->body.x, player->body.y);
+	}
+	if ((unsigned)best < (unsigned)map->world.sector_count) {
+		player->body.sector = best;
+		player->body.last_valid_sector = best;
+		player->body.z = map->world.sectors[best].floor_z;
 	} else {
 		player->body.z = 0.0f;
 		player->body.on_ground = false;

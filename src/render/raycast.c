@@ -754,6 +754,19 @@ void raycast_render_textured(
 	const char* sky_filename,
 	float* out_depth
 ) {
+	raycast_render_textured_from_sector(fb, world, cam, texreg, paths, sky_filename, out_depth, -1);
+}
+
+void raycast_render_textured_from_sector(
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const char* sky_filename,
+	float* out_depth,
+	int start_sector
+) {
 	// Background: sky (floor/ceiling are drawn per column based on ray hit sector)
 	draw_clear(fb, 0xFF0B0E14u);
 
@@ -771,8 +784,14 @@ void raycast_render_textured(
 	float half_h = 0.5f * (float)fb->height;
 	float fov_rad = deg_to_rad(cam->fov_deg);
 	float proj_dist = (0.5f * (float)fb->width) / tanf(0.5f * fov_rad);
-	int start_sector = raycast_find_sector_at_point_stable(world, cam->x, cam->y);
-	float cam_z = camera_z_for_sector(world, start_sector, cam->z);
+	int start = start_sector;
+	if ((unsigned)start >= (unsigned)(world ? world->sector_count : 0)) {
+		start = -1;
+	}
+	if (start < 0) {
+		start = raycast_find_sector_at_point_stable(world, cam->x, cam->y);
+	}
+	float cam_z = camera_z_for_sector(world, start, cam->z);
 	float cam_rad = deg_to_rad(cam->angle_deg);
 	const Texture* sky_tex = NULL;
 	if (texreg && paths && sky_filename && sky_filename[0] != '\0') {
@@ -804,7 +823,7 @@ void raycast_render_textured(
 			dx,
 			dy,
 			corr,
-			start_sector,
+			start,
 			0,
 			fb->height,
 			0.0f,

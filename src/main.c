@@ -395,7 +395,11 @@ int main(int argc, char** argv) {
 			}
 			cam.z = (player.body.z - floor_z) + bob_z;
 		}
-		raycast_render_textured(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, map_ok ? map.sky : NULL, wall_depth);
+		int start_sector = -1;
+		if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
+			start_sector = player.body.sector;
+		}
+		raycast_render_textured_from_sector(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, map_ok ? map.sky : NULL, wall_depth, start_sector);
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);
 		hud_draw(&fb, &player, &gs, fps, &texreg, &paths);

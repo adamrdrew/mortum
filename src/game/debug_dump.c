@@ -158,11 +158,26 @@ void debug_dump_print(FILE* out, const char* map_name, const World* world, const
 		float ar = deg_to_rad(player->angle_deg);
 		fprintf(out, "player_fwd: dx=%.6f dy=%.6f\n", cosf(ar), sinf(ar));
 
-		int sec = world_find_sector_at_point(world, player->body.x, player->body.y);
-		fprintf(out, "player_sector_guess:\n");
-		print_sector(out, world, sec);
-		if (sec < 0) {
-			fprintf(out, "  WARNING: player position is not inside any sector.\n");
+		// NOTE: In maps with overlapping/nested sectors (e.g. platform-in-room), a simple point-in-sector
+		// query can be ambiguous and return the "wrong" containing sector. Gameplay and rendering should
+		// prefer the PhysicsBody's tracked sector, which is updated via portal crossings.
+		fprintf(out, "player_sector (authoritative):\n");
+		print_sector(out, world, player->body.sector);
+
+		int sec_point = world_find_sector_at_point(world, player->body.x, player->body.y);
+		fprintf(out, "player_sector_guess_point:\n");
+		print_sector(out, world, sec_point);
+
+		int last_valid = player->body.sector;
+		if ((unsigned)last_valid >= (unsigned)world->sector_count) {
+			last_valid = -1;
+		}
+		int sec_stable = world_find_sector_at_point_stable(world, player->body.x, player->body.y, last_valid);
+		fprintf(out, "player_sector_guess_stable:\n");
+		print_sector(out, world, sec_stable);
+
+		if (sec_point < 0 && sec_stable < 0 && (unsigned)player->body.sector >= (unsigned)world->sector_count) {
+			fprintf(out, "  WARNING: player position is not inside any sector and player.body.sector is invalid.\n");
 			fprintf(out, "  WARNING: this usually means the map has uncovered space at this position (or the player escaped geometry).\n");
 			fprintf(out, "  WARNING: floor/ceiling selection may fall back to last-known sector and rays may hit none.\n");
 		}

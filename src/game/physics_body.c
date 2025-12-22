@@ -288,11 +288,107 @@ static void update_sector(PhysicsBody* b, const World* world) {
 	if (!b || !world) {
 		return;
 	}
+	// If we already have a sector, keep it; movement transitions are handled via portal crossings.
+	if ((unsigned)b->sector < (unsigned)world->sector_count) {
+		b->last_valid_sector = b->sector;
+		return;
+	}
 	int s = world_find_sector_at_point_stable(world, b->x, b->y, b->last_valid_sector);
 	b->sector = s;
 	if ((unsigned)s < (unsigned)world->sector_count) {
 		b->last_valid_sector = s;
 	}
+}
+
+static bool segment_intersect_param(
+	float p0x,
+	float p0y,
+	float p1x,
+	float p1y,
+	float q0x,
+	float q0y,
+	float q1x,
+	float q1y,
+	float* out_t
+) {
+	float rx = p1x - p0x;
+	float ry = p1y - p0y;
+	float sx = q1x - q0x;
+	float sy = q1y - q0y;
+	float denom = cross2(rx, ry, sx, sy);
+	if (fabsf(denom) < 1e-8f) {
+		return false;
+	}
+	float qpx = q0x - p0x;
+	float qpy = q0y - p0y;
+	float t = cross2(qpx, qpy, sx, sy) / denom;
+	float u = cross2(qpx, qpy, rx, ry) / denom;
+	if (t > 1e-6f && t <= 1.0f + 1e-6f && u >= -1e-6f && u <= 1.0f + 1e-6f) {
+		if (out_t) {
+			*out_t = t;
+		}
+		return true;
+	}
+	return false;
+}
+
+static int portal_other_sector(const Wall* w, int from_sector) {
+	if (!w) {
+		return -1;
+	}
+	return (from_sector == w->front_sector) ? w->back_sector : w->front_sector;
+}
+
+static bool find_first_portal_crossing(
+	const World* world,
+	const PhysicsBody* body,
+	int from_sector,
+	float x0,
+	float y0,
+	float x1,
+	float y1,
+	const PhysicsBodyParams* params,
+	int* out_to_sector
+) {
+	if (!world || !body || !params || !out_to_sector) {
+		return false;
+	}
+	if ((unsigned)from_sector >= (unsigned)world->sector_count) {
+		return false;
+	}
+	float best_t = 1e30f;
+	int best_to = -1;
+	for (int i = 0; i < world->wall_count; i++) {
+		const Wall* w = &world->walls[i];
+		if (w->back_sector < 0) {
+			continue;
+		}
+		if (w->front_sector != from_sector && w->back_sector != from_sector) {
+			continue;
+		}
+		if (!wall_has_valid_vertices(world, w)) {
+			continue;
+		}
+		// If this portal is blocked for this body, it can't be a valid transition.
+		if (wall_blocks_body(world, w, body, x0, y0, params)) {
+			continue;
+		}
+		Vertex a = world->vertices[w->v0];
+		Vertex b = world->vertices[w->v1];
+		float t = 0.0f;
+		if (!segment_intersect_param(x0, y0, x1, y1, a.x, a.y, b.x, b.y, &t)) {
+			continue;
+		}
+		if (t < best_t) {
+			best_t = t;
+			best_to = portal_other_sector(w, from_sector);
+		}
+	}
+	if ((unsigned)best_to < (unsigned)world->sector_count) {
+		*out_to_sector = best_to;
+		return true;
+	}
+	return false;
 }
 
 static void clamp_to_floor_and_ceiling(PhysicsBody* b, const World* world, const PhysicsBodyParams* params) {
@@ -342,51 +438,6 @@ static void clamp_to_floor_and_ceiling(PhysicsBody* b, const World* world, const
 		b->on_ground = true;
 	}
 }
-
-static void maybe_start_step_up(PhysicsBody* b, const World* world, int old_sector, const PhysicsBodyParams* params) {
-	if (!b || !world || !params) {
-		return;
-	}
-	if (b->step_up.active) {
-		return;
-	}
-	if ((unsigned)old_sector >= (unsigned)world->sector_count) {
-		return;
-	}
-	if ((unsigned)b->sector >= (unsigned)world->sector_count) {
-		return;
-	}
-
-	const Sector* from = &world->sectors[old_sector];
-	const Sector* to = &world->sectors[b->sector];
-	float delta = to->floor_z - from->floor_z;
-	if (delta <= 1e-6f) {
-		return;
-	}
-	if (delta > b->step_height + 1e-6f) {
-		return;
-	}
-
-	// Must also fit at the destination floor.
-	if (!body_fits_in_sector(b, to, to->floor_z, params)) {
-		return;
-	}
-
-	b->step_up.active = true;
-	b->step_up.start_z = b->z;
-	b->step_up.target_z = to->floor_z;
-	b->step_up.t = 0.0f;
-	b->step_up.duration_s = params->step_duration_s;
-	b->step_up.from_sector = old_sector;
-	b->step_up.to_sector = b->sector;
-	// total dx/dy are filled by the caller when using the pre-step path
-	b->step_up.total_dx = 0.0f;
-	b->step_up.total_dy = 0.0f;
-	b->step_up.applied_frac = 0.0f;
-	b->vz = 0.0f;
-	b->on_ground = true;
-}
-
 static void start_step_up_preserve_xy(PhysicsBody* b, const World* world, int from_sector, int to_sector, float total_dx, float total_dy, const PhysicsBodyParams* params) {
 	if (!b || !world || !params) {
 		return;
@@ -458,27 +509,28 @@ static void physics_body_move_delta_internal(PhysicsBody* b, const World* world,
 	int old_sector = b->sector;
 	float old_x = b->x;
 	float old_y = b->y;
+	int old_sector_for_check = old_sector;
+	if (world && (unsigned)old_sector_for_check >= (unsigned)world->sector_count) {
+		old_sector_for_check = world_find_sector_at_point_stable(world, old_x, old_y, b->last_valid_sector);
+	}
 
 	// First, compute the resolved position we'd end up at.
 	PhysicsBody tmp = *b;
 	move_resolved_2d(&tmp, world, dx, dy, params);
-	int resolved_sector = tmp.sector;
-	int old_sector_for_check = old_sector;
-	if (world) {
-		resolved_sector = world_find_sector_at_point_stable(world, tmp.x, tmp.y, b->last_valid_sector);
-		old_sector_for_check = world_find_sector_at_point_stable(world, b->x, b->y, b->last_valid_sector);
+	int to_sector = -1;
+	bool crossed_portal = false;
+	if (world && (unsigned)old_sector_for_check < (unsigned)world->sector_count) {
+		crossed_portal = find_first_portal_crossing(world, b, old_sector_for_check, old_x, old_y, tmp.x, tmp.y, params, &to_sector);
 	}
 
 	// If this move would cross into a higher floor, do a pre-step: hold x/y, animate z up,
 	// then apply the resolved horizontal movement after the step finishes.
-	if (allow_step_trigger && world && (unsigned)old_sector_for_check < (unsigned)world->sector_count && (unsigned)resolved_sector < (unsigned)world->sector_count) {
+	if (allow_step_trigger && crossed_portal && world && (unsigned)old_sector_for_check < (unsigned)world->sector_count && (unsigned)to_sector < (unsigned)world->sector_count) {
 		float from_floor = world->sectors[old_sector_for_check].floor_z;
-		float to_floor = world->sectors[resolved_sector].floor_z;
+		float to_floor = world->sectors[to_sector].floor_z;
 		float delta = to_floor - from_floor;
 		if (delta > 1e-6f && delta <= b->step_height + 1e-6f) {
-			float pending_dx = tmp.x - old_x;
-			float pending_dy = tmp.y - old_y;
-			start_step_up_preserve_xy(b, world, old_sector_for_check, resolved_sector, pending_dx, pending_dy, params);
+			start_step_up_preserve_xy(b, world, old_sector_for_check, to_sector, tmp.x - old_x, tmp.y - old_y, params);
 			// Keep x/y in the lower sector for the duration of the step.
 			b->x = old_x;
 			b->y = old_y;
@@ -491,11 +543,20 @@ static void physics_body_move_delta_internal(PhysicsBody* b, const World* world,
 	// No pre-step needed: commit resolved movement.
 	b->x = tmp.x;
 	b->y = tmp.y;
-	update_sector(b, world);
+	if (world && crossed_portal && (unsigned)to_sector < (unsigned)world->sector_count) {
+		b->sector = to_sector;
+		b->last_valid_sector = to_sector;
+	} else {
+		// Keep current sector unless we didn't have one.
+		if (world && (unsigned)old_sector_for_check < (unsigned)world->sector_count) {
+			b->sector = old_sector_for_check;
+			b->last_valid_sector = old_sector_for_check;
+		} else {
+			update_sector(b, world);
+		}
+	}
 	if (world) {
 		handle_step_down_airborne_transition(b, world, old_sector, params);
-		// Legacy post-step path (kept as fallback): if we ever cross without pre-step.
-		maybe_start_step_up(b, world, old_sector, params);
 		clamp_to_floor_and_ceiling(b, world, params);
 	}
 }

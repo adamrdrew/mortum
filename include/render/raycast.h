@@ -23,3 +23,16 @@ void raycast_render_textured(
 	const char* sky_filename,
 	float* out_depth
 );
+
+// Like raycast_render_textured, but uses the provided sector index as the recursion start sector.
+// Pass -1 to fall back to automatic sector selection from (cam->x, cam->y).
+void raycast_render_textured_from_sector(
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const char* sky_filename,
+	float* out_depth,
+	int start_sector
+);
