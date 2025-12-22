@@ -37,6 +37,16 @@ static float clampf(float v, float lo, float hi) {
 	return v;
 }
 
+static uint8_t clamp_u8(int v) {
+	if (v < 0) {
+		return 0;
+	}
+	if (v > 255) {
+		return 255;
+	}
+	return (uint8_t)v;
+}
+
 static float fractf(float v) {
 	return v - floorf(v);
 }
@@ -516,15 +526,88 @@ static void render_wall_span_textured(
 		z_span = 1.0f;
 	}
 	float inv_proj = proj_dist > 1e-6f ? (1.0f / proj_dist) : 1.0f;
+
+	// Precompute lighting multipliers once per wall span (hit_x/hit_y constant).
+	float sector_intensity = clampf(light_intensity, 0.0f, 1.0f);
+	float falloff = lighting_distance_falloff(dist);
+	float r_mul = falloff * sector_intensity * clampf(light_tint.r, 0.0f, 1.0f);
+	float g_mul = falloff * sector_intensity * clampf(light_tint.g, 0.0f, 1.0f);
+	float b_mul = falloff * sector_intensity * clampf(light_tint.b, 0.0f, 1.0f);
+	if (lights && light_count > 0) {
+		for (int i = 0; i < light_count; i++) {
+			const PointLight* L = &lights[i];
+			if (L->radius <= 0.0f || L->intensity <= 0.0f) {
+				continue;
+			}
+			float dx = hit_x - L->x;
+			float dy = hit_y - L->y;
+			float d2 = dx * dx + dy * dy;
+			float r2 = L->radius * L->radius;
+			if (d2 >= r2) {
+				continue;
+			}
+			float d = sqrtf(d2);
+			float t = 1.0f - (d / L->radius);
+			float a = L->intensity * clampf(t, 0.0f, 1.0f);
+
+			float lr = clampf(L->color.r, 0.0f, 1.0f);
+			float lg = clampf(L->color.g, 0.0f, 1.0f);
+			float lb = clampf(L->color.b, 0.0f, 1.0f);
+
+			r_mul += a * lr;
+			g_mul += a * lg;
+			b_mul += a * lb;
+		}
+	}
+	// Clamp multipliers to match lighting_apply.
+	r_mul = clampf(r_mul, 0.06f, 1.0f);
+	g_mul = clampf(g_mul, 0.06f, 1.0f);
+	b_mul = clampf(b_mul, 0.06f, 1.0f);
+	int r_mul_i = (int)lroundf(r_mul * 256.0f);
+	int g_mul_i = (int)lroundf(g_mul * 256.0f);
+	int b_mul_i = (int)lroundf(b_mul * 256.0f);
+	if (r_mul_i < 0) {
+		r_mul_i = 0;
+	}
+	if (g_mul_i < 0) {
+		g_mul_i = 0;
+	}
+	if (b_mul_i < 0) {
+		b_mul_i = 0;
+	}
+	if (r_mul_i > 256) {
+		r_mul_i = 256;
+	}
+	if (g_mul_i > 256) {
+		g_mul_i = 256;
+	}
+	if (b_mul_i > 256) {
+		b_mul_i = 256;
+	}
+
+	// Perspective-correct wall V is linear in screen-space y for a given column.
+	float yf0 = (float)y_top + 0.5f;
+	float z0 = cam_z + (half_h - yf0) * dist * inv_proj;
+	float v = (z_top - z0) / z_span;
+	float dv = (dist * inv_proj) / z_span;
+
 	for (int y = y_top; y < y_bot; y++) {
-		// Perspective-correct wall V: derive world z at this pixel from projection.
-		float yf = (float)y + 0.5f;
-		float z = cam_z + (half_h - yf) * dist * inv_proj;
-		float v = (z_top - z) / z_span;
-		v = clampf(v, 0.0f, 1.0f);
-		uint32_t c = tex ? texture_sample_nearest(tex, u, v) : base;
-		c = lighting_apply(c, dist, light_intensity, light_tint, lights, light_count, hit_x, hit_y);
-		fb->pixels[y * fb->width + x] = c;
+		float vv = v;
+		if (vv < 0.0f) {
+			vv = 0.0f;
+		} else if (vv > 1.0f) {
+			vv = 1.0f;
+		}
+		uint32_t c = tex ? texture_sample_nearest(tex, u, vv) : base;
+		uint8_t a = (uint8_t)((c >> 24) & 0xFF);
+		uint8_t r = (uint8_t)((c >> 16) & 0xFF);
+		uint8_t g = (uint8_t)((c >> 8) & 0xFF);
+		uint8_t b = (uint8_t)(c & 0xFF);
+		int rr = (r * r_mul_i + 128) >> 8;
+		int gg = (g * g_mul_i + 128) >> 8;
+		int bb = (b * b_mul_i + 128) >> 8;
+		fb->pixels[y * fb->width + x] = ((uint32_t)a << 24) | ((uint32_t)clamp_u8(rr) << 16) | ((uint32_t)clamp_u8(gg) << 8) | (uint32_t)clamp_u8(bb);
+		v += dv;
 	}
 }
 
