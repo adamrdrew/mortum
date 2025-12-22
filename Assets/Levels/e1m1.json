@@ -4,11 +4,6 @@
   "soundfont": "hl4mgm.sf2",
   "name": "E1M1",
   "player_start": {"x": 2.5, "y": 2.5, "angle_deg": 0},
-  "textures": {
-    "walls": ["brick.bmp"],
-    "floors": ["brick.bmp"],
-    "ceilings": ["brick.bmp"]
-  },
   "vertices": [
     {"x": 0, "y": 0},
     {"x": 10, "y": 0},
@@ -31,14 +26,5 @@
 
     {"v0": 4, "v1": 5, "front_sector": 0, "back_sector": -1, "tex": "STEEL_2A.PNG", "flags": ["solid"]},
     {"v0": 6, "v1": 7, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]}
-  ],
-  "entities": [
-    {"type": "pickup_health", "x": 3, "y": 8},
-    {"type": "pickup_key", "x": 3, "y": 2},
-    {"type": "pickup_ammo", "x": 4, "y": 2.5},
-    {"type": "gate_key", "x": 6, "y": 4.5},
-    {"type": "enemy_melee", "x": 7.5, "y": 2.5},
-    {"type": "enemy_turret", "x": 8.5, "y": 8.0},
-    {"type": "exit", "x": 9, "y": 9}
   ]
 }
