@@ -28,6 +28,22 @@ typedef struct PointLight {
 
 LightColor light_color_white(void);
 
+// Computes per-channel lighting multipliers in [0,1] (not applied to a pixel).
+// This is useful for Gouraud/per-vertex style shading where you want to compute
+// lighting at multiple sample points and interpolate.
+LightColor lighting_compute_multipliers(
+	float dist,
+	float sector_intensity,
+	LightColor sector_tint,
+	const PointLight* lights,
+	int light_count,
+	float sample_x,
+	float sample_y);
+
+// Quantizes a scalar lighting factor in [0,1] to a small number of steps.
+// This produces the classic PS1/N64-style banding.
+float lighting_quantize_factor(float v);
+
 // Applies lighting to an RGBA pixel.
 // - dist: distance from camera to shaded surface/object (used for falloff)
 // - sector_intensity: usually Sector.light in [0,1]

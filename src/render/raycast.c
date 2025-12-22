@@ -237,6 +237,19 @@ static float segment_u(float ax, float ay, float bx, float by, float px, float p
 	return clampf(t, 0.0f, 1.0f);
 }
 
+static LightColor lightcolor_lerp(LightColor a, LightColor b, float t) {
+	if (t < 0.0f) {
+		t = 0.0f;
+	} else if (t > 1.0f) {
+		t = 1.0f;
+	}
+	LightColor out;
+	out.r = a.r + (b.r - a.r) * t;
+	out.g = a.g + (b.g - a.g) * t;
+	out.b = a.b + (b.b - a.b) * t;
+	return out;
+}
+
 static int find_nearest_wall_hit_in_sector(
 	const World* world,
 	int sector,
@@ -492,12 +505,8 @@ static void render_wall_span_textured(
 	const Texture* tex,
 	uint32_t base,
 	float dist,
-	float light_intensity,
-	LightColor light_tint,
-	const PointLight* lights,
-	int light_count,
-	float hit_x,
-	float hit_y,
+	LightColor wall_mul_v0,
+	LightColor wall_mul_v1,
 	RaycastPerf* perf
 ) {
 	if (!fb || x < 0 || x >= fb->width) {
@@ -527,45 +536,15 @@ static void render_wall_span_textured(
 	}
 	float inv_proj = proj_dist > 1e-6f ? (1.0f / proj_dist) : 1.0f;
 
-	// Precompute lighting multipliers once per wall span (hit_x/hit_y constant).
-	float sector_intensity = clampf(light_intensity, 0.0f, 1.0f);
-	float falloff = lighting_distance_falloff(dist);
-	float r_mul = falloff * sector_intensity * clampf(light_tint.r, 0.0f, 1.0f);
-	float g_mul = falloff * sector_intensity * clampf(light_tint.g, 0.0f, 1.0f);
-	float b_mul = falloff * sector_intensity * clampf(light_tint.b, 0.0f, 1.0f);
-	if (lights && light_count > 0) {
-		for (int i = 0; i < light_count; i++) {
-			const PointLight* L = &lights[i];
-			if (L->radius <= 0.0f || L->intensity <= 0.0f) {
-				continue;
-			}
-			float dx = hit_x - L->x;
-			float dy = hit_y - L->y;
-			float d2 = dx * dx + dy * dy;
-			float r2 = L->radius * L->radius;
-			if (d2 >= r2) {
-				continue;
-			}
-			float d = sqrtf(d2);
-			float t = 1.0f - (d / L->radius);
-			float a = L->intensity * clampf(t, 0.0f, 1.0f);
-
-			float lr = clampf(L->color.r, 0.0f, 1.0f);
-			float lg = clampf(L->color.g, 0.0f, 1.0f);
-			float lb = clampf(L->color.b, 0.0f, 1.0f);
-
-			r_mul += a * lr;
-			g_mul += a * lg;
-			b_mul += a * lb;
-		}
-	}
-	// Clamp multipliers to match lighting_apply.
-	r_mul = clampf(r_mul, 0.06f, 1.0f);
-	g_mul = clampf(g_mul, 0.06f, 1.0f);
-	b_mul = clampf(b_mul, 0.06f, 1.0f);
-	int r_mul_i = (int)lroundf(r_mul * 256.0f);
-	int g_mul_i = (int)lroundf(g_mul * 256.0f);
-	int b_mul_i = (int)lroundf(b_mul * 256.0f);
+	// PS1/N64-style Gouraud wall lighting: interpolate endpoint multipliers by wall U,
+	// then quantize to produce visible banding.
+	LightColor mul = lightcolor_lerp(wall_mul_v0, wall_mul_v1, u);
+	float r_mul = lighting_quantize_factor(mul.r);
+	float g_mul = lighting_quantize_factor(mul.g);
+	float b_mul = lighting_quantize_factor(mul.b);
+	int r_mul_i = (int)lroundf(clampf(r_mul, 0.0f, 1.0f) * 256.0f);
+	int g_mul_i = (int)lroundf(clampf(g_mul, 0.0f, 1.0f) * 256.0f);
+	int b_mul_i = (int)lroundf(clampf(b_mul, 0.0f, 1.0f) * 256.0f);
 	if (r_mul_i < 0) {
 		r_mul_i = 0;
 	}
@@ -803,6 +782,28 @@ static void render_column_textured_recursive(
 	float hit_x = cam->x + ray_dx * hit_t;
 	float hit_y = cam->y + ray_dy * hit_t;
 	float u = segment_u(a.x, a.y, b.x, b.y, hit_x, hit_y);
+
+	// Per-vertex wall lighting multipliers (Gouraud). Compute once and reuse for spans.
+	float da = hypotf(a.x - cam->x, a.y - cam->y);
+	float db = hypotf(b.x - cam->x, b.y - cam->y);
+	LightColor wall_mul_v0 = lighting_compute_multipliers(
+		da,
+		sector_intensity,
+		sector_tint,
+		world->lights,
+		world->light_count,
+		a.x,
+		a.y
+	);
+	LightColor wall_mul_v1 = lighting_compute_multipliers(
+		db,
+		sector_intensity,
+		sector_tint,
+		world->lights,
+		world->light_count,
+		b.x,
+		b.y
+	);
 	const Texture* wall_tex = NULL;
 	if (texreg && paths) {
 		wall_tex = texture_registry_get(texreg, paths, w->tex);
@@ -944,12 +945,8 @@ static void render_column_textured_recursive(
 			wall_tex,
 			base,
 			dist,
-			sector_intensity,
-			sector_tint,
-			world->lights,
-			world->light_count,
-			hit_x,
-			hit_y,
+			wall_mul_v0,
+			wall_mul_v1,
 			perf
 		);
 		if (perf) {
@@ -1126,12 +1123,8 @@ static void render_column_textured_recursive(
 			wall_tex,
 			base,
 			dist,
-			sector_intensity,
-			sector_tint,
-			world->lights,
-			world->light_count,
-			hit_x,
-			hit_y,
+			wall_mul_v0,
+			wall_mul_v1,
 			perf
 		);
 		if (perf) {
@@ -1163,12 +1156,8 @@ static void render_column_textured_recursive(
 			wall_tex,
 			base,
 			dist,
-			sector_intensity,
-			sector_tint,
-			world->lights,
-			world->light_count,
-			hit_x,
-			hit_y,
+			wall_mul_v0,
+			wall_mul_v1,
 			perf
 		);
 		if (perf) {

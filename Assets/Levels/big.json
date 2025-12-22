@@ -206,7 +206,7 @@
             "ceil_z": 4,
             "floor_tex": "FLOOR_2A.PNG",
             "ceil_tex": "SKY",
-            "light": 1
+            "light": 10
         },
         {
             "id": 1,
