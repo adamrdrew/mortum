@@ -336,8 +336,8 @@ static int find_nearest_wall_hit_in_sector(
 	return best_wall;
 }
 
-static int project_y(float half_h, float proj_z, float cam_z, float z, float dist) {
-	return (int)(half_h - (z - cam_z) * (proj_z / (dist + 0.001f)));
+static int project_y(float half_h, float proj_dist, float cam_z, float z, float dist) {
+	return (int)(half_h - (z - cam_z) * (proj_dist / (dist + 0.001f)));
 }
 
 static void draw_sector_ceiling_column(
@@ -346,7 +346,7 @@ static void draw_sector_ceiling_column(
 	int y_top,
 	int y_bot,
 	float half_h,
-	float proj_z,
+	float proj_dist,
 	float cam_x,
 	float cam_y,
 	float cam_z,
@@ -385,7 +385,7 @@ static void draw_sector_ceiling_column(
 			if (denom <= 0.001f) {
 				continue;
 			}
-			float row_dist = ((ceil_z - cam_z) * proj_z) / denom;
+			float row_dist = ((ceil_z - cam_z) * proj_dist) / denom;
 			float t = row_dist / corr_safe;
 			float wx = cam_x + dx * t;
 			float wy = cam_y + dy * t;
@@ -404,7 +404,7 @@ static void draw_sector_floor_column(
 	int y_top,
 	int y_bot,
 	float half_h,
-	float proj_z,
+	float proj_dist,
 	float cam_x,
 	float cam_y,
 	float cam_z,
@@ -443,7 +443,7 @@ static void draw_sector_floor_column(
 			if (denom <= 0.001f) {
 				continue;
 			}
-			float row_dist = ((cam_z - floor_z) * proj_z) / denom;
+			float row_dist = ((cam_z - floor_z) * proj_dist) / denom;
 			float t = row_dist / corr_safe;
 			float wx = cam_x + dx * t;
 			float wy = cam_y + dy * t;
@@ -463,6 +463,11 @@ static void render_wall_span_textured(
 	int y_bot,
 	int y_clip_top,
 	int y_clip_bot,
+	float z_top,
+	float z_bot,
+	float half_h,
+	float proj_dist,
+	float cam_z,
 	float u,
 	const Texture* tex,
 	uint32_t base,
@@ -492,12 +497,17 @@ static void render_wall_span_textured(
 	if (y_top >= y_bot) {
 		return;
 	}
-	int span_h = y_bot - y_top;
-	if (span_h < 1) {
-		span_h = 1;
+	float z_span = z_top - z_bot;
+	if (fabsf(z_span) < 1e-6f) {
+		z_span = 1.0f;
 	}
+	float inv_proj = proj_dist > 1e-6f ? (1.0f / proj_dist) : 1.0f;
 	for (int y = y_top; y < y_bot; y++) {
-		float v = (float)(y - y_top) / (float)span_h;
+		// Perspective-correct wall V: derive world z at this pixel from projection.
+		float yf = (float)y + 0.5f;
+		float z = cam_z + (half_h - yf) * dist * inv_proj;
+		float v = (z_top - z) / z_span;
+		v = clampf(v, 0.0f, 1.0f);
 		uint32_t c = tex ? texture_sample_nearest(tex, u, v) : base;
 		c = lighting_apply(c, dist, light_intensity, light_tint, lights, light_count, hit_x, hit_y);
 		fb->pixels[y * fb->width + x] = c;
@@ -512,7 +522,7 @@ static void render_column_textured_recursive(
 	const AssetPaths* paths,
 	int x,
 	float half_h,
-	float proj_z,
+	float proj_dist,
 	float cam_z,
 	float ray_dx,
 	float ray_dy,
@@ -565,7 +575,7 @@ static void render_column_textured_recursive(
 		y_clip_top,
 		y_clip_bot,
 		half_h,
-		proj_z,
+		proj_dist,
 		cam->x,
 		cam->y,
 		cam_z,
@@ -585,7 +595,7 @@ static void render_column_textured_recursive(
 		y_clip_top,
 		y_clip_bot,
 		half_h,
-		proj_z,
+		proj_dist,
 		cam->x,
 		cam->y,
 		cam_z,
@@ -637,8 +647,8 @@ static void render_column_textured_recursive(
 
 	// Solid wall
 	if ((unsigned)other >= (unsigned)world->sector_count) {
-		int y_top = project_y(half_h, proj_z, cam_z, s->ceil_z, dist);
-		int y_bot = project_y(half_h, proj_z, cam_z, s->floor_z, dist);
+		int y_top = project_y(half_h, proj_dist, cam_z, s->ceil_z, dist);
+		int y_bot = project_y(half_h, proj_dist, cam_z, s->floor_z, dist);
 		render_wall_span_textured(
 			fb,
 			x,
@@ -646,6 +656,11 @@ static void render_column_textured_recursive(
 			y_bot,
 			y_clip_top,
 			y_clip_bot,
+			s->ceil_z,
+			s->floor_z,
+			half_h,
+			proj_dist,
+			cam_z,
 			u,
 			wall_tex,
 			base,
@@ -665,8 +680,8 @@ static void render_column_textured_recursive(
 
 	// Upper piece (if other ceiling is lower)
 	if (so->ceil_z < s->ceil_z - 1e-4f) {
-		int y_top = project_y(half_h, proj_z, cam_z, s->ceil_z, dist);
-		int y_bot = project_y(half_h, proj_z, cam_z, so->ceil_z, dist);
+		int y_top = project_y(half_h, proj_dist, cam_z, s->ceil_z, dist);
+		int y_bot = project_y(half_h, proj_dist, cam_z, so->ceil_z, dist);
 		render_wall_span_textured(
 			fb,
 			x,
@@ -674,6 +689,11 @@ static void render_column_textured_recursive(
 			y_bot,
 			y_clip_top,
 			y_clip_bot,
+			s->ceil_z,
+			so->ceil_z,
+			half_h,
+			proj_dist,
+			cam_z,
 			u,
 			wall_tex,
 			base,
@@ -689,8 +709,8 @@ static void render_column_textured_recursive(
 
 	// Lower piece (if other floor is higher)
 	if (so->floor_z > s->floor_z + 1e-4f) {
-		int y_top = project_y(half_h, proj_z, cam_z, so->floor_z, dist);
-		int y_bot = project_y(half_h, proj_z, cam_z, s->floor_z, dist);
+		int y_top = project_y(half_h, proj_dist, cam_z, so->floor_z, dist);
+		int y_bot = project_y(half_h, proj_dist, cam_z, s->floor_z, dist);
 		render_wall_span_textured(
 			fb,
 			x,
@@ -698,6 +718,11 @@ static void render_column_textured_recursive(
 			y_bot,
 			y_clip_top,
 			y_clip_bot,
+			so->floor_z,
+			s->floor_z,
+			half_h,
+			proj_dist,
+			cam_z,
 			u,
 			wall_tex,
 			base,
@@ -714,8 +739,8 @@ static void render_column_textured_recursive(
 	float z_open_top = s->ceil_z < so->ceil_z ? s->ceil_z : so->ceil_z;
 	float z_open_bot = s->floor_z > so->floor_z ? s->floor_z : so->floor_z;
 	if (z_open_top > z_open_bot + 1e-4f) {
-		int y_open_top = project_y(half_h, proj_z, cam_z, z_open_top, dist);
-		int y_open_bot = project_y(half_h, proj_z, cam_z, z_open_bot, dist);
+		int y_open_top = project_y(half_h, proj_dist, cam_z, z_open_top, dist);
+		int y_open_bot = project_y(half_h, proj_dist, cam_z, z_open_bot, dist);
 		int y0 = y_open_top;
 		int y1 = y_open_bot;
 		if (y0 < y_clip_top) {
@@ -739,7 +764,7 @@ static void render_column_textured_recursive(
 				paths,
 				x,
 				half_h,
-				proj_z,
+				proj_dist,
 				cam_z,
 				ray_dx,
 				ray_dy,
@@ -772,7 +797,8 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 	float angle0 = cam->angle_deg - cam->fov_deg * 0.5f;
 	float inv_w = fb->width > 1 ? (1.0f / (float)(fb->width - 1)) : 0.0f;
 	float half_h = 0.5f * (float)fb->height;
-	float proj_z = half_h;
+	float fov_rad = deg_to_rad(cam->fov_deg);
+	float proj_dist = (0.5f * (float)fb->width) / tanf(0.5f * fov_rad);
 	int start_sector = world_find_sector_at_point_stable(world, cam->x, cam->y);
 	float cam_z = camera_z_for_sector(world, start_sector);
 	float cam_rad = deg_to_rad(cam->angle_deg);
@@ -796,7 +822,7 @@ void raycast_render_textured(Framebuffer* fb, const World* world, const Camera* 
 			paths,
 			x,
 			half_h,
-			proj_z,
+			proj_dist,
 			cam_z,
 			dx,
 			dy,
