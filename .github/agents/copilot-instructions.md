@@ -10,6 +10,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - JSON files in `Assets/` (maps, episodes); PNG assets in `Assets/Images/` (003-weapon-system)
 - C99 (cross-platform) + Fluidsynth (libfluidsynth, fluidsynth.h) (001-background-music)
 - JSON map files (Assets/Levels/*.json), MIDI files, SoundFonts (001-background-music)
+- C11 (Makefile uses `-std=c11`) + SDL2 (window/input/audio), FluidSynth (MIDI playback), vendored LodePNG (004-remove-entity-system)
+- JSON assets on disk (`Assets/Levels/*.json`, `Assets/Episodes/*.json`, images/sounds) (004-remove-entity-system)
 
 - C11 (Clang primary; GCC supported) + SDL2 initially (SDL3 is a later migration option); optional small, vendored parsers/decoders only if they keep builds boring (001-mortum-vision-spec)
 
@@ -29,9 +31,9 @@ tests/
 C11 (Clang primary; GCC supported): Follow standard conventions
 
 ## Recent Changes
+- 004-remove-entity-system: Added C11 (Makefile uses `-std=c11`) + SDL2 (window/input/audio), FluidSynth (MIDI playback), vendored LodePNG
 - 001-background-music: Added C99 (cross-platform) + Fluidsynth (libfluidsynth, fluidsynth.h)
 - 003-weapon-system: Added C11 (clang primary, gcc secondary) + SDL2 (window/input/audio)
-- 003-weapon-system: Added SDL2 (window/input/audio)
 
 
 <!-- MANUAL ADDITIONS START -->

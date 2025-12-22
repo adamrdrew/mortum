@@ -37,14 +37,12 @@ static bool json_get_light_color(const JsonDoc* doc, int tok, LightColor* out) {
 
 void map_load_result_destroy(MapLoadResult* self) {
 	world_destroy(&self->world);
-	entity_list_destroy(&self->entities);
 	memset(self, 0, sizeof(*self));
 }
 
 bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filename) {
 	memset(out, 0, sizeof(*out));
 	world_init_empty(&out->world);
-	entity_list_init(&out->entities);
 
 	char* full = asset_path_join(paths, "Levels", map_filename);
 	if (!full) {
@@ -86,9 +84,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	int t_vertices = -1;
 	int t_sectors = -1;
 	int t_walls = -1;
-	int t_entities = -1;
 	int t_lights = -1;
-	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls) || !json_object_get(&doc, 0, "entities", &t_entities)) {
+	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls)) {
 		log_error("Map JSON missing required fields");
 		json_doc_destroy(&doc);
 		return false;
@@ -288,27 +285,6 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		out->world.walls[i].front_sector = fs;
 		out->world.walls[i].back_sector = bs;
 		world_set_wall_tex(&out->world.walls[i], sv_tex);
-	}
-
-	// entities (minimal)
-	int ecount = json_array_size(&doc, t_entities);
-	for (int i = 0; i < ecount; i++) {
-		int te = json_array_nth(&doc, t_entities, i);
-		int ttype=-1, tx2=-1, ty2=-1;
-		if (!json_object_get(&doc, te, "type", &ttype) || !json_object_get(&doc, te, "x", &tx2) || !json_object_get(&doc, te, "y", &ty2)) {
-			continue;
-		}
-		StringView sv_type;
-		float ex=0, ey=0;
-		if (!json_get_string(&doc, ttype, &sv_type) || !json_get_float(&doc, tx2, &ex) || !json_get_float(&doc, ty2, &ey)) {
-			continue;
-		}
-		Entity ent;
-		entity_init(&ent);
-		entity_set_type(&ent, sv_type);
-		ent.x = ex;
-		ent.y = ey;
-		entity_list_push(&out->entities, &ent);
 	}
 
 	json_doc_destroy(&doc);

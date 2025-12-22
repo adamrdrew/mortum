@@ -2,7 +2,6 @@
 
 #include <stdbool.h>
 
-#include "game/entity.h"
 #include "game/player.h"
 #include "game/world.h"
 
@@ -12,7 +11,6 @@
 void weapons_update(
 	Player* player,
 	const World* world,
-	EntityList* entities,
 	bool fire_down,
 	int weapon_wheel_delta,
 	uint8_t weapon_select_mask,

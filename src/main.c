@@ -17,8 +17,6 @@
 #include "render/level_mesh.h"
 #include "render/texture.h"
 
-#include "render/entities.h"
-
 #include "assets/asset_paths.h"
 #include "assets/episode_loader.h"
 #include "assets/map_loader.h"
@@ -26,27 +24,17 @@
 
 #include "game/player.h"
 #include "game/player_controller.h"
-
-#include "game/exit.h"
 #include "game/game_state.h"
-#include "game/gates.h"
 #include "game/hud.h"
-#include "game/pickups.h"
 
 #include "game/weapon_view.h"
 
-#include "game/enemy.h"
-#include "game/projectiles.h"
 #include "game/weapons.h"
 
 #include "game/debug_overlay.h"
-#include "game/debug_spawn.h"
 #include "game/episode_runner.h"
-
-#include "game/corruption.h"
 #include "game/purge_item.h"
 #include "game/rules.h"
-#include "game/undead_mode.h"
 
 #include <SDL.h>
 #include <stdbool.h>
@@ -216,7 +204,6 @@ int main(int argc, char** argv) {
 	int fps = 0;
 	bool debug_overlay_enabled = false;
 	bool debug_prev_down = false;
-	bool spawn_prev_down = false;
 	bool q_prev_down = false;
 	bool e_prev_down = false;
 	bool win_prev = false;
@@ -278,37 +265,18 @@ int main(int argc, char** argv) {
 		if (e_pressed) {
 			weapon_wheel_delta += 1;
 		}
-		bool spawn_down = input_key_down(&in, SDL_SCANCODE_F6);
-		bool spawn_pressed = spawn_down && !spawn_prev_down;
-		spawn_prev_down = spawn_down;
-		if (spawn_pressed && gs.mode == GAME_MODE_PLAYING) {
-			debug_spawn_enemy(&player, map_ok ? &map.world : NULL, &map.entities);
-		}
 		for (int i = 0; i < steps; i++) {
 			if (gs.mode == GAME_MODE_PLAYING) {
 				player_controller_update(&player, map_ok ? &map.world : NULL, &ci, loop.fixed_dt_s);
-				weapons_update(&player, map_ok ? &map.world : NULL, &map.entities, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
-				enemy_update(&player, map_ok ? &map.world : NULL, &map.entities, loop.fixed_dt_s);
-				projectiles_update(&player, map_ok ? &map.world : NULL, &map.entities, loop.fixed_dt_s);
-
-				corruption_update(&player, map_ok ? &map.entities : NULL, loop.fixed_dt_s);
+				weapons_update(&player, map_ok ? &map.world : NULL, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
 				bool use_down = input_key_down(&in, SDL_SCANCODE_F);
 				bool use_pressed = use_down && !player.use_prev_down;
 				player.use_prev_down = use_down;
 				if (use_pressed) {
 					(void)purge_item_use(&player);
 				}
-				if (rules_allow_undead_trigger(&player)) {
-					undead_mode_update(&player, map_ok ? &map.entities : NULL, loop.fixed_dt_s);
-				}
-
-				gates_update_and_resolve(&player, map_ok ? &map.entities : NULL);
-				pickups_update(&player, map_ok ? &map.entities : NULL);
 				if (player.health <= 0) {
 					gs.mode = GAME_MODE_LOSE;
-				}
-				if (exit_check_reached(&player, map_ok ? &map.entities : NULL)) {
-					gs.mode = GAME_MODE_WIN;
 				}
 			}
 		}
@@ -364,9 +332,6 @@ int main(int argc, char** argv) {
 
 		Camera cam = camera_make(player.x, player.y, player.angle_deg, cfg->fov_deg);
 		raycast_render_textured(&fb, map_ok ? &map.world : NULL, &cam, &texreg, &paths, wall_depth);
-		if (map_ok) {
-			render_entities_billboard(&fb, &cam, &map.entities, wall_depth, &texreg, &paths, map.world.lights, map.world.light_count);
-		}
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);
 		hud_draw(&fb, &player, &gs, fps, &texreg, &paths);

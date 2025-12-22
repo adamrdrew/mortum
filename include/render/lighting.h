@@ -29,10 +29,10 @@ typedef struct PointLight {
 LightColor light_color_white(void);
 
 // Applies lighting to an RGBA pixel.
-// - dist: distance from camera to shaded surface/entity (used for falloff)
+// - dist: distance from camera to shaded surface/object (used for falloff)
 // - sector_intensity: usually Sector.light in [0,1]
 // - sector_tint: usually sector light tint (default white)
-// - sample_x/y: world-space sample location (wall hit or entity position)
+// - sample_x/y: world-space sample location (wall hit or object position)
 uint32_t lighting_apply(
 	uint32_t rgba,
 	float dist,

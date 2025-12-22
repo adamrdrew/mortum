@@ -16,6 +16,6 @@ typedef struct WeaponVisualSpec {
 // Returns NULL if id is out of range.
 const WeaponVisualSpec* weapon_visual_spec_get(WeaponId id);
 
-// Convenience: returns a short lowercase token for entity strings and UI.
+// Convenience: returns a short lowercase token for map strings and UI.
 // Examples: "handgun", "shotgun", "rifle", "smg", "rocket".
 const char* weapon_visual_token(WeaponId id);

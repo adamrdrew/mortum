@@ -4,11 +4,9 @@
 
 #include "assets/asset_paths.h"
 #include "game/world.h"
-#include "game/entity.h"
 
 typedef struct MapLoadResult {
 	World world;
-	EntityList entities;
 	float player_start_x;
 	float player_start_y;
 	float player_start_angle_deg;

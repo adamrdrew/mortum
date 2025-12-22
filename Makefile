@@ -27,6 +27,12 @@ BIN := $(BIN_DIR)/mortum
 # Optional: run a specific map via `make run MAP=arena.json`
 RUN_MAP ?=
 
+# Back-compat alias (some docs/specs use MAP=...)
+MAP ?=
+ifneq ($(strip $(MAP)),)
+  RUN_MAP := $(MAP)
+endif
+
 SRC := \
   src/main.c \
   src/core/log.c \
@@ -44,7 +50,6 @@ SRC := \
   src/render/font.c \
   src/render/camera.c \
   src/render/raycast.c \
-  src/render/entities.c \
   src/render/texture.c \
   src/render/level_mesh.c \
   src/render/lighting.c \
@@ -58,27 +63,17 @@ SRC := \
   src/assets/sound_wav.c \
   src/assets/midi_player.c \
   src/game/world.c \
-  src/game/entity.c \
   src/game/player.c \
   src/game/game_state.c \
   src/game/hud.c \
-  src/game/pickups.c \
-  src/game/gates.c \
-  src/game/exit.c \
-  src/game/combat.c \
-  src/game/projectiles.c \
   src/game/weapons.c \
   src/game/ammo.c \
   src/game/weapon_defs.c \
   src/game/weapon_visuals.c \
   src/game/weapon_view.c \
   src/game/upgrades.c \
-  src/game/enemy.c \
   src/game/mortum.c \
-  src/game/corruption.c \
   src/game/purge_item.c \
-  src/game/undead_mode.c \
-  src/game/drops.c \
   src/game/rules.c \
   src/game/tuning.c \
   src/game/collision.c \
@@ -87,8 +82,7 @@ SRC := \
 
 SRC := $(SRC) \
   src/game/episode_runner.c \
-  src/game/debug_overlay.c \
-  src/game/debug_spawn.c
+  src/game/debug_overlay.c
 
 THIRD_SRC := \
   third_party/lodepng.c

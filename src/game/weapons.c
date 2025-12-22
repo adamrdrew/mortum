@@ -38,13 +38,12 @@ static WeaponId weapon_next_owned(const Player* player, WeaponId cur, int dir) {
 void weapons_update(
 	Player* player,
 	const World* world,
-	EntityList* entities,
 	bool fire_down,
 	int weapon_wheel_delta,
 	uint8_t weapon_select_mask,
 	double dt_s) {
 	(void)world;
-	if (!player || !entities || dt_s <= 0.0) {
+	if (!player || dt_s <= 0.0) {
 		return;
 	}
 
@@ -108,42 +107,6 @@ void weapons_update(
 		return;
 	}
 	if (!ammo_consume(&player->ammo, def->ammo_type, def->ammo_per_shot)) {
-		return;
-	}
-
-	float base = player->angle_deg * (float)M_PI / 180.0f;
-	int pellets = def->pellets > 0 ? def->pellets : 1;
-	float spread_rad = def->spread_deg * (float)M_PI / 180.0f;
-	float start = (pellets == 1) ? 0.0f : (-0.5f * spread_rad);
-	float step = (pellets == 1) ? 0.0f : (spread_rad / (float)(pellets - 1));
-
-	bool any_spawned = false;
-	for (int i = 0; i < pellets; i++) {
-		float ang = base + start + step * (float)i;
-		float dx = cosf(ang);
-		float dy = sinf(ang);
-
-		Entity proj;
-		entity_init(&proj);
-		strncpy(proj.type, "proj_player", sizeof(proj.type) - 1);
-		proj.type[sizeof(proj.type) - 1] = '\0';
-		proj.x = player->x + dx * 0.10f;
-		proj.y = player->y + dy * 0.10f;
-		proj.z = 0.0f;
-		proj.vx = dx * def->proj_speed;
-		proj.vy = dy * def->proj_speed;
-		proj.radius = def->proj_radius;
-		proj.lifetime_s = def->proj_life_s;
-		proj.damage = def->proj_damage;
-
-		if (entity_list_push(entities, &proj)) {
-			any_spawned = true;
-		}
-	}
-
-	if (!any_spawned) {
-		// Refund ammo if nothing could be spawned.
-		(void)ammo_add(&player->ammo, def->ammo_type, def->ammo_per_shot);
 		return;
 	}
 
