@@ -1,0 +1,66 @@
+{
+"bgmusic": "XENOSCAPE.MID",
+"soundfont": "hl4mgm.sf2",
+"sky": "purple.png",
+"player_start": {"x": 5.0, "y": 5.0, "angle_deg": 90},
+"vertices": [
+{"x": 0, "y": 0},
+{"x": 12, "y": 0},
+{"x": 12, "y": 10},
+{"x": 0, "y": 10},
+
+	{"x": 12, "y": 3},
+	{"x": 20, "y": 3},
+	{"x": 20, "y": 7},
+	{"x": 12, "y": 7},
+
+	{"x": 0, "y": 10},
+	{"x": 12, "y": 10},
+	{"x": 12, "y": 20},
+	{"x": 0, "y": 20},
+
+	{"x": 12, "y": 10},
+	{"x": 24, "y": 10},
+	{"x": 24, "y": 20},
+	{"x": 12, "y": 20}
+],
+"sectors": [
+	{"id": 0, "floor_z": 0, "ceil_z": 4, "floor_tex": "FLOOR_2A.PNG", "ceil_tex": "TECH_1A.PNG", "light": 1.0},
+	{"id": 1, "floor_z": 0, "ceil_z": 6, "floor_tex": "FLOOR_4A.PNG", "ceil_tex": "TECH_2A.PNG", "light": 0.8},
+	{"id": 2, "floor_z": 0, "ceil_z": 5, "floor_tex": "GRID_1A.PNG", "ceil_tex": "TECH_3A.PNG", "light": 0.9},
+	{"id": 3, "floor_z": 0, "ceil_z": 7, "floor_tex": "STEEL_1A.PNG", "ceil_tex": "TECH_4A.PNG", "light": 0.7}
+],
+"walls": [
+	{"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "CONCRETE_2A.PNG"},
+	{"v0": 1, "v1": 4, "front_sector": 0, "back_sector": -1, "tex": "STEEL_2A.PNG"},
+	{"v0": 4, "v1": 7, "front_sector": 0, "back_sector": 1, "tex": "DOOR_1A.PNG"},
+	{"v0": 7, "v1": 2, "front_sector": 0, "back_sector": -1, "tex": "STEEL_2A.PNG"},
+	{"v0": 2, "v1": 3, "front_sector": 0, "back_sector": -1, "tex": "CONCRETE_2A.PNG"},
+	{"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "CONCRETE_2A.PNG"},
+
+	{"v0": 4, "v1": 5, "front_sector": 1, "back_sector": -1, "tex": "STEEL_3A.PNG"},
+	{"v0": 5, "v1": 6, "front_sector": 1, "back_sector": -1, "tex": "STEEL_3B.PNG"},
+	{"v0": 6, "v1": 7, "front_sector": 1, "back_sector": -1, "tex": "STEEL_3A.PNG"},
+	{"v0": 7, "v1": 4, "front_sector": 1, "back_sector": 0, "tex": "DOOR_1A.PNG"},
+
+	{"v0": 8, "v1": 9, "front_sector": 2, "back_sector": 0, "tex": "DOOR_1B.PNG"},
+	{"v0": 9, "v1": 10, "front_sector": 2, "back_sector": -1, "tex": "SUPPORT_2A.PNG"},
+	{"v0": 10, "v1": 11, "front_sector": 2, "back_sector": -1, "tex": "SUPPORT_2A.PNG"},
+	{"v0": 11, "v1": 8, "front_sector": 2, "back_sector": -1, "tex": "SUPPORT_2A.PNG"},
+
+	{"v0": 12, "v1": 13, "front_sector": 3, "back_sector": -1, "tex": "STEEL_4A.PNG"},
+	{"v0": 13, "v1": 14, "front_sector": 3, "back_sector": -1, "tex": "STEEL_4B.PNG"},
+	{"v0": 14, "v1": 15, "front_sector": 3, "back_sector": -1, "tex": "STEEL_4A.PNG"},
+	{"v0": 15, "v1": 12, "front_sector": 3, "back_sector": 2, "tex": "DOOR_2A.PNG"},
+
+	{"v0": 9, "v1": 8, "front_sector": 0, "back_sector": 2, "tex": "DOOR_1B.PNG"},
+	{"v0": 15, "v1": 14, "front_sector": 2, "back_sector": 3, "tex": "DOOR_2A.PNG"}
+],
+"lights": [
+	{"x": 5, "y": 5, "radius": 8, "intensity": 1.2},
+	{"x": 16, "y": 5, "radius": 6, "intensity": 0.9},
+	{"x": 6, "y": 15, "radius": 7, "intensity": 1.0},
+	{"x": 18, "y": 15, "radius": 6, "intensity": 0.8}
+]
+
+}
