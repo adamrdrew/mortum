@@ -205,23 +205,48 @@ Therefore:
 
 If present, `lights` must be an array of objects.
 
-Each light requires:
+Each light is a **point-light emitter** that affects lighting only (no sprites/particles).
+
+### Required fields
 
 - `x` (number)
 - `y` (number)
 - `radius` (number)
-- `intensity` (number)
+- One of:
+	- `brightness` (number)
+	- `intensity` (number) (legacy alias)
 
-Optional:
+### Optional fields
 
-- `z` (number) (defaults to `0` if omitted)
-- `color` (object `{ "r": number, "g": number, "b": number }`) (defaults to white)
+- `z` (number): defaults to `0`.
 
-Recommended:
+- `color`:
+	- Hex string: `"#RRGGBB"` or `"RRGGBB"` (recommended), OR
+	- Legacy object: `{ "r": number, "g": number, "b": number }` where components are expected in `0..1`.
+	- If omitted: defaults to white.
 
-- `radius > 0`
-- `intensity >= 0`
-- `color` components in `0..1`
+- `flicker` (string): one of `"none"`, `"flame"`, `"malfunction"`.
+	- If omitted: `"none"`.
+	- Flicker is applied at render time and uses a per-emitter seed to avoid synchronized flicker.
+
+- `seed` (integer): optional deterministic seed for flicker/randomness.
+	- If omitted: the engine derives a seed from the light’s position/radius so different lights de-sync.
+
+### Validation / recommendations
+
+- `radius` must be non-negative (recommended: `radius > 0`).
+- `brightness`/`intensity` must be non-negative.
+- Prefer placing lights inside a sector (the validator may warn if a light is not inside any sector).
+
+### Example
+
+```json
+"lights": [
+	{ "x": 12.0, "y": 8.0, "z": 0.0, "radius": 6.0, "brightness": 1.2, "color": "#FFAA44", "flicker": "flame", "seed": 12345 },
+	{ "x": 20.0, "y": 8.0, "radius": 8.0, "intensity": 0.8, "color": "44AAFF", "flicker": "malfunction" },
+	{ "x": 16.0, "y": 14.0, "radius": 5.0, "brightness": 0.6 }
+]
+```
 
 ## Global validation rules you MUST satisfy
 
