@@ -15,7 +15,9 @@ typedef struct RaycastPerf {
 	// Lighting-specific perf (captured during perf trace only).
 	double light_cull_ms; // time spent building visible light list (culling + flicker)
 	uint32_t lights_in_world;
-	uint32_t lights_visible;
+	uint32_t lights_visible_uncapped;
+	uint32_t lights_visible_walls;
+	uint32_t lights_visible_planes;
 	uint64_t lighting_apply_calls;
 	uint64_t lighting_apply_light_iters;
 	uint64_t lighting_mul_calls;

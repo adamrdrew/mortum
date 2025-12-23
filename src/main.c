@@ -511,7 +511,9 @@ int main(int argc, char** argv) {
 			pf.rc_pixels_ceil = (int)rc_perf.pixels_ceil;
 			pf.rc_pixels_wall = (int)rc_perf.pixels_wall;
 			pf.rc_lights_in_world = (int)rc_perf.lights_in_world;
-			pf.rc_lights_visible = (int)rc_perf.lights_visible;
+			pf.rc_lights_visible_uncapped = (int)rc_perf.lights_visible_uncapped;
+			pf.rc_lights_visible_walls = (int)rc_perf.lights_visible_walls;
+			pf.rc_lights_visible_planes = (int)rc_perf.lights_visible_planes;
 			pf.rc_lighting_apply_calls = (int)rc_perf.lighting_apply_calls;
 			pf.rc_lighting_mul_calls = (int)rc_perf.lighting_mul_calls;
 			pf.rc_lighting_apply_light_iters = (int)rc_perf.lighting_apply_light_iters;

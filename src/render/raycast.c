@@ -14,6 +14,12 @@
 
 #define MAX_VISIBLE_LIGHTS 96
 
+// Caps the number of point lights considered per frame after view culling.
+// Planes (floors/ceilings) do per-pixel lighting and dominate cost, so we use
+// a smaller cap there than for walls.
+#define MAX_ACTIVE_LIGHTS_WALLS 8
+#define MAX_ACTIVE_LIGHTS_PLANES 6
+
 static float deg_to_rad(float deg);
 
 static uint32_t hash_u32(uint32_t x) {
@@ -73,7 +79,98 @@ static float flicker_factor_malfunction(uint32_t seed, float time_s) {
 	return 0.90f + 0.10f * rand01(seed ^ (step * 0x9E3779B9u));
 }
 
-static int build_visible_lights(
+static float light_score_for_camera(const PointLight* L, float cam_x, float cam_y) {
+	if (!L || L->radius <= 0.0f || L->intensity <= 0.0f) {
+		return 0.0f;
+	}
+	float dx = L->x - cam_x;
+	float dy = L->y - cam_y;
+	float d2 = dx * dx + dy * dy;
+	float r = L->radius;
+	float r2 = r * r;
+	if (d2 >= r2) {
+		// Still score it, but much lower (it can still affect some visible pixels).
+		// Use a soft falloff based on distance.
+		float d = sqrtf(d2);
+		float t = 1.0f - (d / (r + 1e-3f));
+		if (t < 0.0f) {
+			t = 0.0f;
+		}
+		return L->intensity * (t * t) * 0.25f;
+	}
+	// Inside radius: treat as highly relevant.
+	float d = sqrtf(d2);
+	float t = 1.0f - (d / (r + 1e-3f));
+	return 1000.0f + L->intensity * (t * t);
+}
+
+static int limit_visible_lights(
+	PointLight* lights,
+	int count,
+	int max_keep,
+	float cam_x,
+	float cam_y
+) {
+	if (!lights || count <= 0) {
+		return 0;
+	}
+	if (max_keep <= 0) {
+		return 0;
+	}
+	if (count <= max_keep) {
+		return count;
+	}
+
+	// Keep the top-N by score using a small insertion scheme (N is tiny).
+	PointLight best[MAX_ACTIVE_LIGHTS_WALLS];
+	float best_score[MAX_ACTIVE_LIGHTS_WALLS];
+	int n = 0;
+
+	int cap = max_keep;
+	if (cap > MAX_ACTIVE_LIGHTS_WALLS) {
+		cap = MAX_ACTIVE_LIGHTS_WALLS;
+	}
+
+	for (int i = 0; i < cap; i++) {
+		best_score[i] = -1.0f;
+	}
+
+	for (int i = 0; i < count; i++) {
+		float s = light_score_for_camera(&lights[i], cam_x, cam_y);
+		// Find insertion position into ascending list.
+		int insert = -1;
+		if (n < cap) {
+			insert = n;
+			n++;
+		} else if (s > best_score[0]) {
+			insert = 0;
+		} else {
+			continue;
+		}
+
+		best[insert] = lights[i];
+		best_score[insert] = s;
+		// Bubble up to keep smallest at index 0.
+		for (int j = insert; j > 0; j--) {
+			if (best_score[j] < best_score[j - 1]) {
+				float ts = best_score[j];
+				best_score[j] = best_score[j - 1];
+				best_score[j - 1] = ts;
+				PointLight tl = best[j];
+				best[j] = best[j - 1];
+				best[j - 1] = tl;
+			}
+		}
+	}
+
+	// Write back best lights (order doesn't matter for lighting accumulation).
+	for (int i = 0; i < n; i++) {
+		lights[i] = best[i];
+	}
+	return n;
+}
+
+static int build_visible_lights_uncapped(
 	PointLight* out,
 	int out_cap,
 	const World* world,
@@ -137,6 +234,18 @@ static int build_visible_lights(
 		out[n++] = tmp;
 	}
 	return n;
+}
+
+static int build_visible_lights(
+	PointLight* out,
+	int out_cap,
+	const World* world,
+	const Camera* cam,
+	float time_s
+) {
+	int n = build_visible_lights_uncapped(out, out_cap, world, cam, time_s);
+	// Cap after view culling to keep per-pixel lighting work bounded.
+	return limit_visible_lights(out, n, MAX_ACTIVE_LIGHTS_WALLS, cam->x, cam->y);
 }
 
 static void raycast_perf_reset(RaycastPerf* p) {
@@ -801,8 +910,10 @@ static void render_column_textured_recursive(
 	TextureRegistry* texreg,
 	const AssetPaths* paths,
 	const Texture* sky_tex,
-	const PointLight* lights,
-	int light_count,
+	const PointLight* plane_lights,
+	int plane_light_count,
+	const PointLight* wall_lights,
+	int wall_light_count,
 	int x,
 	float half_h,
 	float proj_dist,
@@ -893,8 +1004,8 @@ static void render_column_textured_recursive(
 			(ceil_is_sky ? sky_tex : NULL),
 			sector_intensity,
 			sector_tint,
-			lights,
-			light_count,
+			plane_lights,
+			plane_light_count,
 			perf
 		);
 		if (perf) {
@@ -930,27 +1041,27 @@ static void render_column_textured_recursive(
 		da,
 		sector_intensity,
 		sector_tint,
-		lights,
-		light_count,
+		wall_lights,
+		wall_light_count,
 		a.x,
 		a.y
 	);
 	if (perf) {
 		perf->lighting_mul_calls++;
-		perf->lighting_mul_light_iters += (uint64_t)(light_count > 0 ? light_count : 0);
+		perf->lighting_mul_light_iters += (uint64_t)(wall_light_count > 0 ? wall_light_count : 0);
 	}
 	LightColor wall_mul_v1 = lighting_compute_multipliers(
 		db,
 		sector_intensity,
 		sector_tint,
-		lights,
-		light_count,
+		wall_lights,
+		wall_light_count,
 		b.x,
 		b.y
 	);
 	if (perf) {
 		perf->lighting_mul_calls++;
-		perf->lighting_mul_light_iters += (uint64_t)(light_count > 0 ? light_count : 0);
+		perf->lighting_mul_light_iters += (uint64_t)(wall_light_count > 0 ? wall_light_count : 0);
 	}
 	const Texture* wall_tex = NULL;
 	if (texreg && paths) {
@@ -1016,8 +1127,8 @@ static void render_column_textured_recursive(
 					(ceil_is_sky ? sky_tex : NULL),
 					sector_intensity,
 					sector_tint,
-					lights,
-					light_count,
+					plane_lights,
+					plane_light_count,
 					perf
 				);
 			}
@@ -1042,8 +1153,8 @@ static void render_column_textured_recursive(
 					(ceil_is_sky ? sky_tex : NULL),
 					sector_intensity,
 					sector_tint,
-					lights,
-					light_count,
+					plane_lights,
+					plane_light_count,
 					perf
 				);
 			}
@@ -1068,8 +1179,8 @@ static void render_column_textured_recursive(
 				(ceil_is_sky ? sky_tex : NULL),
 				sector_intensity,
 				sector_tint,
-				lights,
-				light_count,
+				plane_lights,
+				plane_light_count,
 				perf
 			);
 		}
@@ -1143,8 +1254,10 @@ static void render_column_textured_recursive(
 			texreg,
 			paths,
 			sky_tex,
-			lights,
-			light_count,
+			plane_lights,
+			plane_light_count,
+			wall_lights,
+			wall_light_count,
 			x,
 			half_h,
 			proj_dist,
@@ -1189,8 +1302,8 @@ static void render_column_textured_recursive(
 				(ceil_is_sky ? sky_tex : NULL),
 				sector_intensity,
 				sector_tint,
-				lights,
-				light_count,
+				plane_lights,
+				plane_light_count,
 				perf
 			);
 		}
@@ -1215,8 +1328,8 @@ static void render_column_textured_recursive(
 				(ceil_is_sky ? sky_tex : NULL),
 				sector_intensity,
 				sector_tint,
-				lights,
-				light_count,
+				plane_lights,
+				plane_light_count,
 				perf
 			);
 		}
@@ -1241,8 +1354,8 @@ static void render_column_textured_recursive(
 			(ceil_is_sky ? sky_tex : NULL),
 			sector_intensity,
 			sector_tint,
-			lights,
-			light_count,
+			plane_lights,
+			plane_light_count,
 			perf
 		);
 	}
@@ -1376,16 +1489,30 @@ static void raycast_render_textured_from_sector_internal(
 		sky_tex = texture_registry_get(texreg, paths, sky_filename);
 	}
 
-	PointLight vis_lights[MAX_VISIBLE_LIGHTS];
+	PointLight vis_lights_uncapped[MAX_VISIBLE_LIGHTS];
+	PointLight vis_lights_walls[MAX_VISIBLE_LIGHTS];
+	PointLight vis_lights_planes[MAX_VISIBLE_LIGHTS];
 	double lcull_t0 = 0.0;
 	if (out_perf) {
 		out_perf->lights_in_world = (uint32_t)(world->lights ? world->light_count : 0);
 		lcull_t0 = platform_time_seconds();
 	}
-	int vis_count = build_visible_lights(vis_lights, MAX_VISIBLE_LIGHTS, world, cam, (float)platform_time_seconds());
+	int vis_uncapped = 0;
+	int vis_walls = 0;
+	int vis_planes = 0;
+	{
+		float t = (float)platform_time_seconds();
+		vis_uncapped = build_visible_lights_uncapped(vis_lights_uncapped, MAX_VISIBLE_LIGHTS, world, cam, t);
+		memcpy(vis_lights_walls, vis_lights_uncapped, (size_t)vis_uncapped * sizeof(PointLight));
+		memcpy(vis_lights_planes, vis_lights_uncapped, (size_t)vis_uncapped * sizeof(PointLight));
+		vis_walls = limit_visible_lights(vis_lights_walls, vis_uncapped, MAX_ACTIVE_LIGHTS_WALLS, cam->x, cam->y);
+		vis_planes = limit_visible_lights(vis_lights_planes, vis_uncapped, MAX_ACTIVE_LIGHTS_PLANES, cam->x, cam->y);
+	}
 	if (out_perf) {
 		out_perf->light_cull_ms += (platform_time_seconds() - lcull_t0) * 1000.0;
-		out_perf->lights_visible = (uint32_t)vis_count;
+		out_perf->lights_visible_uncapped = (uint32_t)vis_uncapped;
+		out_perf->lights_visible_walls = (uint32_t)vis_walls;
+		out_perf->lights_visible_planes = (uint32_t)vis_planes;
 	}
 
 	for (int x = 0; x < fb->width; x++) {
@@ -1406,8 +1533,10 @@ static void raycast_render_textured_from_sector_internal(
 			texreg,
 			paths,
 			sky_tex,
-			vis_lights,
-			vis_count,
+			vis_lights_planes,
+			vis_planes,
+			vis_lights_walls,
+			vis_walls,
 			x,
 			half_h,
 			proj_dist,

@@ -32,7 +32,9 @@ typedef struct PerfTraceFrame {
 	int rc_pixels_ceil;
 	int rc_pixels_wall;
 	int rc_lights_in_world;
-	int rc_lights_visible;
+	int rc_lights_visible_uncapped;
+	int rc_lights_visible_walls;
+	int rc_lights_visible_planes;
 	int rc_lighting_apply_calls;
 	int rc_lighting_mul_calls;
 	int rc_lighting_apply_light_iters;

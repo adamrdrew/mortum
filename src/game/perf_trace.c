@@ -77,6 +77,11 @@ static void print_stats_line(FILE* out, const char* label, const PerfStats* s) {
 	fprintf(out, "%-10s avg=%6.2f  p95=%6.2f  min=%6.2f  max=%6.2f\n", label, s->avg, s->p95, s->min, s->max);
 }
 
+static void print_stats_line_ms_precise(FILE* out, const char* label, const PerfStats* s) {
+	// Useful for tiny sub-millisecond timings that would otherwise round to 0.00.
+	fprintf(out, "%-10s avg=%7.4f  p95=%7.4f  min=%7.4f  max=%7.4f\n", label, s->avg, s->p95, s->min, s->max);
+}
+
 void perf_trace_init(PerfTrace* t) {
 	if (!t) {
 		return;
@@ -137,7 +142,9 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	double rc_pix_ceil[PERF_TRACE_FRAME_COUNT];
 	double rc_pix_wall[PERF_TRACE_FRAME_COUNT];
 	double rc_lights_world[PERF_TRACE_FRAME_COUNT];
-	double rc_lights_visible[PERF_TRACE_FRAME_COUNT];
+	double rc_lights_visible_uncapped[PERF_TRACE_FRAME_COUNT];
+	double rc_lights_visible_walls[PERF_TRACE_FRAME_COUNT];
+	double rc_lights_visible_planes[PERF_TRACE_FRAME_COUNT];
 	double rc_lighting_apply_calls[PERF_TRACE_FRAME_COUNT];
 	double rc_lighting_mul_calls[PERF_TRACE_FRAME_COUNT];
 	double rc_lighting_apply_iters[PERF_TRACE_FRAME_COUNT];
@@ -170,7 +177,9 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 		rc_pix_ceil[i] = (double)f->rc_pixels_ceil;
 		rc_pix_wall[i] = (double)f->rc_pixels_wall;
 		rc_lights_world[i] = (double)f->rc_lights_in_world;
-		rc_lights_visible[i] = (double)f->rc_lights_visible;
+		rc_lights_visible_uncapped[i] = (double)f->rc_lights_visible_uncapped;
+		rc_lights_visible_walls[i] = (double)f->rc_lights_visible_walls;
+		rc_lights_visible_planes[i] = (double)f->rc_lights_visible_planes;
 		rc_lighting_apply_calls[i] = (double)f->rc_lighting_apply_calls;
 		rc_lighting_mul_calls[i] = (double)f->rc_lighting_mul_calls;
 		rc_lighting_apply_iters[i] = (double)f->rc_lighting_apply_light_iters;
@@ -205,20 +214,30 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	PerfStats s_rc_pc = compute_stats(rc_pix_ceil, n);
 	PerfStats s_rc_pw = compute_stats(rc_pix_wall, n);
 	PerfStats s_rc_lw = compute_stats(rc_lights_world, n);
-	PerfStats s_rc_lv = compute_stats(rc_lights_visible, n);
+	PerfStats s_rc_lvu = compute_stats(rc_lights_visible_uncapped, n);
+	PerfStats s_rc_lvw = compute_stats(rc_lights_visible_walls, n);
+	PerfStats s_rc_lvp = compute_stats(rc_lights_visible_planes, n);
 	PerfStats s_rc_lac = compute_stats(rc_lighting_apply_calls, n);
 	PerfStats s_rc_lmc = compute_stats(rc_lighting_mul_calls, n);
 	PerfStats s_rc_lai = compute_stats(rc_lighting_apply_iters, n);
 	PerfStats s_rc_lmi = compute_stats(rc_lighting_mul_iters, n);
 	PerfStats s_rc_lti = compute_stats(rc_lighting_total_iters, n);
 
-	int max_visible_lights = (int)t->frames[0].rc_lights_visible;
+	int max_visible_walls = (int)t->frames[0].rc_lights_visible_walls;
+	int max_visible_planes = (int)t->frames[0].rc_lights_visible_planes;
+	int max_visible_lights_uncapped = (int)t->frames[0].rc_lights_visible_uncapped;
 
 	double avg_fps = (s_frame.avg > 1e-9) ? (1000.0 / s_frame.avg) : 0.0;
 	const PerfTraceFrame* w = &t->frames[worst_i];
 	for (int i = 0; i < n; i++) {
-		if (t->frames[i].rc_lights_visible > max_visible_lights) {
-			max_visible_lights = t->frames[i].rc_lights_visible;
+		if (t->frames[i].rc_lights_visible_walls > max_visible_walls) {
+			max_visible_walls = t->frames[i].rc_lights_visible_walls;
+		}
+		if (t->frames[i].rc_lights_visible_planes > max_visible_planes) {
+			max_visible_planes = t->frames[i].rc_lights_visible_planes;
+		}
+		if (t->frames[i].rc_lights_visible_uncapped > max_visible_lights_uncapped) {
+			max_visible_lights_uncapped = t->frames[i].rc_lights_visible_uncapped;
 		}
 	}
 
@@ -236,9 +255,9 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	print_stats_line(out, "  hit", &s_rc_hit);
 	print_stats_line(out, "  walls", &s_rc_walls);
 	print_stats_line(out, "  texget", &s_rc_tex);
-	print_stats_line(out, "  lcull", &s_rc_lcull);
+	print_stats_line_ms_precise(out, "  lcull", &s_rc_lcull);
 	fprintf(out, "lighting (point lights):\n");
-	fprintf(out, "  lights avg: world=%.1f  visible=%.1f  max_visible=%d\n", s_rc_lw.avg, s_rc_lv.avg, max_visible_lights);
+	fprintf(out, "  lights avg: world=%.1f  planes=%.1f  walls=%.1f  uncapped=%.1f  max_planes=%d  max_walls=%d (uncapped=%d)\n", s_rc_lw.avg, s_rc_lvp.avg, s_rc_lvw.avg, s_rc_lvu.avg, max_visible_planes, max_visible_walls, max_visible_lights_uncapped);
 	fprintf(out, "  calls avg: apply=%.0f  mul=%.0f\n", s_rc_lac.avg, s_rc_lmc.avg);
 	fprintf(out, "  iters avg: apply=%.0f  mul=%.0f  total=%.0f\n", s_rc_lai.avg, s_rc_lmi.avg, s_rc_lti.avg);
 	print_stats_line(out, "ui_ms", &s_ui);
@@ -266,9 +285,11 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 		w->rc_walls_ms,
 		w->rc_tex_lookup_ms);
 	fprintf(out,
-		"worst_frame_lighting: lights world=%d visible=%d  lcull=%.2fms  apply_calls=%d  apply_iters=%d\n",
+		"worst_frame_lighting: lights world=%d planes=%d walls=%d uncapped=%d  lcull=%.2fms  apply_calls=%d  apply_iters=%d\n",
 		w->rc_lights_in_world,
-		w->rc_lights_visible,
+		w->rc_lights_visible_planes,
+		w->rc_lights_visible_walls,
+		w->rc_lights_visible_uncapped,
 		w->rc_light_cull_ms,
 		w->rc_lighting_apply_calls,
 		w->rc_lighting_apply_light_iters);
