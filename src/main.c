@@ -228,6 +228,8 @@ int main(int argc, char** argv) {
 	bool perf_prev_down = false;
 	PerfTrace perf;
 	perf_trace_init(&perf);
+	bool lights_prev_down = false;
+	bool point_lights_enabled = true;
 	bool q_prev_down = false;
 	bool e_prev_down = false;
 	bool win_prev = false;
@@ -262,6 +264,15 @@ int main(int argc, char** argv) {
 		fps_prev_down = fps_down;
 		if (fps_pressed) {
 			fps_overlay_enabled = !fps_overlay_enabled;
+		}
+
+		// Toggle point-light emitters (debug). This removes the emitter processing code path.
+		bool lights_down = input_key_down(&in, SDL_SCANCODE_L);
+		bool lights_pressed = lights_down && !lights_prev_down;
+		lights_prev_down = lights_down;
+		if (lights_pressed) {
+			point_lights_enabled = !point_lights_enabled;
+			raycast_set_point_lights_enabled(point_lights_enabled);
 		}
 
 		// Performance trace capture: press O to gather 60 frames then dump a summary.

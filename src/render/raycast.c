@@ -22,6 +22,12 @@
 
 static float deg_to_rad(float deg);
 
+static bool g_point_lights_enabled = true;
+
+void raycast_set_point_lights_enabled(bool enabled) {
+	g_point_lights_enabled = enabled;
+}
+
 static uint32_t hash_u32(uint32_t x) {
 	// SplitMix32
 	x += 0x9E3779B9u;
@@ -283,6 +289,17 @@ static uint8_t clamp_u8(int v) {
 	return (uint8_t)v;
 }
 
+static uint32_t apply_lighting_mul_u8(uint32_t rgba, int r_mul_i, int g_mul_i, int b_mul_i) {
+	uint8_t a = (uint8_t)((rgba >> 24) & 0xFF);
+	uint8_t r = (uint8_t)((rgba >> 16) & 0xFF);
+	uint8_t g = (uint8_t)((rgba >> 8) & 0xFF);
+	uint8_t b = (uint8_t)(rgba & 0xFF);
+	int rr = (r * r_mul_i + 128) >> 8;
+	int gg = (g * g_mul_i + 128) >> 8;
+	int bb = (b * b_mul_i + 128) >> 8;
+	return ((uint32_t)a << 24) | ((uint32_t)clamp_u8(rr) << 16) | ((uint32_t)clamp_u8(gg) << 8) | (uint32_t)clamp_u8(bb);
+}
+
 static float fractf(float v) {
 	return v - floorf(v);
 }
@@ -393,7 +410,10 @@ void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera
 	float cam_z = camera_z_for_sector(world, plane_sector, cam->z);
 
 	PointLight vis_lights[MAX_VISIBLE_LIGHTS];
-	int vis_count = build_visible_lights(vis_lights, MAX_VISIBLE_LIGHTS, world, cam, (float)platform_time_seconds());
+	int vis_count = 0;
+	if (g_point_lights_enabled) {
+		vis_count = build_visible_lights(vis_lights, MAX_VISIBLE_LIGHTS, world, cam, (float)platform_time_seconds());
+	}
 
 	for (int x = 0; x < fb->width; x++) {
 		float lerp = (float)x * inv_w;
@@ -647,6 +667,10 @@ static void draw_sector_ceiling_column(
 		const float plane_uv_scale = 0.25f; // 1 repeat per 4 world units
 		int cy0 = y_top;
 		int cy1 = y_bot < y_horizon ? y_bot : y_horizon;
+		const int light_step = 4;
+		int r_mul_i = 256;
+		int g_mul_i = 256;
+		int b_mul_i = 256;
 		for (int y = cy0; y < cy1; y++) {
 			float denom = half_h - (float)y;
 			if (denom <= 0.001f) {
@@ -659,11 +683,46 @@ static void draw_sector_ceiling_column(
 			float tu = fractf(wx * plane_uv_scale);
 			float tv = fractf(wy * plane_uv_scale);
 			uint32_t c = ceil_tex ? texture_sample_nearest(ceil_tex, tu, tv) : 0xFF0B0E14u;
-			if (perf) {
-				perf->lighting_apply_calls++;
-				perf->lighting_apply_light_iters += (uint64_t)(light_count > 0 ? light_count : 0);
+			if (lights && light_count > 0) {
+				if (((y - cy0) % light_step) == 0) {
+					LightColor mul = lighting_compute_multipliers(row_dist, sector_intensity, sector_tint, lights, light_count, wx, wy);
+					float r_mul = lighting_quantize_factor(mul.r);
+					float g_mul = lighting_quantize_factor(mul.g);
+					float b_mul = lighting_quantize_factor(mul.b);
+					r_mul_i = (int)lroundf(clampf(r_mul, 0.0f, 1.0f) * 256.0f);
+					g_mul_i = (int)lroundf(clampf(g_mul, 0.0f, 1.0f) * 256.0f);
+					b_mul_i = (int)lroundf(clampf(b_mul, 0.0f, 1.0f) * 256.0f);
+					if (r_mul_i < 0) {
+						r_mul_i = 0;
+					}
+					if (g_mul_i < 0) {
+						g_mul_i = 0;
+					}
+					if (b_mul_i < 0) {
+						b_mul_i = 0;
+					}
+					if (r_mul_i > 256) {
+						r_mul_i = 256;
+					}
+					if (g_mul_i > 256) {
+						g_mul_i = 256;
+					}
+					if (b_mul_i > 256) {
+						b_mul_i = 256;
+					}
+					if (perf) {
+						perf->lighting_apply_calls++;
+						perf->lighting_apply_light_iters += (uint64_t)light_count;
+					}
+				}
+				c = apply_lighting_mul_u8(c, r_mul_i, g_mul_i, b_mul_i);
+			} else {
+				if (perf) {
+					perf->lighting_apply_calls++;
+					perf->lighting_apply_light_iters += 0;
+				}
+				c = lighting_apply(c, row_dist, sector_intensity, sector_tint, NULL, 0, wx, wy);
 			}
-			c = lighting_apply(c, row_dist, sector_intensity, sector_tint, lights, light_count, wx, wy);
 			fb->pixels[y * fb->width + x] = c;
 		}
 	}
@@ -714,6 +773,10 @@ static void draw_sector_floor_column(
 		const float plane_uv_scale = 0.25f; // 1 repeat per 4 world units
 		int fy0 = y_top > y_horizon ? y_top : y_horizon;
 		int fy1 = y_bot;
+		const int light_step = 4;
+		int r_mul_i = 256;
+		int g_mul_i = 256;
+		int b_mul_i = 256;
 		for (int y = fy0; y < fy1; y++) {
 			float denom = (float)y - half_h;
 			if (denom <= 0.001f) {
@@ -726,11 +789,46 @@ static void draw_sector_floor_column(
 			float tu = fractf(wx * plane_uv_scale);
 			float tv = fractf(wy * plane_uv_scale);
 			uint32_t c = floor_tex ? texture_sample_nearest(floor_tex, tu, tv) : 0xFF121018u;
-			if (perf) {
-				perf->lighting_apply_calls++;
-				perf->lighting_apply_light_iters += (uint64_t)(light_count > 0 ? light_count : 0);
+			if (lights && light_count > 0) {
+				if (((y - fy0) % light_step) == 0) {
+					LightColor mul = lighting_compute_multipliers(row_dist, sector_intensity, sector_tint, lights, light_count, wx, wy);
+					float r_mul = lighting_quantize_factor(mul.r);
+					float g_mul = lighting_quantize_factor(mul.g);
+					float b_mul = lighting_quantize_factor(mul.b);
+					r_mul_i = (int)lroundf(clampf(r_mul, 0.0f, 1.0f) * 256.0f);
+					g_mul_i = (int)lroundf(clampf(g_mul, 0.0f, 1.0f) * 256.0f);
+					b_mul_i = (int)lroundf(clampf(b_mul, 0.0f, 1.0f) * 256.0f);
+					if (r_mul_i < 0) {
+						r_mul_i = 0;
+					}
+					if (g_mul_i < 0) {
+						g_mul_i = 0;
+					}
+					if (b_mul_i < 0) {
+						b_mul_i = 0;
+					}
+					if (r_mul_i > 256) {
+						r_mul_i = 256;
+					}
+					if (g_mul_i > 256) {
+						g_mul_i = 256;
+					}
+					if (b_mul_i > 256) {
+						b_mul_i = 256;
+					}
+					if (perf) {
+						perf->lighting_apply_calls++;
+						perf->lighting_apply_light_iters += (uint64_t)light_count;
+					}
+				}
+				c = apply_lighting_mul_u8(c, r_mul_i, g_mul_i, b_mul_i);
+			} else {
+				if (perf) {
+					perf->lighting_apply_calls++;
+					perf->lighting_apply_light_iters += 0;
+				}
+				c = lighting_apply(c, row_dist, sector_intensity, sector_tint, NULL, 0, wx, wy);
 			}
-			c = lighting_apply(c, row_dist, sector_intensity, sector_tint, lights, light_count, wx, wy);
 			fb->pixels[y * fb->width + x] = c;
 		}
 	}
@@ -1492,21 +1590,25 @@ static void raycast_render_textured_from_sector_internal(
 	PointLight vis_lights_uncapped[MAX_VISIBLE_LIGHTS];
 	PointLight vis_lights_walls[MAX_VISIBLE_LIGHTS];
 	PointLight vis_lights_planes[MAX_VISIBLE_LIGHTS];
+	const PointLight* wall_lights_ptr = NULL;
+	const PointLight* plane_lights_ptr = NULL;
 	double lcull_t0 = 0.0;
 	if (out_perf) {
-		out_perf->lights_in_world = (uint32_t)(world->lights ? world->light_count : 0);
+		out_perf->lights_in_world = g_point_lights_enabled ? (uint32_t)(world->lights ? world->light_count : 0) : 0u;
 		lcull_t0 = platform_time_seconds();
 	}
 	int vis_uncapped = 0;
 	int vis_walls = 0;
 	int vis_planes = 0;
-	{
+	if (g_point_lights_enabled) {
 		float t = (float)platform_time_seconds();
 		vis_uncapped = build_visible_lights_uncapped(vis_lights_uncapped, MAX_VISIBLE_LIGHTS, world, cam, t);
 		memcpy(vis_lights_walls, vis_lights_uncapped, (size_t)vis_uncapped * sizeof(PointLight));
 		memcpy(vis_lights_planes, vis_lights_uncapped, (size_t)vis_uncapped * sizeof(PointLight));
 		vis_walls = limit_visible_lights(vis_lights_walls, vis_uncapped, MAX_ACTIVE_LIGHTS_WALLS, cam->x, cam->y);
 		vis_planes = limit_visible_lights(vis_lights_planes, vis_uncapped, MAX_ACTIVE_LIGHTS_PLANES, cam->x, cam->y);
+		wall_lights_ptr = vis_lights_walls;
+		plane_lights_ptr = vis_lights_planes;
 	}
 	if (out_perf) {
 		out_perf->light_cull_ms += (platform_time_seconds() - lcull_t0) * 1000.0;
@@ -1533,9 +1635,9 @@ static void raycast_render_textured_from_sector_internal(
 			texreg,
 			paths,
 			sky_tex,
-			vis_lights_planes,
+			plane_lights_ptr,
 			vis_planes,
-			vis_lights_walls,
+			wall_lights_ptr,
 			vis_walls,
 			x,
 			half_h,

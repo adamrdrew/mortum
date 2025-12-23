@@ -37,6 +37,11 @@ typedef struct RaycastPerf {
 	uint32_t pixels_wall;
 } RaycastPerf;
 
+// Debug/diagnostics: toggles processing of point-light emitters.
+// When disabled, the renderer will not build visible-light lists and will not
+// iterate point-light emitters at all.
+void raycast_set_point_lights_enabled(bool enabled);
+
 // Untextured baseline raycast renderer.
 void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera* cam);
 
