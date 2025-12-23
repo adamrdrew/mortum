@@ -967,16 +967,6 @@
             "seed": 1001
         },
         {
-            "x": 12.0,
-            "y": 12.0,
-            "z": 1.8,
-            "radius": 9.0,
-            "brightness": 1.6,
-            "color": "66CCFF",
-            "flicker": "none",
-            "seed": 1002
-        },
-        {
             "x": 18.0,
             "y": 12.0,
             "z": 1.8,
@@ -987,16 +977,6 @@
             "seed": 1003
         },
 
-        {
-            "x": 15.0,
-            "y": 23.5,
-            "z": 2.0,
-            "radius": 10.0,
-            "brightness": 1.9,
-            "color": "FFAA33",
-            "flicker": "flame",
-            "seed": 2001
-        },
         {
             "x": 14.0,
             "y": 26.5,
@@ -1009,16 +989,6 @@
         },
 
         {
-            "x": 10.5,
-            "y": 33.0,
-            "z": 2.4,
-            "radius": 14.0,
-            "brightness": 2.4,
-            "color": "B266FF",
-            "flicker": "malfunction",
-            "seed": 3001
-        },
-        {
             "x": 19.5,
             "y": 33.0,
             "z": 2.4,
@@ -1027,16 +997,6 @@
             "color": "55FFDD",
             "flicker": "flame",
             "seed": 3002
-        },
-        {
-            "x": 15.0,
-            "y": 36.0,
-            "z": 2.2,
-            "radius": 11.0,
-            "brightness": 2.0,
-            "color": "FFFFFF",
-            "flicker": "none",
-            "seed": 3003
         },
 
         {
@@ -1059,16 +1019,6 @@
             "flicker": "flame",
             "seed": 4002
         },
-        {
-            "x": 36.0,
-            "y": 18.0,
-            "z": 2.0,
-            "radius": 11.0,
-            "brightness": 2.0,
-            "color": "3366FF",
-            "flicker": "none",
-            "seed": 4003
-        },
 
         {
             "x": 15.0,
@@ -1081,16 +1031,6 @@
             "seed": 5001
         },
         {
-            "x": 9.5,
-            "y": 3.0,
-            "z": 1.7,
-            "radius": 9.0,
-            "brightness": 1.7,
-            "color": "88AAFF",
-            "flicker": "malfunction",
-            "seed": 5002
-        },
-        {
             "x": 20.5,
             "y": 3.0,
             "z": 1.7,
@@ -1101,16 +1041,6 @@
             "seed": 5003
         },
 
-        {
-            "x": 3.0,
-            "y": 15.0,
-            "z": 1.8,
-            "radius": 10.0,
-            "brightness": 1.9,
-            "color": "FF66CC",
-            "flicker": "malfunction",
-            "seed": 6001
-        },
         {
             "x": 2.0,
             "y": 22.0,
