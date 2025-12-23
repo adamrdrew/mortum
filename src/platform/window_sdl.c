@@ -4,7 +4,7 @@
 
 #include <SDL.h>
 
-bool window_create(Window* self, const char* title, int width, int height) {
+bool window_create(Window* self, const char* title, int width, int height, bool vsync) {
 	self->window = NULL;
 	self->renderer = NULL;
 	self->width = width;
@@ -16,7 +16,11 @@ bool window_create(Window* self, const char* title, int width, int height) {
 		return false;
 	}
 
-	SDL_Renderer* r = SDL_CreateRenderer(w, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+	Uint32 renderer_flags = SDL_RENDERER_ACCELERATED;
+	if (vsync) {
+		renderer_flags |= SDL_RENDERER_PRESENTVSYNC;
+	}
+	SDL_Renderer* r = SDL_CreateRenderer(w, -1, renderer_flags);
 	if (!r) {
 		// Fall back to software renderer (still ok; our renderer is CPU anyway).
 		r = SDL_CreateRenderer(w, -1, SDL_RENDERER_SOFTWARE);

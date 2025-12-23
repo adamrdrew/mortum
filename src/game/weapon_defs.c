@@ -1,5 +1,9 @@
 #include "game/weapon_defs.h"
 
+#include "core/config.h"
+
+#include <stddef.h>
+
 static const WeaponDef k_defs[WEAPON_COUNT] = {
 	{
 		.id = WEAPON_HANDGUN,
@@ -72,5 +76,31 @@ const WeaponDef* weapon_def_get(WeaponId id) {
 	if ((int)id < 0 || id >= WEAPON_COUNT) {
 		return &k_defs[0];
 	}
-	return &k_defs[(int)id];
+	static WeaponDef tmp;
+	tmp = k_defs[(int)id];
+
+	const CoreConfig* cfg = core_config_get();
+	if (!cfg) {
+		return &tmp;
+	}
+	const WeaponBalanceConfig* b = NULL;
+	switch (id) {
+		case WEAPON_HANDGUN: b = &cfg->weapons.handgun; break;
+		case WEAPON_SHOTGUN: b = &cfg->weapons.shotgun; break;
+		case WEAPON_RIFLE: b = &cfg->weapons.rifle; break;
+		case WEAPON_SMG: b = &cfg->weapons.smg; break;
+		case WEAPON_ROCKET: b = &cfg->weapons.rocket; break;
+		default: b = NULL; break;
+	}
+	if (b) {
+		tmp.ammo_per_shot = b->ammo_per_shot;
+		tmp.shot_cooldown_s = b->shot_cooldown_s;
+		tmp.pellets = b->pellets;
+		tmp.spread_deg = b->spread_deg;
+		tmp.proj_speed = b->proj_speed;
+		tmp.proj_radius = b->proj_radius;
+		tmp.proj_life_s = b->proj_life_s;
+		tmp.proj_damage = b->proj_damage;
+	}
+	return &tmp;
 }

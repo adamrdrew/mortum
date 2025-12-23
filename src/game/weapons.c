@@ -1,5 +1,7 @@
 #include "game/weapons.h"
 
+#include "core/config.h"
+
 #include "game/ammo.h"
 #include "game/weapon_defs.h"
 
@@ -54,12 +56,15 @@ void weapons_update(
 
 	// Step weapon view shoot animation.
 	if (player->weapon_view_anim_shooting) {
+		const CoreConfig* cfg = core_config_get();
+		const float shoot_fps = (cfg && cfg->weapons.view.shoot_anim_fps > 0.0f) ? cfg->weapons.view.shoot_anim_fps : 30.0f;
+		const int shoot_frames = (cfg && cfg->weapons.view.shoot_anim_frames > 0) ? cfg->weapons.view.shoot_anim_frames : 6;
 		player->weapon_view_anim_t += (float)dt_s;
-		const float frame_dt = 1.0f / 30.0f;
+		const float frame_dt = 1.0f / shoot_fps;
 		while (player->weapon_view_anim_t >= frame_dt) {
 			player->weapon_view_anim_t -= frame_dt;
 			player->weapon_view_anim_frame += 1;
-			if (player->weapon_view_anim_frame >= 6) {
+			if (player->weapon_view_anim_frame >= shoot_frames) {
 				player->weapon_view_anim_shooting = false;
 				player->weapon_view_anim_frame = 0;
 				player->weapon_view_anim_t = 0.0f;
@@ -122,15 +127,20 @@ void weapons_update(
 
 	// SFX: generic gunshot emitted from player/camera position (non-spatial).
 	if (sfx) {
+		const CoreConfig* cfg = core_config_get();
 		const char* wav = "Shotgun_Shot-001.wav";
+		float gain = 1.0f;
+		if (cfg) {
+			gain = cfg->weapons.sfx.shot_gain;
+		}
 		switch (player->weapon_equipped) {
-			case WEAPON_SHOTGUN: wav = "Shotgun_Shot-001.wav"; break;
-			case WEAPON_ROCKET: wav = "Rocket_Shot-001.wav"; break;
-			case WEAPON_HANDGUN: wav = "Sniper_Shot-001.wav"; break;
-			case WEAPON_RIFLE: wav = "Sniper_Shot-002.wav"; break;
-			case WEAPON_SMG: wav = "Sniper_Shot-003.wav"; break;
+			case WEAPON_SHOTGUN: wav = (cfg ? cfg->weapons.sfx.shotgun_shot : "Shotgun_Shot-001.wav"); break;
+			case WEAPON_ROCKET: wav = (cfg ? cfg->weapons.sfx.rocket_shot : "Rocket_Shot-001.wav"); break;
+			case WEAPON_HANDGUN: wav = (cfg ? cfg->weapons.sfx.handgun_shot : "Sniper_Shot-001.wav"); break;
+			case WEAPON_RIFLE: wav = (cfg ? cfg->weapons.sfx.rifle_shot : "Sniper_Shot-002.wav"); break;
+			case WEAPON_SMG: wav = (cfg ? cfg->weapons.sfx.smg_shot : "Sniper_Shot-003.wav"); break;
 			default: break;
 		}
-		sound_emitters_play_one_shot_at(sfx, wav, player->body.x, player->body.y, false, 1.0f, listener_x, listener_y);
+		sound_emitters_play_one_shot_at(sfx, wav, player->body.x, player->body.y, false, gain, listener_x, listener_y);
 	}
 }

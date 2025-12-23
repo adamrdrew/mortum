@@ -309,8 +309,11 @@ bool json_object_get(const JsonDoc* doc, int obj_tok, const char* key, int* out_
 		return false;
 	}
 	const jsmntok_t* obj = tok_at(doc, obj_tok);
+	// Our tokenizer increments object.size for both key and value tokens.
+	// Treat size as "number of child tokens", so object pair count is size/2.
+	int pair_count = obj ? (obj->size / 2) : 0;
 	int i = obj_tok + 1;
-	for (int pair = 0; pair < obj->size; pair++) {
+	for (int pair = 0; pair < pair_count; pair++) {
 		int key_tok = i;
 		int val_tok = i + 1;
 		StringView k = json_token_sv(doc, key_tok);

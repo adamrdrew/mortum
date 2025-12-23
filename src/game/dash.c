@@ -1,5 +1,7 @@
 #include "game/dash.h"
 
+#include "core/config.h"
+
 #include "game/physics_body.h"
 
 #include <math.h>
@@ -39,8 +41,9 @@ bool dash_update(Player* player, const World* world, bool dash_down, float dir_x
 	dir_y /= len;
 
 	// Tunables (US1): short, learnable quick-step.
-	const float dash_distance = 0.85f;
-	const float dash_cooldown_s = 0.65f;
+	const CoreConfig* cfg = core_config_get();
+	const float dash_distance = cfg ? cfg->player.dash_distance : 0.85f;
+	const float dash_cooldown_s = cfg ? cfg->player.dash_cooldown_s : 0.65f;
 
 	physics_body_move_delta(&player->body, world, dir_x * dash_distance, dir_y * dash_distance, params);
 

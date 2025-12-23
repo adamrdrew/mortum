@@ -1,0 +1,147 @@
+{
+  "window": {
+    "title": "Mortum",
+    "width": 1280,
+    "height": 720,
+    "vsync": true,
+    "grab_mouse": true,
+    "relative_mouse": true
+  },
+  "render": {
+    "internal_width": 640,
+    "internal_height": 400,
+    "fov_deg": 75.0,
+    "point_lights_enabled": true,
+    "lighting": {
+      "enabled": true,
+      "fog_start": 6.0,
+      "fog_end": 28.0,
+      "ambient_scale": 0.45,
+      "min_visibility": 0.485,
+      "quantize_steps": 16,
+      "quantize_low_cutoff": 0.08
+    }
+  },
+  "audio": {
+    "enabled": true,
+    "sfx_master_volume": 1.0,
+    "sfx_atten_min_dist": 6.0,
+    "sfx_atten_max_dist": 28.0,
+    "sfx_device_freq": 48000,
+    "sfx_device_buffer_samples": 1024
+  },
+  "content": {
+    "default_episode": "episode1.json"
+  },
+  "input": {
+    "bindings": {
+      "forward": ["W", "Up"],
+      "back": ["S", "Down"],
+      "left": "A",
+      "right": "D",
+      "dash": ["Left Shift", "Right Shift"],
+      "action": "Space",
+      "use": "F",
+
+      "weapon_slot_1": "1",
+      "weapon_slot_2": "2",
+      "weapon_slot_3": "3",
+      "weapon_slot_4": "4",
+      "weapon_slot_5": "5",
+      "weapon_prev": "Q",
+      "weapon_next": "E",
+
+      "toggle_debug_overlay": "F3",
+      "toggle_fps_overlay": "P",
+      "toggle_point_lights": "L",
+      "perf_trace": "O",
+      "debug_dump": "Grave",
+      "noclip": "F2",
+      "reload_config": "U"
+    }
+  },
+  "player": {
+    "mouse_sens_deg_per_px": 0.12,
+    "move_speed": 4.7,
+    "dash_distance": 0.85,
+    "dash_cooldown_s": 0.65,
+    "weapon_view_bob_smooth_rate": 8.0,
+    "weapon_view_bob_phase_rate": 10.0,
+    "weapon_view_bob_phase_base": 0.2,
+    "weapon_view_bob_phase_amp": 0.8
+  },
+  "footsteps": {
+    "enabled": true,
+    "min_speed": 0.15,
+    "interval_s": 0.35,
+    "variant_count": 17,
+    "filename_pattern": "Footstep_Boot_Concrete-%03u.wav",
+    "gain": 0.7
+  },
+  "weapons": {
+    "balance": {
+      "handgun": {
+        "ammo_per_shot": 1,
+        "shot_cooldown_s": 0.18,
+        "pellets": 1,
+        "spread_deg": 0.0,
+        "proj_speed": 7.0,
+        "proj_radius": 0.055,
+        "proj_life_s": 1.2,
+        "proj_damage": 25
+      },
+      "shotgun": {
+        "ammo_per_shot": 1,
+        "shot_cooldown_s": 0.7,
+        "pellets": 6,
+        "spread_deg": 14.0,
+        "proj_speed": 6.2,
+        "proj_radius": 0.05,
+        "proj_life_s": 0.75,
+        "proj_damage": 16
+      },
+      "rifle": {
+        "ammo_per_shot": 2,
+        "shot_cooldown_s": 0.28,
+        "pellets": 1,
+        "spread_deg": 1.5,
+        "proj_speed": 9.5,
+        "proj_radius": 0.045,
+        "proj_life_s": 1.4,
+        "proj_damage": 40
+      },
+      "smg": {
+        "ammo_per_shot": 1,
+        "shot_cooldown_s": 0.08,
+        "pellets": 1,
+        "spread_deg": 6.0,
+        "proj_speed": 7.8,
+        "proj_radius": 0.04,
+        "proj_life_s": 1.0,
+        "proj_damage": 14
+      },
+      "rocket": {
+        "ammo_per_shot": 4,
+        "shot_cooldown_s": 0.95,
+        "pellets": 1,
+        "spread_deg": 0.0,
+        "proj_speed": 5.5,
+        "proj_radius": 0.09,
+        "proj_life_s": 1.8,
+        "proj_damage": 120
+      }
+    },
+    "view": {
+      "shoot_anim_fps": 30.0,
+      "shoot_anim_frames": 6
+    },
+    "sfx": {
+      "handgun_shot": "Sniper_Shot-001.wav",
+      "shotgun_shot": "Shotgun_Shot-001.wav",
+      "rifle_shot": "Sniper_Shot-002.wav",
+      "smg_shot": "Sniper_Shot-003.wav",
+      "rocket_shot": "Rocket_Shot-001.wav",
+      "shot_gain": 1.0
+    }
+  }
+}

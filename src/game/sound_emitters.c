@@ -1,5 +1,7 @@
 #include "game/sound_emitters.h"
 
+#include "core/config.h"
+
 #include "game/tuning.h"
 
 #include <math.h>
@@ -31,16 +33,22 @@ static float attenuate_gain(bool spatial, float base_gain, float ex, float ey, f
 	if (!spatial) {
 		return base_gain;
 	}
+	const CoreConfig* cfg = core_config_get();
+	const float min_d = cfg ? cfg->audio.sfx_atten_min_dist : SFX_ATTEN_MIN_DIST;
+	const float max_d = cfg ? cfg->audio.sfx_atten_max_dist : SFX_ATTEN_MAX_DIST;
+	if (max_d <= min_d) {
+		return base_gain;
+	}
 	float dx = ex - lx;
 	float dy = ey - ly;
 	float d = sqrtf(dx * dx + dy * dy);
-	if (d <= SFX_ATTEN_MIN_DIST) {
+	if (d <= min_d) {
 		return base_gain;
 	}
-	if (d >= SFX_ATTEN_MAX_DIST) {
+	if (d >= max_d) {
 		return 0.0f;
 	}
-	float t = (SFX_ATTEN_MAX_DIST - d) / (SFX_ATTEN_MAX_DIST - SFX_ATTEN_MIN_DIST);
+	float t = (max_d - d) / (max_d - min_d);
 	if (t < 0.0f) {
 		t = 0.0f;
 	} else if (t > 1.0f) {

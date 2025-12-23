@@ -1,5 +1,7 @@
 #include "render/lighting.h"
 
+#include "core/config.h"
+
 #include <math.h>
 
 static float clampf(float v, float lo, float hi) {
@@ -45,8 +47,15 @@ float lighting_distance_falloff(float dist) {
 	if (dist < 0.0f) {
 		dist = 0.0f;
 	}
-	const float fog_start = 6.0f;
-	const float fog_end = 28.0f;
+	const CoreConfig* cfg = core_config_get();
+	if (cfg && !cfg->render.lighting.enabled) {
+		return 1.0f;
+	}
+	const float fog_start = cfg ? cfg->render.lighting.fog_start : 6.0f;
+	const float fog_end = cfg ? cfg->render.lighting.fog_end : 28.0f;
+	if (fog_end <= fog_start) {
+		return 1.0f;
+	}
 	if (dist <= fog_start) {
 		return 1.0f;
 	}
@@ -74,11 +83,14 @@ LightColor lighting_compute_multipliers(
 	float sample_y
 ) {
 	float fog = lighting_distance_falloff(dist);
+	const CoreConfig* cfg = core_config_get();
+	const float ambient_scale = cfg ? cfg->render.lighting.ambient_scale : 0.45f;
+	const float min_visibility = cfg ? cfg->render.lighting.min_visibility : 0.485f;
 
 	// Low ambient baseline (sector_intensity acts as an ambient knob).
 	// Keep this readable up close, but let fog take it away at distance.
 	float amb = clampf(sector_intensity, 0.0f, 1.0f);
-	amb *= 0.45f;
+	amb *= ambient_scale;
 	amb *= fog;
 
 	float r_mul = amb * clampf(sector_tint.r, 0.0f, 1.0f);
@@ -114,7 +126,6 @@ LightColor lighting_compute_multipliers(
 
 	LightColor out;
 	// Raise the black level slightly ("lift"), but keep it fogged so distance still goes black.
-	const float min_visibility = 0.485f;
 	out.r = clampf(r_mul, 0.0f, 1.0f);
 	out.g = clampf(g_mul, 0.0f, 1.0f);
 	out.b = clampf(b_mul, 0.0f, 1.0f);
@@ -134,10 +145,19 @@ LightColor lighting_compute_multipliers(
 float lighting_quantize_factor(float v) {
 	// 16 steps is intentionally chunky and noticeable (PS1/N64 vibe), but don't crush
 	// very low values to pure black (otherwise the near scene becomes unreadable).
-	if (v < 0.08f) {
+	const CoreConfig* cfg = core_config_get();
+	if (cfg && !cfg->render.lighting.enabled) {
 		return clampf(v, 0.0f, 1.0f);
 	}
-	return quantize_factor(v, 16);
+	const int steps = cfg ? cfg->render.lighting.quantize_steps : 16;
+	const float low_cutoff = cfg ? cfg->render.lighting.quantize_low_cutoff : 0.08f;
+	if (steps <= 1) {
+		return clampf(v, 0.0f, 1.0f);
+	}
+	if (v < low_cutoff) {
+		return clampf(v, 0.0f, 1.0f);
+	}
+	return quantize_factor(v, steps);
 }
 
 uint32_t lighting_apply(

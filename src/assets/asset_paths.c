@@ -1,21 +1,11 @@
 // asset_paths.c
 
 #include "assets/asset_paths.h"
-#include <stdio.h>
-#include <string.h>
+
 #include <stdbool.h>
-
-void get_midi_path(const char* midi_file, char* out, size_t out_size) {
-    snprintf(out, out_size, "Assets/Sounds/MIDI/%s", midi_file);
-}
-
-
-void get_soundfont_path(const char* sf_file, char* out, size_t out_size) {
-	snprintf(out, out_size, "Assets/Sounds/SoundFonts/%s", sf_file);
-}
-
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 static char* dup_cstr(const char* s) {
 	size_t n = strlen(s);
@@ -57,6 +47,17 @@ static char* path_join3(const char* a, const char* b, const char* c) {
 	return out;
 }
 
+static bool dir_exists(const char* path) {
+	if (!path || path[0] == '\0') {
+		return false;
+	}
+	struct stat st;
+	if (stat(path, &st) != 0) {
+		return false;
+	}
+	return S_ISDIR(st.st_mode);
+}
+
 bool asset_paths_init(AssetPaths* self, const char* base_path) {
 	self->assets_root = NULL;
 	if (!base_path || base_path[0] == '\0') {
@@ -64,8 +65,24 @@ bool asset_paths_init(AssetPaths* self, const char* base_path) {
 		self->assets_root = dup_cstr("Assets");
 		return self->assets_root != NULL;
 	}
-	// SDL base path usually points to the executable dir; Assets is at repo root for now.
-	// For early dev, we still default to relative Assets/ if present.
+	// SDL base path points to the executable directory.
+	// Assets root is always relative to the binary.
+	// Prefer: <base_path>/Assets
+	// Dev fallback (e.g., when binary is in build/): <base_path>/../Assets
+	char* primary = path_join3(base_path, "Assets", "");
+	if (primary && dir_exists(primary)) {
+		self->assets_root = primary;
+		return true;
+	}
+	free(primary);
+
+	char* secondary = path_join3(base_path, "..", "Assets");
+	if (secondary && dir_exists(secondary)) {
+		self->assets_root = secondary;
+		return true;
+	}
+	free(secondary);
+
 	self->assets_root = dup_cstr("Assets");
 	return self->assets_root != NULL;
 }

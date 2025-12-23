@@ -1,5 +1,7 @@
 #include "game/player_controller.h"
 
+#include "core/config.h"
+
 #include "game/dash.h"
 #include "game/physics_body.h"
 
@@ -26,8 +28,15 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 	float x0 = player->body.x;
 	float y0 = player->body.y;
 
+	const CoreConfig* cfg = core_config_get();
+	const float mouse_sens_deg_per_px = cfg ? cfg->player.mouse_sens_deg_per_px : 0.12f;
+	const float move_speed = cfg ? cfg->player.move_speed : 4.7f;
+	const float bob_smooth_rate = cfg ? cfg->player.weapon_view_bob_smooth_rate : 8.0f;
+	const float bob_phase_rate = cfg ? cfg->player.weapon_view_bob_phase_rate : 10.0f;
+	const float bob_phase_base = cfg ? cfg->player.weapon_view_bob_phase_base : 0.2f;
+	const float bob_phase_amp = cfg ? cfg->player.weapon_view_bob_phase_amp : 0.8f;
+
 	// Mouse look (yaw)
-	const float mouse_sens_deg_per_px = 0.12f;
 	player->angle_deg = wrap_deg(player->angle_deg + (float)in->mouse_dx * mouse_sens_deg_per_px);
 
 	// WASD movement (strafe + forward)
@@ -52,7 +61,6 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 		right /= len;
 	}
 
-	const float move_speed = 4.7f; // units per second
 	float ang = player->angle_deg * (float)M_PI / 180.0f;
 	float fx = cosf(ang);
 	float fy = sinf(ang);
@@ -90,12 +98,12 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 		if (target_amp > 1.0f) {
 			target_amp = 1.0f;
 		}
-		float smooth = (float)(dt_s * 8.0);
+		float smooth = (float)(dt_s * bob_smooth_rate);
 		if (smooth > 1.0f) {
 			smooth = 1.0f;
 		}
 		player->weapon_view_bob_amp += (target_amp - player->weapon_view_bob_amp) * smooth;
-		player->weapon_view_bob_phase += (float)(dt_s * 10.0) * (0.2f + 0.8f * player->weapon_view_bob_amp);
+		player->weapon_view_bob_phase += (float)(dt_s * bob_phase_rate) * (bob_phase_base + bob_phase_amp * player->weapon_view_bob_amp);
 		return;
 	}
 
@@ -110,10 +118,10 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 	if (target_amp > 1.0f) {
 		target_amp = 1.0f;
 	}
-	float smooth = (float)(dt_s * 8.0);
+	float smooth = (float)(dt_s * bob_smooth_rate);
 	if (smooth > 1.0f) {
 		smooth = 1.0f;
 	}
 	player->weapon_view_bob_amp += (target_amp - player->weapon_view_bob_amp) * smooth;
-	player->weapon_view_bob_phase += (float)(dt_s * 10.0) * (0.2f + 0.8f * player->weapon_view_bob_amp);
+	player->weapon_view_bob_phase += (float)(dt_s * bob_phase_rate) * (bob_phase_base + bob_phase_amp * player->weapon_view_bob_amp);
 }

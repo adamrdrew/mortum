@@ -24,7 +24,8 @@ typedef struct SfxVoiceId {
 
 // Initializes the SFX core.
 // If enable_audio is false, all calls become no-ops that return "success".
-bool sfx_init(const AssetPaths* paths, bool enable_audio);
+// freq/samples apply to the SDL audio device request.
+bool sfx_init(const AssetPaths* paths, bool enable_audio, int freq, int samples);
 
 // Shuts down the SFX core and releases audio resources.
 void sfx_shutdown(void);

@@ -1,5 +1,4 @@
 #include "platform/audio.h"
-
 #include "core/log.h"
 
 #include "game/tuning.h"
@@ -194,7 +193,7 @@ static void SDLCALL sfx_audio_callback(void* userdata, Uint8* stream, int len) {
 	}
 }
 
-bool sfx_init(const AssetPaths* paths, bool enable_audio) {
+bool sfx_init(const AssetPaths* paths, bool enable_audio, int freq, int samples) {
 	memset(&g_sfx, 0, sizeof(g_sfx));
 	g_sfx.master_volume = 1.0f;
 	g_sfx.enabled = enable_audio;
@@ -212,10 +211,20 @@ bool sfx_init(const AssetPaths* paths, bool enable_audio) {
 
 	SDL_AudioSpec want;
 	SDL_zero(want);
-	want.freq = 48000;
+	if (freq < 8000) {
+		freq = 8000;
+	} else if (freq > 192000) {
+		freq = 192000;
+	}
+	if (samples < 128) {
+		samples = 128;
+	} else if (samples > 8192) {
+		samples = 8192;
+	}
+	want.freq = freq;
 	want.format = AUDIO_F32;
 	want.channels = 2;
-	want.samples = 1024;
+	want.samples = (Uint16)samples;
 	want.callback = sfx_audio_callback;
 	want.userdata = NULL;
 

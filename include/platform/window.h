@@ -12,5 +12,5 @@ typedef struct Window {
 	int height;
 } Window;
 
-bool window_create(Window* self, const char* title, int width, int height);
+bool window_create(Window* self, const char* title, int width, int height, bool vsync);
 void window_destroy(Window* self);

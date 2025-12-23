@@ -49,13 +49,123 @@
 #include <stdlib.h>
 #include <string.h>
 
-static PlayerControllerInput gather_controls(const Input* in) {
+static bool file_exists(const char* path) {
+	if (!path || path[0] == '\0') {
+		return false;
+	}
+	FILE* f = fopen(path, "rb");
+	if (!f) {
+		return false;
+	}
+	fclose(f);
+	return true;
+}
+
+static char* dup_cstr(const char* s) {
+	if (!s) {
+		return NULL;
+	}
+	size_t n = strlen(s);
+	char* out = (char*)malloc(n + 1);
+	if (!out) {
+		return NULL;
+	}
+	memcpy(out, s, n + 1);
+	return out;
+}
+
+static char* join2(const char* a, const char* b) {
+	if (!a || !b) {
+		return NULL;
+	}
+	size_t na = strlen(a);
+	size_t nb = strlen(b);
+	bool a_slash = (na > 0 && (a[na - 1] == '/' || a[na - 1] == '\\'));
+	size_t n = na + (a_slash ? 0 : 1) + nb + 1;
+	char* out = (char*)malloc(n);
+	if (!out) {
+		return NULL;
+	}
+	size_t off = 0;
+	memcpy(out + off, a, na);
+	off += na;
+	if (!a_slash) {
+		out[off++] = '/';
+	}
+	memcpy(out + off, b, nb);
+	off += nb;
+	out[off] = '\0';
+	return out;
+}
+
+static char* resolve_config_path(int argc, char** argv) {
+	// Precedence:
+	// 1) CLI: --config <path> or CONFIG=<path>
+	// 2) Env: MORTUS_CONFIG
+	// 3) ~/.mortus/config.json
+	// 4) ./config.json
+
+	const char* cli_path = NULL;
+	for (int i = 1; i < argc; i++) {
+		const char* a = argv[i];
+		if (!a || a[0] == '\0') {
+			continue;
+		}
+		if (strcmp(a, "--config") == 0) {
+			if (i + 1 < argc) {
+				cli_path = argv[i + 1];
+			}
+			break;
+		}
+		if (strncmp(a, "CONFIG=", 7) == 0) {
+			cli_path = a + 7;
+			break;
+		}
+	}
+	if (cli_path && cli_path[0] != '\0') {
+		return dup_cstr(cli_path);
+	}
+
+	const char* env = getenv("MORTUS_CONFIG");
+	if (env && env[0] != '\0') {
+		return dup_cstr(env);
+	}
+
+	const char* home = getenv("HOME");
+	if (home && home[0] != '\0') {
+		char* p = join2(home, ".mortus/config.json");
+		if (p && file_exists(p)) {
+			return p;
+		}
+		free(p);
+	}
+
+	if (file_exists("./config.json")) {
+		return dup_cstr("./config.json");
+	}
+
+	return NULL;
+}
+
+static bool key_down2(const Input* in, int primary, int secondary) {
+	return input_key_down(in, primary) || input_key_down(in, secondary);
+}
+
+static PlayerControllerInput gather_controls(const Input* in, const InputBindingsConfig* bind) {
 	PlayerControllerInput ci;
-	ci.forward = input_key_down(in, SDL_SCANCODE_W) || input_key_down(in, SDL_SCANCODE_UP);
-	ci.back = input_key_down(in, SDL_SCANCODE_S) || input_key_down(in, SDL_SCANCODE_DOWN);
-	ci.left = input_key_down(in, SDL_SCANCODE_A);
-	ci.right = input_key_down(in, SDL_SCANCODE_D);
-	ci.dash = input_key_down(in, SDL_SCANCODE_LSHIFT) || input_key_down(in, SDL_SCANCODE_RSHIFT);
+	if (!bind) {
+		ci.forward = input_key_down(in, SDL_SCANCODE_W) || input_key_down(in, SDL_SCANCODE_UP);
+		ci.back = input_key_down(in, SDL_SCANCODE_S) || input_key_down(in, SDL_SCANCODE_DOWN);
+		ci.left = input_key_down(in, SDL_SCANCODE_A);
+		ci.right = input_key_down(in, SDL_SCANCODE_D);
+		ci.dash = input_key_down(in, SDL_SCANCODE_LSHIFT) || input_key_down(in, SDL_SCANCODE_RSHIFT);
+	} else {
+		ci.forward = key_down2(in, bind->forward_primary, bind->forward_secondary);
+		ci.back = key_down2(in, bind->back_primary, bind->back_secondary);
+		ci.left = key_down2(in, bind->left_primary, bind->left_secondary);
+		ci.right = key_down2(in, bind->right_primary, bind->right_secondary);
+		ci.dash = key_down2(in, bind->dash_primary, bind->dash_secondary);
+	}
 	ci.mouse_dx = in->mouse_dx;
 	return ci;
 }
@@ -69,10 +179,22 @@ int main(int argc, char** argv) {
 	char prev_soundfont[64] = "";
 
 	bool debug_dump_enabled = false;
+	const char* config_path_arg = NULL;
 	const char* map_name_arg = NULL;
 	for (int i = 1; i < argc; i++) {
 		const char* a = argv[i];
 		if (!a || a[0] == '\0') {
+			continue;
+		}
+		if (strcmp(a, "--config") == 0) {
+			if (i + 1 < argc) {
+				config_path_arg = argv[i + 1];
+				i++; // consume value
+			}
+			continue;
+		}
+		if (strncmp(a, "CONFIG=", 7) == 0) {
+			config_path_arg = a + 7;
 			continue;
 		}
 		if (strcmp(a, "--debug-dump") == 0) {
@@ -106,35 +228,59 @@ int main(int argc, char** argv) {
 	AssetPaths paths;
 	asset_paths_init(&paths, fs.base_path);
 
+	char* config_path = NULL;
+	if (config_path_arg && config_path_arg[0] != '\0') {
+		config_path = dup_cstr(config_path_arg);
+	} else {
+		config_path = resolve_config_path(argc, argv);
+	}
+	if (config_path) {
+		if (!core_config_load_from_file(config_path, &paths, CONFIG_LOAD_STARTUP)) {
+			free(config_path);
+			asset_paths_destroy(&paths);
+			fs_paths_destroy(&fs);
+			platform_shutdown();
+			log_shutdown();
+			return 1;
+		}
+	} else {
+		log_warn("No config file found; using built-in defaults");
+	}
+
+	const CoreConfig* cfg = core_config_get();
+	bool audio_enabled = cfg->audio.enabled;
+
 	// SFX core (WAV sound effects) is separate from MIDI music.
-	if (!sfx_init(&paths, pcfg.enable_audio)) {
+	if (!sfx_init(&paths, audio_enabled, cfg->audio.sfx_device_freq, cfg->audio.sfx_device_buffer_samples)) {
 		log_warn("SFX init failed; continuing with SFX disabled");
 	}
+	sfx_set_master_volume(cfg->audio.sfx_master_volume);
 	SoundEmitters sfx_emitters;
 	sound_emitters_init(&sfx_emitters);
 
 	Window win;
-	if (!window_create(&win, "Mortum", 1280, 720)) {
+	if (!window_create(&win, cfg->window.title, cfg->window.width, cfg->window.height, cfg->window.vsync)) {
 		asset_paths_destroy(&paths);
 		fs_paths_destroy(&fs);
 		platform_shutdown();
 		log_shutdown();
+		free(config_path);
 		return 1;
 	}
 
 	// Capture the mouse for FPS-style turning.
 	// Relative mouse mode keeps the cursor from leaving the window and provides deltas.
-	SDL_SetWindowGrab(win.window, SDL_TRUE);
-	SDL_SetRelativeMouseMode(SDL_TRUE);
+	SDL_SetWindowGrab(win.window, cfg->window.grab_mouse ? SDL_TRUE : SDL_FALSE);
+	SDL_SetRelativeMouseMode(cfg->window.relative_mouse ? SDL_TRUE : SDL_FALSE);
 
-	const CoreConfig* cfg = core_config_get();
 	Framebuffer fb;
-	if (!framebuffer_init(&fb, cfg->internal_width, cfg->internal_height)) {
+	if (!framebuffer_init(&fb, cfg->render.internal_width, cfg->render.internal_height)) {
 		window_destroy(&win);
 		asset_paths_destroy(&paths);
 		fs_paths_destroy(&fs);
 		platform_shutdown();
 		log_shutdown();
+		free(config_path);
 		return 1;
 	}
 
@@ -146,11 +292,12 @@ int main(int argc, char** argv) {
 		fs_paths_destroy(&fs);
 		platform_shutdown();
 		log_shutdown();
+		free(config_path);
 		return 1;
 	}
 
 	Episode ep;
-	bool ep_ok = episode_load(&ep, &paths, "episode1.json");
+	bool ep_ok = episode_load(&ep, &paths, cfg->content.default_episode);
 	MapLoadResult map;
 	memset(&map, 0, sizeof(map));
 	bool map_ok = false;
@@ -168,32 +315,30 @@ int main(int argc, char** argv) {
 	if (map_name) {
 		map_ok = map_load(&map, &paths, map_name);
 		// Validate MIDI and SoundFont existence for background music
-		if (map_ok) {
-			char midi_path[128], sf_path[128];
-			get_midi_path(map.bgmusic, midi_path, sizeof(midi_path));
-			get_soundfont_path(map.soundfont, sf_path, sizeof(sf_path));
+		if (map_ok && audio_enabled) {
 			bool midi_exists = map.bgmusic[0] != '\0';
 			bool sf_exists = map.soundfont[0] != '\0';
 			if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
 				midi_stop();
-				FILE* mf = fopen(midi_path, "rb");
-				FILE* sf = fopen(sf_path, "rb");
-				if (!mf) {
-					fprintf(stderr, "Warning: MIDI file not found: %s\n", midi_path);
-				} else if (!sf) {
-					fprintf(stderr, "Warning: SoundFont file not found: %s\n", sf_path);
-					fclose(mf);
+				char* midi_path = asset_path_join(&paths, "Sounds/MIDI", map.bgmusic);
+				char* sf_path = asset_path_join(&paths, "Sounds/SoundFonts", map.soundfont);
+				if (!midi_path || !sf_path) {
+					log_warn("MIDI path allocation failed");
+				} else if (!file_exists(midi_path)) {
+					log_warn("MIDI file not found: %s", midi_path);
+				} else if (!file_exists(sf_path)) {
+					log_warn("SoundFont file not found: %s", sf_path);
 				} else {
-					fclose(mf);
-					fclose(sf);
 					if (midi_init(sf_path) == 0) {
 						midi_play(midi_path);
 						strncpy(prev_bgmusic, map.bgmusic, sizeof(prev_bgmusic));
 						strncpy(prev_soundfont, map.soundfont, sizeof(prev_soundfont));
 					} else {
-						fprintf(stderr, "Error: Could not initialize MIDI playback.\n");
+						log_warn("Could not initialize MIDI playback");
 					}
 				}
+				free(midi_path);
+				free(sf_path);
 			}
 		}
 	}
@@ -252,10 +397,12 @@ int main(int argc, char** argv) {
 	PerfTrace perf;
 	perf_trace_init(&perf);
 	bool lights_prev_down = false;
-	bool point_lights_enabled = true;
+	bool point_lights_enabled = cfg->render.point_lights_enabled;
+	raycast_set_point_lights_enabled(point_lights_enabled);
 	bool q_prev_down = false;
 	bool e_prev_down = false;
 	bool win_prev = false;
+	bool reload_prev_down = false;
 
 	while (running) {
 		double frame_t0 = platform_time_seconds();
@@ -270,11 +417,36 @@ int main(int argc, char** argv) {
 		input_poll(&in);
 		if (in.quit_requested || input_key_down(&in, SDL_SCANCODE_ESCAPE)) {
 			running = false;
-			midi_stop(); // Stop music on quit
+			if (audio_enabled) {
+				midi_stop(); // Stop music on quit
+			}
+		}
+
+		// Config reload (default U; rebindable).
+		bool reload_down = input_key_down(&in, cfg->input.reload_config_scancode);
+		bool reload_pressed = reload_down && !reload_prev_down;
+		reload_prev_down = reload_down;
+		if (reload_pressed) {
+			char* reload_path = config_path ? dup_cstr(config_path) : resolve_config_path(argc, argv);
+			if (!reload_path) {
+				log_warn("Config reload requested but no config path found");
+			} else {
+				if (core_config_load_from_file(reload_path, &paths, CONFIG_LOAD_RELOAD)) {
+					cfg = core_config_get();
+					audio_enabled = cfg->audio.enabled;
+					sfx_set_master_volume(cfg->audio.sfx_master_volume);
+					SDL_SetWindowGrab(win.window, cfg->window.grab_mouse ? SDL_TRUE : SDL_FALSE);
+					SDL_SetRelativeMouseMode(cfg->window.relative_mouse ? SDL_TRUE : SDL_FALSE);
+					raycast_set_point_lights_enabled(cfg->render.point_lights_enabled);
+					point_lights_enabled = cfg->render.point_lights_enabled;
+					log_warn("Some config changes are startup-only (window size, internal resolution, vsync, SFX device params)");
+				}
+			}
+			free(reload_path);
 		}
 
 		// Dev toggles
-		bool dbg_down = input_key_down(&in, SDL_SCANCODE_F3);
+		bool dbg_down = input_key_down(&in, cfg->input.toggle_debug_overlay);
 		bool dbg_pressed = dbg_down && !debug_prev_down;
 		debug_prev_down = dbg_down;
 		if (dbg_pressed) {
@@ -282,7 +454,7 @@ int main(int argc, char** argv) {
 		}
 
 		// FPS overlay toggle (upper-right).
-		bool fps_down = input_key_down(&in, SDL_SCANCODE_P);
+		bool fps_down = input_key_down(&in, cfg->input.toggle_fps_overlay);
 		bool fps_pressed = fps_down && !fps_prev_down;
 		fps_prev_down = fps_down;
 		if (fps_pressed) {
@@ -290,7 +462,7 @@ int main(int argc, char** argv) {
 		}
 
 		// Toggle point-light emitters (debug). This removes the emitter processing code path.
-		bool lights_down = input_key_down(&in, SDL_SCANCODE_L);
+		bool lights_down = input_key_down(&in, cfg->input.toggle_point_lights);
 		bool lights_pressed = lights_down && !lights_prev_down;
 		lights_prev_down = lights_down;
 		if (lights_pressed) {
@@ -299,7 +471,7 @@ int main(int argc, char** argv) {
 		}
 
 		// Performance trace capture: press O to gather 60 frames then dump a summary.
-		bool perf_down = input_key_down(&in, SDL_SCANCODE_O);
+		bool perf_down = input_key_down(&in, cfg->input.perf_trace);
 		bool perf_pressed = perf_down && !perf_prev_down;
 		perf_prev_down = perf_down;
 		if (perf_pressed) {
@@ -309,11 +481,11 @@ int main(int argc, char** argv) {
 		}
 
 		// Debug dump: only when enabled via CLI and user presses `~` (grave).
-		bool dump_down = input_key_down(&in, SDL_SCANCODE_GRAVE);
+		bool dump_down = input_key_down(&in, cfg->input.debug_dump);
 		bool dump_pressed = dump_down && !dump_prev_down;
 		dump_prev_down = dump_down;
 		if (debug_dump_enabled && dump_pressed) {
-			Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->fov_deg);
+			Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->render.fov_deg);
 			{
 				float phase = player.weapon_view_bob_phase;
 				float amp = player.weapon_view_bob_amp;
@@ -336,34 +508,34 @@ int main(int argc, char** argv) {
 			debug_dump_print(stdout, map_name, map_ok ? &map.world : NULL, &player, &cam);
 		}
 
-		bool noclip_down = input_key_down(&in, SDL_SCANCODE_F2);
+		bool noclip_down = input_key_down(&in, cfg->input.noclip);
 		bool noclip_pressed = noclip_down && !player.noclip_prev_down;
 		player.noclip_prev_down = noclip_down;
 		if (noclip_pressed) {
 			player.noclip = !player.noclip;
 		}
 
-		PlayerControllerInput ci = gather_controls(&in);
+		PlayerControllerInput ci = gather_controls(&in, &cfg->input);
 		bool fire_down = gather_fire(&in);
 		uint8_t weapon_select_mask = 0;
-		if (input_key_down(&in, SDL_SCANCODE_1)) {
+		if (input_key_down(&in, cfg->input.weapon_slot_1)) {
 			weapon_select_mask |= 1u << 0;
 		}
-		if (input_key_down(&in, SDL_SCANCODE_2)) {
+		if (input_key_down(&in, cfg->input.weapon_slot_2)) {
 			weapon_select_mask |= 1u << 1;
 		}
-		if (input_key_down(&in, SDL_SCANCODE_3)) {
+		if (input_key_down(&in, cfg->input.weapon_slot_3)) {
 			weapon_select_mask |= 1u << 2;
 		}
-		if (input_key_down(&in, SDL_SCANCODE_4)) {
+		if (input_key_down(&in, cfg->input.weapon_slot_4)) {
 			weapon_select_mask |= 1u << 3;
 		}
-		if (input_key_down(&in, SDL_SCANCODE_5)) {
+		if (input_key_down(&in, cfg->input.weapon_slot_5)) {
 			weapon_select_mask |= 1u << 4;
 		}
 		int weapon_wheel_delta = in.mouse_wheel;
-		bool q_down = input_key_down(&in, SDL_SCANCODE_Q);
-		bool e_down = input_key_down(&in, SDL_SCANCODE_E);
+		bool q_down = input_key_down(&in, cfg->input.weapon_prev);
+		bool e_down = input_key_down(&in, cfg->input.weapon_next);
 		bool q_pressed = q_down && !q_prev_down;
 		bool e_pressed = e_down && !e_prev_down;
 		q_prev_down = q_down;
@@ -379,7 +551,7 @@ int main(int argc, char** argv) {
 		}
 		for (int i = 0; i < steps; i++) {
 			if (gs.mode == GAME_MODE_PLAYING) {
-				bool action_down = input_key_down(&in, SDL_SCANCODE_SPACE);
+				bool action_down = key_down2(&in, cfg->input.action_primary, cfg->input.action_secondary);
 				bool action_pressed = action_down && !player.action_prev_down;
 				player.action_prev_down = action_down;
 				if (action_pressed) {
@@ -394,16 +566,19 @@ int main(int argc, char** argv) {
 					float vx = player.body.vx;
 					float vy = player.body.vy;
 					float speed = sqrtf(vx * vx + vy * vy);
-					bool moving = (player.body.on_ground && speed > 0.15f);
+					bool moving = cfg->footsteps.enabled && (player.body.on_ground && speed > cfg->footsteps.min_speed);
 					if (moving) {
 						player.footstep_timer_s -= (float)loop.fixed_dt_s;
 						if (player.footstep_timer_s <= 0.0f) {
-							// Cycle the available concrete boot steps (001..017).
-							player.footstep_variant = (uint8_t)((player.footstep_variant % 17u) + 1u);
+							int variants = cfg->footsteps.variant_count;
+							if (variants < 1) {
+								variants = 1;
+							}
+							player.footstep_variant = (uint8_t)((player.footstep_variant % (uint8_t)variants) + 1u);
 							char wav[64];
-							snprintf(wav, sizeof(wav), "Footstep_Boot_Concrete-%03u.wav", (unsigned)player.footstep_variant);
-							sound_emitters_play_one_shot_at(&sfx_emitters, wav, player.body.x, player.body.y, false, 0.7f, player.body.x, player.body.y);
-							player.footstep_timer_s = 0.35f;
+							snprintf(wav, sizeof(wav), cfg->footsteps.filename_pattern, (unsigned)player.footstep_variant);
+							sound_emitters_play_one_shot_at(&sfx_emitters, wav, player.body.x, player.body.y, false, cfg->footsteps.gain, player.body.x, player.body.y);
+							player.footstep_timer_s = cfg->footsteps.interval_s;
 						}
 					} else {
 						player.footstep_timer_s = 0.0f;
@@ -411,7 +586,7 @@ int main(int argc, char** argv) {
 				}
 
 				weapons_update(&player, map_ok ? &map.world : NULL, &sfx_emitters, player.body.x, player.body.y, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
-				bool use_down = input_key_down(&in, SDL_SCANCODE_F);
+				bool use_down = key_down2(&in, cfg->input.use_primary, cfg->input.use_secondary);
 				bool use_pressed = use_down && !player.use_prev_down;
 				player.use_prev_down = use_down;
 				if (use_pressed) {
@@ -454,30 +629,30 @@ int main(int argc, char** argv) {
 						}
 						gs.mode = GAME_MODE_PLAYING;
 						// --- MUSIC CHANGE LOGIC ---
-						char midi_path[128], sf_path[128];
-						get_midi_path(map.bgmusic, midi_path, sizeof(midi_path));
-						get_soundfont_path(map.soundfont, sf_path, sizeof(sf_path));
-						bool midi_exists = map.bgmusic[0] != '\0';
-						bool sf_exists = map.soundfont[0] != '\0';
-						if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
-							midi_stop();
-							FILE* mf = fopen(midi_path, "rb");
-							FILE* sf = fopen(sf_path, "rb");
-							if (!mf) {
-								fprintf(stderr, "Warning: MIDI file not found: %s\n", midi_path);
-							} else if (!sf) {
-								fprintf(stderr, "Warning: SoundFont file not found: %s\n", sf_path);
-								fclose(mf);
-							} else {
-								fclose(mf);
-								fclose(sf);
-								if (midi_init(sf_path) == 0) {
-									midi_play(midi_path);
-									strncpy(prev_bgmusic, map.bgmusic, sizeof(prev_bgmusic));
-									strncpy(prev_soundfont, map.soundfont, sizeof(prev_soundfont));
+						if (audio_enabled) {
+							bool midi_exists = map.bgmusic[0] != '\0';
+							bool sf_exists = map.soundfont[0] != '\0';
+							if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
+								midi_stop();
+								char* midi_path = asset_path_join(&paths, "Sounds/MIDI", map.bgmusic);
+								char* sf_path = asset_path_join(&paths, "Sounds/SoundFonts", map.soundfont);
+								if (!midi_path || !sf_path) {
+									log_warn("MIDI path allocation failed");
+								} else if (!file_exists(midi_path)) {
+									log_warn("MIDI file not found: %s", midi_path);
+								} else if (!file_exists(sf_path)) {
+									log_warn("SoundFont file not found: %s", sf_path);
 								} else {
-									fprintf(stderr, "Error: Could not initialize MIDI playback.\n");
+									if (midi_init(sf_path) == 0) {
+										midi_play(midi_path);
+										strncpy(prev_bgmusic, map.bgmusic, sizeof(prev_bgmusic));
+										strncpy(prev_soundfont, map.soundfont, sizeof(prev_soundfont));
+									} else {
+										log_warn("Could not initialize MIDI playback");
+									}
 								}
+								free(midi_path);
+								free(sf_path);
 							}
 						}
 					}
@@ -486,7 +661,7 @@ int main(int argc, char** argv) {
 		}
 		win_prev = win_now;
 
-		Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->fov_deg);
+		Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->render.fov_deg);
 		{
 			float phase = player.weapon_view_bob_phase;
 			float amp = player.weapon_view_bob_amp;
@@ -618,6 +793,7 @@ int main(int argc, char** argv) {
 	sound_emitters_shutdown(&sfx_emitters);
 	sfx_shutdown();
 	midi_shutdown(); // Clean up music resources
+	free(config_path);
 	platform_shutdown();
 	log_shutdown();
 	return 0;
