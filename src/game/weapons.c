@@ -122,7 +122,7 @@ void weapons_update(
 
 	// SFX: generic gunshot emitted from player/camera position (non-spatial).
 	if (sfx) {
-		const char* wav = "Sniper_Shot-001.wav";
+		const char* wav = "Shotgun_Shot-001.wav";
 		switch (player->weapon_equipped) {
 			case WEAPON_SHOTGUN: wav = "Shotgun_Shot-001.wav"; break;
 			case WEAPON_ROCKET: wav = "Rocket_Shot-001.wav"; break;
