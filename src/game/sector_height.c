@@ -6,6 +6,23 @@
 #include <math.h>
 #include <string.h>
 
+static bool wall_has_valid_vertices(const World* world, const Wall* w);
+
+static bool wall_midpoint_xy(const World* world, int wall_index, float* out_x, float* out_y) {
+	if (!world || wall_index < 0 || wall_index >= world->wall_count || !out_x || !out_y) {
+		return false;
+	}
+	const Wall* w = &world->walls[wall_index];
+	if (!wall_has_valid_vertices(world, w)) {
+		return false;
+	}
+	Vertex a = world->vertices[w->v0];
+	Vertex b = world->vertices[w->v1];
+	*out_x = (a.x + b.x) * 0.5f;
+	*out_y = (a.y + b.y) * 0.5f;
+	return true;
+}
+
 static float clampf(float v, float lo, float hi) {
 	if (v < lo) {
 		return lo;
@@ -159,7 +176,7 @@ static bool sector_step_is_safe_for_player(const Sector* s, const Player* player
 	return sector_can_fit_body_at_floor(s, b, candidate_feet_z, params);
 }
 
-bool sector_height_try_toggle_touching_wall(World* world, Player* player) {
+bool sector_height_try_toggle_touching_wall(World* world, Player* player, SoundEmitters* sfx, float listener_x, float listener_y) {
 	if (!world || !player) {
 		return false;
 	}
@@ -252,10 +269,18 @@ bool sector_height_try_toggle_touching_wall(World* world, Player* player) {
 	s->floor_z_target = dest;
 	s->floor_moving = true;
 	s->floor_toggle_wall_index = best_wall;
+
+	// Trigger optional toggle start sound from wall midpoint.
+	if (sfx && w->toggle_sound[0] != '\0') {
+		float wx = 0.0f, wy = 0.0f;
+		if (wall_midpoint_xy(world, best_wall, &wx, &wy)) {
+			sound_emitters_play_one_shot_at(sfx, w->toggle_sound, wx, wy, true, 1.0f, listener_x, listener_y);
+		}
+	}
 	return true;
 }
 
-void sector_height_update(World* world, Player* player, double dt_s) {
+void sector_height_update(World* world, Player* player, SoundEmitters* sfx, float listener_x, float listener_y, double dt_s) {
 	if (!world || dt_s <= 0.0) {
 		return;
 	}
@@ -277,8 +302,18 @@ void sector_height_update(World* world, Player* player, double dt_s) {
 		if (fabsf(diff) <= 1e-4f) {
 			s->floor_z = target;
 			s->floor_moving = false;
+			int wall_index = s->floor_toggle_wall_index;
 			apply_wall_tex_for_sector_state(world, s->floor_toggle_wall_index, s);
 			s->floor_toggle_wall_index = -1;
+			if (sfx && wall_index >= 0 && wall_index < world->wall_count) {
+				const Wall* w = &world->walls[wall_index];
+				if (w->toggle_sound_finish[0] != '\0') {
+					float wx = 0.0f, wy = 0.0f;
+					if (wall_midpoint_xy(world, wall_index, &wx, &wy)) {
+						sound_emitters_play_one_shot_at(sfx, w->toggle_sound_finish, wx, wy, true, 1.0f, listener_x, listener_y);
+					}
+				}
+			}
 			continue;
 		}
 
@@ -312,8 +347,18 @@ void sector_height_update(World* world, Player* player, double dt_s) {
 		if (sector_is_at(s->floor_z, s->floor_z_target)) {
 			s->floor_z = s->floor_z_target;
 			s->floor_moving = false;
+			int wall_index = s->floor_toggle_wall_index;
 			apply_wall_tex_for_sector_state(world, s->floor_toggle_wall_index, s);
 			s->floor_toggle_wall_index = -1;
+			if (sfx && wall_index >= 0 && wall_index < world->wall_count) {
+				const Wall* w = &world->walls[wall_index];
+				if (w->toggle_sound_finish[0] != '\0') {
+					float wx = 0.0f, wy = 0.0f;
+					if (wall_midpoint_xy(world, wall_index, &wx, &wy)) {
+						sound_emitters_play_one_shot_at(sfx, w->toggle_sound_finish, wx, wy, true, 1.0f, listener_x, listener_y);
+					}
+				}
+			}
 		}
 	}
 }

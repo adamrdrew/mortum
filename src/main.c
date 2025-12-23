@@ -4,6 +4,7 @@
 
 #include "platform/fs.h"
 #include "platform/input.h"
+#include "platform/audio.h"
 #include "platform/platform.h"
 #include "platform/time.h"
 #include "platform/window.h"
@@ -39,8 +40,11 @@
 #include "game/rules.h"
 #include "game/sector_height.h"
 
+#include "game/sound_emitters.h"
+
 #include <SDL.h>
 #include <stdbool.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,6 +105,13 @@ int main(int argc, char** argv) {
 
 	AssetPaths paths;
 	asset_paths_init(&paths, fs.base_path);
+
+	// SFX core (WAV sound effects) is separate from MIDI music.
+	if (!sfx_init(&paths, pcfg.enable_audio)) {
+		log_warn("SFX init failed; continuing with SFX disabled");
+	}
+	SoundEmitters sfx_emitters;
+	sound_emitters_init(&sfx_emitters);
 
 	Window win;
 	if (!window_create(&win, "Mortum", 1280, 720)) {
@@ -200,6 +211,18 @@ int main(int argc, char** argv) {
 	player_init(&player);
 	if (map_ok) {
 		episode_runner_apply_level_start(&player, &map);
+	}
+
+	// Spawn map-authored sound emitters (e.g., ambient loops).
+	if (map_ok && map.sounds && map.sound_count > 0) {
+		sound_emitters_reset(&sfx_emitters);
+		for (int i = 0; i < map.sound_count; i++) {
+			MapSoundEmitter* ms = &map.sounds[i];
+			SoundEmitterId id = sound_emitter_create(&sfx_emitters, ms->x, ms->y, ms->spatial, ms->gain);
+			if (ms->loop) {
+				sound_emitter_start_loop(&sfx_emitters, id, ms->sound, player.body.x, player.body.y);
+			}
+		}
 	}
 
 	Input in;
@@ -360,12 +383,34 @@ int main(int argc, char** argv) {
 				bool action_pressed = action_down && !player.action_prev_down;
 				player.action_prev_down = action_down;
 				if (action_pressed) {
-					(void)sector_height_try_toggle_touching_wall(map_ok ? &map.world : NULL, &player);
+					(void)sector_height_try_toggle_touching_wall(map_ok ? &map.world : NULL, &player, &sfx_emitters, player.body.x, player.body.y);
 				}
-				sector_height_update(map_ok ? &map.world : NULL, &player, loop.fixed_dt_s);
+				sector_height_update(map_ok ? &map.world : NULL, &player, &sfx_emitters, player.body.x, player.body.y, loop.fixed_dt_s);
 
 				player_controller_update(&player, map_ok ? &map.world : NULL, &ci, loop.fixed_dt_s);
-				weapons_update(&player, map_ok ? &map.world : NULL, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
+
+				// Basic footsteps: emitted from player/camera position (non-spatial).
+				{
+					float vx = player.body.vx;
+					float vy = player.body.vy;
+					float speed = sqrtf(vx * vx + vy * vy);
+					bool moving = (player.body.on_ground && speed > 0.15f);
+					if (moving) {
+						player.footstep_timer_s -= (float)loop.fixed_dt_s;
+						if (player.footstep_timer_s <= 0.0f) {
+							// Cycle the available concrete boot steps (001..017).
+							player.footstep_variant = (uint8_t)((player.footstep_variant % 17u) + 1u);
+							char wav[64];
+							snprintf(wav, sizeof(wav), "Footstep_Boot_Concrete-%03u.wav", (unsigned)player.footstep_variant);
+							sound_emitters_play_one_shot_at(&sfx_emitters, wav, player.body.x, player.body.y, false, 0.7f, player.body.x, player.body.y);
+							player.footstep_timer_s = 0.35f;
+						}
+					} else {
+						player.footstep_timer_s = 0.0f;
+					}
+				}
+
+				weapons_update(&player, map_ok ? &map.world : NULL, &sfx_emitters, player.body.x, player.body.y, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
 				bool use_down = input_key_down(&in, SDL_SCANCODE_F);
 				bool use_pressed = use_down && !player.use_prev_down;
 				player.use_prev_down = use_down;
@@ -396,6 +441,17 @@ int main(int argc, char** argv) {
 					if (map_ok) {
 						level_mesh_build(&mesh, &map.world);
 						episode_runner_apply_level_start(&player, &map);
+						player.footstep_timer_s = 0.0f;
+						sound_emitters_reset(&sfx_emitters);
+						if (map.sounds && map.sound_count > 0) {
+							for (int i = 0; i < map.sound_count; i++) {
+								MapSoundEmitter* ms = &map.sounds[i];
+								SoundEmitterId id = sound_emitter_create(&sfx_emitters, ms->x, ms->y, ms->spatial, ms->gain);
+								if (ms->loop) {
+									sound_emitter_start_loop(&sfx_emitters, id, ms->sound, player.body.x, player.body.y);
+								}
+							}
+						}
 						gs.mode = GAME_MODE_PLAYING;
 						// --- MUSIC CHANGE LOGIC ---
 						char midi_path[128], sf_path[128];
@@ -450,6 +506,9 @@ int main(int argc, char** argv) {
 			}
 			cam.z = (player.body.z - floor_z) + bob_z;
 		}
+
+		// Update looping ambient emitters with current listener position.
+		sound_emitters_update(&sfx_emitters, cam.x, cam.y);
 		int start_sector = -1;
 		if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
 			start_sector = player.body.sector;
@@ -556,8 +615,10 @@ int main(int argc, char** argv) {
 	window_destroy(&win);
 	asset_paths_destroy(&paths);
 	fs_paths_destroy(&fs);
+	sound_emitters_shutdown(&sfx_emitters);
+	sfx_shutdown();
+	midi_shutdown(); // Clean up music resources
 	platform_shutdown();
 	log_shutdown();
-	midi_shutdown(); // Clean up music resources
 	return 0;
 }

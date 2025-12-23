@@ -33,6 +33,8 @@ typedef struct Player {
 	bool noclip;
 	bool noclip_prev_down;
 	bool action_prev_down;
+	float footstep_timer_s;
+	uint8_t footstep_variant;
 } Player;
 
 void player_init(Player* p);

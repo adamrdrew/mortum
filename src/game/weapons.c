@@ -38,11 +38,16 @@ static WeaponId weapon_next_owned(const Player* player, WeaponId cur, int dir) {
 void weapons_update(
 	Player* player,
 	const World* world,
+	SoundEmitters* sfx,
+	float listener_x,
+	float listener_y,
 	bool fire_down,
 	int weapon_wheel_delta,
 	uint8_t weapon_select_mask,
 	double dt_s) {
 	(void)world;
+	(void)listener_x;
+	(void)listener_y;
 	if (!player || dt_s <= 0.0) {
 		return;
 	}
@@ -114,4 +119,18 @@ void weapons_update(
 	player->weapon_view_anim_frame = 0;
 	player->weapon_view_anim_t = 0.0f;
 	player->weapon_cooldown_s = def->shot_cooldown_s;
+
+	// SFX: generic gunshot emitted from player/camera position (non-spatial).
+	if (sfx) {
+		const char* wav = "Sniper_Shot-001.wav";
+		switch (player->weapon_equipped) {
+			case WEAPON_SHOTGUN: wav = "Shotgun_Shot-001.wav"; break;
+			case WEAPON_ROCKET: wav = "Rocket_Shot-001.wav"; break;
+			case WEAPON_HANDGUN: wav = "Sniper_Shot-001.wav"; break;
+			case WEAPON_RIFLE: wav = "Sniper_Shot-002.wav"; break;
+			case WEAPON_SMG: wav = "Sniper_Shot-003.wav"; break;
+			default: break;
+		}
+		sound_emitters_play_one_shot_at(sfx, wav, player->body.x, player->body.y, false, 1.0f, listener_x, listener_y);
+	}
 }

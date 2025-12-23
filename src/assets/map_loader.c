@@ -144,6 +144,9 @@ static bool json_get_bool(const JsonDoc* doc, int tok, bool* out) {
 }
 
 void map_load_result_destroy(MapLoadResult* self) {
+	free(self->sounds);
+	self->sounds = NULL;
+	self->sound_count = 0;
 	world_destroy(&self->world);
 	memset(self, 0, sizeof(*self));
 }
@@ -203,12 +206,14 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	int t_sectors = -1;
 	int t_walls = -1;
 	int t_lights = -1;
+	int t_sounds = -1;
 	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls)) {
 		log_error("Map JSON missing required fields");
 		json_doc_destroy(&doc);
 		return false;
 	}
 	(void)json_object_get(&doc, 0, "lights", &t_lights);
+	(void)json_object_get(&doc, 0, "sounds", &t_sounds);
 
 	// player_start
 	if (!json_token_is_object(&doc, t_player)) {
@@ -471,6 +476,92 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		}
 	}
 
+	// optional sound emitters
+	if (t_sounds != -1) {
+		if (!json_token_is_array(&doc, t_sounds)) {
+			log_error("sounds must be an array");
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		int scount = json_array_size(&doc, t_sounds);
+		if (scount > 0) {
+			out->sounds = (MapSoundEmitter*)calloc((size_t)scount, sizeof(MapSoundEmitter));
+			if (!out->sounds) {
+				log_error("failed to allocate sounds");
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			out->sound_count = scount;
+			for (int i = 0; i < scount; i++) {
+				int ts = json_array_nth(&doc, t_sounds, i);
+				if (!json_token_is_object(&doc, ts)) {
+					log_error("sound %d must be an object", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				int tx=-1, ty=-1, tsound=-1;
+				int tloop=-1, tspatial=-1, tgain=-1;
+				if (!json_object_get(&doc, ts, "x", &tx) || !json_object_get(&doc, ts, "y", &ty) || !json_object_get(&doc, ts, "sound", &tsound)) {
+					log_error("sound %d missing required fields (x,y,sound)", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				(void)json_object_get(&doc, ts, "loop", &tloop);
+				(void)json_object_get(&doc, ts, "spatial", &tspatial);
+				(void)json_object_get(&doc, ts, "gain", &tgain);
+
+				float x = 0.0f, y = 0.0f;
+				StringView sv_sound;
+				if (!json_get_float(&doc, tx, &x) || !json_get_float(&doc, ty, &y) || !json_get_string(&doc, tsound, &sv_sound)) {
+					log_error("sound %d fields invalid", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				bool loop = false;
+				bool spatial = true;
+				float gain = 1.0f;
+				if (tloop != -1 && !json_get_bool(&doc, tloop, &loop)) {
+					log_error("sound %d loop invalid (must be true/false)", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				if (tspatial != -1 && !json_get_bool(&doc, tspatial, &spatial)) {
+					log_error("sound %d spatial invalid (must be true/false)", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				if (tgain != -1 && !json_get_float(&doc, tgain, &gain)) {
+					log_error("sound %d gain invalid", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				if (gain < 0.0f) {
+					gain = 0.0f;
+				}
+				if (gain > 1.0f) {
+					gain = 1.0f;
+				}
+
+				out->sounds[i].x = x;
+				out->sounds[i].y = y;
+				out->sounds[i].loop = loop;
+				out->sounds[i].spatial = spatial;
+				out->sounds[i].gain = gain;
+				size_t n = sv_sound.len < 63 ? sv_sound.len : 63;
+				memcpy(out->sounds[i].sound, sv_sound.data, n);
+				out->sounds[i].sound[n] = '\0';
+			}
+		}
+	}
+
 	// walls
 	int wcount = json_array_size(&doc, t_walls);
 	if (wcount < 1) {
@@ -487,6 +578,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		int t_toggle_sector_id = -1;
 		int t_toggle_sector_oneshot = -1;
 		int t_active_tex = -1;
+		int t_toggle_sound = -1;
+		int t_toggle_sound_finish = -1;
 		if (!json_object_get(&doc, tw, "v0", &tv0) || !json_object_get(&doc, tw, "v1", &tv1) || !json_object_get(&doc, tw, "front_sector", &tfs) || !json_object_get(&doc, tw, "back_sector", &tbs) || !json_object_get(&doc, tw, "tex", &ttex)) {
 			log_error("wall %d missing required fields", i);
 			json_doc_destroy(&doc);
@@ -497,6 +590,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		(void)json_object_get(&doc, tw, "toggle_sector_id", &t_toggle_sector_id);
 		(void)json_object_get(&doc, tw, "toggle_sector_oneshot", &t_toggle_sector_oneshot);
 		(void)json_object_get(&doc, tw, "active_tex", &t_active_tex);
+		(void)json_object_get(&doc, tw, "toggle_sound", &t_toggle_sound);
+		(void)json_object_get(&doc, tw, "toggle_sound_finish", &t_toggle_sound_finish);
 		int v0=0,v1=0,fs=0,bs=-1;
 		StringView sv_tex;
 		if (!json_get_int(&doc, tv0, &v0) || !json_get_int(&doc, tv1, &v1) || !json_get_int(&doc, tfs, &fs) || !json_get_int(&doc, tbs, &bs) || !json_get_string(&doc, ttex, &sv_tex)) {
@@ -551,11 +646,37 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		out->world.walls[i].toggle_sector_id = toggle_sector_id;
 		out->world.walls[i].toggle_sector_oneshot = toggle_sector_oneshot;
 		out->world.walls[i].active_tex[0] = '\0';
+		out->world.walls[i].toggle_sound[0] = '\0';
+		out->world.walls[i].toggle_sound_finish[0] = '\0';
 		world_set_wall_tex(&out->world.walls[i], sv_tex);
 		if (has_active_tex) {
 			size_t n = sv_active_tex.len < 63 ? sv_active_tex.len : 63;
 			memcpy(out->world.walls[i].active_tex, sv_active_tex.data, n);
 			out->world.walls[i].active_tex[n] = '\0';
+		}
+		if (t_toggle_sound != -1) {
+			StringView sv;
+			if (!json_get_string(&doc, t_toggle_sound, &sv)) {
+				log_error("wall %d toggle_sound invalid", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			size_t n = sv.len < 63 ? sv.len : 63;
+			memcpy(out->world.walls[i].toggle_sound, sv.data, n);
+			out->world.walls[i].toggle_sound[n] = '\0';
+		}
+		if (t_toggle_sound_finish != -1) {
+			StringView sv;
+			if (!json_get_string(&doc, t_toggle_sound_finish, &sv)) {
+				log_error("wall %d toggle_sound_finish invalid", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			size_t n = sv.len < 63 ? sv.len : 63;
+			memcpy(out->world.walls[i].toggle_sound_finish, sv.data, n);
+			out->world.walls[i].toggle_sound_finish[n] = '\0';
 		}
 	}
 

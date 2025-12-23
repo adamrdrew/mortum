@@ -630,6 +630,8 @@
             "toggle_sector": true,
             "toggle_sector_id": 5,
             "toggle_sector_oneshot": true,
+            "toggle_sound": "Flashlight On.wav",
+            "toggle_sound_finish": "Flashlight Off.wav",
             "flags": [
                 "portal"
             ]

@@ -84,7 +84,8 @@ SRC := \
   src/game/collision.c \
   src/game/dash.c \
   src/game/sector_height.c \
-  src/game/player_controller.c
+  src/game/player_controller.c \
+  src/game/sound_emitters.c
 
 SRC := $(SRC) \
   src/game/debug_dump.c

@@ -31,4 +31,6 @@ void player_init(Player* p) {
 	p->weapon_cooldown_s = 0.0f;
 	p->noclip = false;
 	p->noclip_prev_down = false;
+	p->footstep_timer_s = 0.0f;
+	p->footstep_variant = 0;
 }

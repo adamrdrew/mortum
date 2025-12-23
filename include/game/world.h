@@ -40,6 +40,9 @@ typedef struct Wall {
 	char base_tex[64];
 	// Optional active texture for toggle walls.
 	char active_tex[64];
+	// Optional toggle sounds (WAV under Assets/Sounds/Effects/).
+	char toggle_sound[64];
+	char toggle_sound_finish[64];
 	bool toggle_sector;
 	int toggle_sector_id; // -1 means "use default" (sector on player side)
 	bool toggle_sector_oneshot;

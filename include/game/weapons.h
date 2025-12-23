@@ -4,6 +4,7 @@
 
 #include "game/player.h"
 #include "game/world.h"
+#include "game/sound_emitters.h"
 
 // Basic US1: spawns player projectiles while fire is held.
 // US3: Supports multiple weapons (1-5 select) and cycling (mouse wheel and/or Q/E via wheel delta).
@@ -11,6 +12,9 @@
 void weapons_update(
 	Player* player,
 	const World* world,
+	SoundEmitters* sfx,
+	float listener_x,
+	float listener_y,
 	bool fire_down,
 	int weapon_wheel_delta,
 	uint8_t weapon_select_mask,
