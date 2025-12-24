@@ -55,10 +55,9 @@ Notes:
 | `render.lighting.min_visibility` | number | `0.485` | Reloadable | Range: `[0..1]` |
 | `render.lighting.quantize_steps` | int | `16` | Reloadable | `<= 1` disables quantize |
 | `render.lighting.quantize_low_cutoff` | number | `0.08` | Reloadable | Range: `[0..1]` |
-| `ui.ui_font_file` | string | `"Assets/Fonts/ProggyClean.ttf"` | Startup-only | TrueType font file path |
-| `ui.ui_font_size_px` | int | `14` | Startup-only | Range: `[6..96]` |
-| `ui.ui_font_atlas_w` | int | `512` | Startup-only | Range: `[128..4096]` |
-| `ui.ui_font_atlas_h` | int | `512` | Startup-only | Range: `[128..4096]` |
+| `ui.font.file` | string | `"ProggyClean.ttf"` | Startup-only | Filename under `Assets/Fonts/` |
+| `ui.font.size` | int | `15` | Startup-only | Range: `[6..96]` |
+| `ui.font.atlas_size` | int | `512` | Startup-only | Range: `[128..4096]` |
 | `audio.enabled` | bool | `true` | Reloadable* | *MIDI playback is gated by this; SFX core is initialized at startup |
 | `audio.sfx_master_volume` | number | `1` | Reloadable | Range: `[0..1]` |
 | `audio.sfx_atten_min_dist` | number | `6` | Reloadable | Must satisfy `max_dist >= min_dist` |

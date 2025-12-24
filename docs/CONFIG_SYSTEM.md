@@ -116,7 +116,7 @@ General rules:
 - Window creation parameters: `window.width`, `window.height`, `window.vsync`, `window.title`
 - Internal framebuffer size: `render.internal_width`, `render.internal_height`
 - Audio device open parameters: `audio.sfx_device_freq`, `audio.sfx_device_buffer_samples`
-- UI font initialization: `ui.ui_font_file`, `ui.ui_font_size_px`, `ui.ui_font_atlas_w`, `ui.ui_font_atlas_h`
+- UI font initialization: `ui.font.file`, `ui.font.size`, `ui.font.atlas_size`
 
 **Reloadable (takes effect immediately after reload)**
 - Most gameplay tuning, lighting parameters, keybinds, footsteps, weapon balance, etc.

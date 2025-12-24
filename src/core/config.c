@@ -45,10 +45,11 @@ static CoreConfig g_cfg = {
 		.default_episode = "episode1.json",
 	},
 	.ui = {
-		.font_file = "Assets/Fonts/ProggyClean.ttf",
-		.font_size_px = 14,
-		.font_atlas_w = 512,
-		.font_atlas_h = 512,
+		.font = {
+			.file = "ProggyClean.ttf",
+			.size_px = 15,
+			.atlas_size = 512,
+		},
 	},
 	.input = {
 		.forward_primary = SDL_SCANCODE_W,
@@ -738,50 +739,64 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 				log_error("Config: %s: ui must be an object", path);
 				ok = false;
 			} else {
-				static const char* const allowed_ui[] = {"ui_font_file", "ui_font_size_px", "ui_font_atlas_w", "ui_font_atlas_h"};
+				static const char* const allowed_ui[] = {"font"};
 				warn_unknown_keys(&doc, t_ui, allowed_ui, (int)(sizeof(allowed_ui) / sizeof(allowed_ui[0])), "ui");
 
-				int t_ff = -1;
-				if (json_object_get(&doc, t_ui, "ui_font_file", &t_ff)) {
-					StringView sv;
-					if (!json_get_string(&doc, t_ff, &sv) || sv.len == 0) {
-						log_error("Config: %s: ui.ui_font_file must be a non-empty string", path);
+				int t_font = -1;
+				if (json_object_get(&doc, t_ui, "font", &t_font)) {
+					if (!json_token_is_object(&doc, t_font)) {
+						log_error("Config: %s: ui.font must be an object", path);
 						ok = false;
 					} else {
-						copy_sv_to_buf(next.ui.font_file, sizeof(next.ui.font_file), sv);
-					}
-				}
+						static const char* const allowed_font[] = {"file", "size", "atlas_size"};
+						warn_unknown_keys(&doc, t_font, allowed_font, (int)(sizeof(allowed_font) / sizeof(allowed_font[0])), "ui.font");
 
-				int t_fs = -1;
-				if (json_object_get(&doc, t_ui, "ui_font_size_px", &t_fs)) {
-					int v = 0;
-					if (!json_get_int(&doc, t_fs, &v) || v < 6 || v > 96) {
-						log_error("Config: %s: ui.ui_font_size_px must be int in [6..96]", path);
-						ok = false;
-					} else {
-						next.ui.font_size_px = v;
-					}
-				}
+						int t_file = -1;
+						if (json_object_get(&doc, t_font, "file", &t_file)) {
+							StringView sv;
+							if (!json_get_string(&doc, t_file, &sv) || sv.len == 0) {
+								log_error("Config: %s: ui.font.file must be a non-empty string", path);
+								ok = false;
+							} else {
+								// Always loaded from Assets/Fonts/. Disallow path separators.
+								bool has_sep = false;
+								for (size_t i = 0; i < sv.len; i++) {
+									char ch = sv.data[i];
+									if (ch == '/' || ch == '\\') {
+										has_sep = true;
+										break;
+									}
+								}
+								if (has_sep) {
+									log_error("Config: %s: ui.font.file must be a filename under Assets/Fonts/ (no path separators)", path);
+									ok = false;
+								} else {
+									copy_sv_to_buf(next.ui.font.file, sizeof(next.ui.font.file), sv);
+								}
+							}
+						}
 
-				int t_aw = -1;
-				if (json_object_get(&doc, t_ui, "ui_font_atlas_w", &t_aw)) {
-					int v = 0;
-					if (!json_get_int(&doc, t_aw, &v) || v < 128 || v > 4096) {
-						log_error("Config: %s: ui.ui_font_atlas_w must be int in [128..4096]", path);
-						ok = false;
-					} else {
-						next.ui.font_atlas_w = v;
-					}
-				}
+						int t_size = -1;
+						if (json_object_get(&doc, t_font, "size", &t_size)) {
+							int v = 0;
+							if (!json_get_int(&doc, t_size, &v) || v < 6 || v > 96) {
+								log_error("Config: %s: ui.font.size must be int in [6..96]", path);
+								ok = false;
+							} else {
+								next.ui.font.size_px = v;
+							}
+						}
 
-				int t_ah = -1;
-				if (json_object_get(&doc, t_ui, "ui_font_atlas_h", &t_ah)) {
-					int v = 0;
-					if (!json_get_int(&doc, t_ah, &v) || v < 128 || v > 4096) {
-						log_error("Config: %s: ui.ui_font_atlas_h must be int in [128..4096]", path);
-						ok = false;
-					} else {
-						next.ui.font_atlas_h = v;
+						int t_as = -1;
+						if (json_object_get(&doc, t_font, "atlas_size", &t_as)) {
+							int v = 0;
+							if (!json_get_int(&doc, t_as, &v) || v < 128 || v > 4096) {
+								log_error("Config: %s: ui.font.atlas_size must be int in [128..4096]", path);
+								ok = false;
+							} else {
+								next.ui.font.atlas_size = v;
+							}
+						}
 					}
 				}
 			}

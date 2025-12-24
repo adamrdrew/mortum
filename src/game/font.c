@@ -13,30 +13,6 @@
 
 _Static_assert(sizeof(stbtt_fontinfo) <= 256, "FontSystem.stbtt_fontinfo_storage too small");
 
-static char* dup_cstr_local(const char* s) {
-	if (!s) {
-		return NULL;
-	}
-	size_t n = strlen(s);
-	char* out = (char*)malloc(n + 1);
-	if (!out) {
-		return NULL;
-	}
-	memcpy(out, s, n + 1);
-	return out;
-}
-
-static bool is_abs_path(const char* p) {
-	return p && p[0] == '/';
-}
-
-static bool starts_with(const char* s, const char* prefix) {
-	if (!s || !prefix) {
-		return false;
-	}
-	size_t n = strlen(prefix);
-	return strncmp(s, prefix, n) == 0;
-}
 
 static char* join2(const char* a, const char* b) {
 	if (!a || !b) {
@@ -63,19 +39,19 @@ static char* resolve_font_path(const AssetPaths* paths, const char* ttf_path) {
 	if (!ttf_path || ttf_path[0] == '\0') {
 		return NULL;
 	}
-	if (is_abs_path(ttf_path)) {
-		return dup_cstr_local(ttf_path);
-	}
-	if (starts_with(ttf_path, "Assets/")) {
-		if (paths && paths->assets_root) {
-			return join2(paths->assets_root, ttf_path + strlen("Assets/"));
-		}
-		return dup_cstr_local(ttf_path);
-	}
+	// Always load UI fonts from Assets/Fonts/.
+	// Config provides filename only (e.g. "ProggyClean.ttf").
 	if (paths && paths->assets_root) {
-		return join2(paths->assets_root, ttf_path);
+		char* fonts_dir = join2(paths->assets_root, "Fonts");
+		if (!fonts_dir) {
+			return NULL;
+		}
+		char* full = join2(fonts_dir, ttf_path);
+		free(fonts_dir);
+		return full;
 	}
-	return dup_cstr_local(ttf_path);
+	// Fallback to relative path if AssetPaths isn't available.
+	return join2("Assets/Fonts", ttf_path);
 }
 
 static bool read_entire_file(const char* path, uint8_t** out_bytes, size_t* out_size) {

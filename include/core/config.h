@@ -139,11 +139,14 @@ typedef struct ContentConfig {
 	char default_episode[64];
 } ContentConfig;
 
+typedef struct UiFontConfig {
+	char file[64];
+	int size_px;
+	int atlas_size;
+} UiFontConfig;
+
 typedef struct UiConfig {
-	char font_file[128];
-	int font_size_px;
-	int font_atlas_w;
-	int font_atlas_h;
+	UiFontConfig font;
 } UiConfig;
 
 typedef struct CoreConfig {

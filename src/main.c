@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
 	bool audio_enabled = cfg->audio.enabled;
 
 	FontSystem ui_font;
-	if (!font_system_init(&ui_font, cfg->ui.font_file, cfg->ui.font_size_px, cfg->ui.font_atlas_w, cfg->ui.font_atlas_h, &paths)) {
+	if (!font_system_init(&ui_font, cfg->ui.font.file, cfg->ui.font.size_px, cfg->ui.font.atlas_size, cfg->ui.font.atlas_size, &paths)) {
 		free(config_path);
 		asset_paths_destroy(&paths);
 		fs_paths_destroy(&fs);
