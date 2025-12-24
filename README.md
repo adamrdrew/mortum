@@ -21,7 +21,7 @@ The repository includes a fully-populated default config at [config.json](config
 ### Validation behavior
 
 - Startup: invalid config is fatal (startup aborts and logs errors).
-- Reload (default key: `U`, configurable): invalid config logs errors and keeps the previous config.
+- Runtime reload (via in-game console `config_reload`): invalid config logs errors and keeps the previous config.
 - Unknown keys: logged as warnings (forward-compatible).
 - Asset references: validated on load.
 	- `content.default_episode` must exist under `Assets/Episodes/`.
@@ -31,7 +31,7 @@ The repository includes a fully-populated default config at [config.json](config
 
 Notes:
 
-- **Reloadable** means changes take effect immediately after pressing the reload key.
+- **Reloadable** means changes take effect immediately after a runtime reload (via console `config_reload`) or an in-memory change (via console `config_change`).
 - **Startup-only** means changes require a restart to take effect.
 - Scancodes can be an SDL key name string (e.g. `"W"`, `"F3"`, `"Left Shift"`) or an int scancode.
 - Some bindings accept either a single key or `[primary, secondary]`.
@@ -77,13 +77,9 @@ Notes:
 | `input.bindings.weapon_next` | key | `"E"` | Reloadable | Wheel increment |
 | `input.bindings.toggle_debug_overlay` | key | `"F3"` | Reloadable | Toggles debug overlay |
 | `input.bindings.toggle_fps_overlay` | key | `"P"` | Reloadable | Toggles FPS overlay |
-| `input.bindings.toggle_font_test` | key | `"F7"` | Reloadable | Toggles font smoke-test page |
 | `input.bindings.toggle_point_lights` | key | `"K"` | Reloadable | Toggles point light emitters |
-| `input.bindings.entity_dump` | key | `"L"` | Reloadable | Dumps entity state + projection diagnostics |
 | `input.bindings.perf_trace` | key | `"O"` | Reloadable | Starts perf trace capture |
-| `input.bindings.debug_dump` | key | `"Grave"` | Reloadable | Dumps debug info (when enabled via CLI) |
 | `input.bindings.noclip` | key | `"F2"` | Reloadable | Toggles noclip |
-| `input.bindings.reload_config` | key | `"U"` | Reloadable | Reloads config file |
 | `player.mouse_sens_deg_per_px` | number | `0.12` | Reloadable | Range: `[0..10]` |
 | `player.move_speed` | number | `4.7` | Reloadable | Range: `[0..100]` |
 | `player.dash_distance` | number | `0.85` | Reloadable | Range: `[0..100]` |
@@ -115,10 +111,11 @@ Build/run:
 - `make run`
 
 Dev:
-- `input.bindings.toggle_font_test` toggles a font smoke-test page
+- Open the in-game console (`` ` ``) and use `show_font_test true|false` to toggle the font smoke-test page
 
 Docs:
 - Architecture: `docs/ARCHITECTURE.md`
+- Console: `docs/console.md`
 - Contributing/build conventions: `docs/CONTRIBUTING.md`
 
 Spec artifacts live under `specs/`.
