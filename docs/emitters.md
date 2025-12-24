@@ -339,7 +339,7 @@ From [src/render/raycast.c](../src/render/raycast.c):
     - `LIGHT_FLICKER_FLAME`: smooth value noise around ~8 Hz
     - `LIGHT_FLICKER_MALFUNCTION`: mostly-on with occasional off/strobe
 - Per-surface caps (to bound per-pixel work):
-  - Walls: `MAX_ACTIVE_LIGHTS_WALLS` (8)
+  - Walls: `MAX_ACTIVE_LIGHTS_WALLS` (96)
   - Planes (floors/ceilings): `MAX_ACTIVE_LIGHTS_PLANES` (6)
   - Caps are applied by scoring lights relative to the camera (`light_score_for_camera`) and keeping top-N.
 

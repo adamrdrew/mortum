@@ -476,6 +476,9 @@ bool map_validate(const World* world, float player_start_x, float player_start_y
 	// Optional: validate authored point lights (emitters).
 	if (world->lights && world->light_count > 0) {
 		for (int i = 0; i < world->light_count; i++) {
+			if (world->light_alive && !world->light_alive[i]) {
+				continue;
+			}
 			const PointLight* L = &world->lights[i];
 			if (L->radius < 0.0f) {
 				log_error("light %d radius < 0", i);

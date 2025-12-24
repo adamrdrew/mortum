@@ -17,7 +17,7 @@
 // Caps the number of point lights considered per frame after view culling.
 // Planes (floors/ceilings) do per-pixel lighting and dominate cost, so we use
 // a smaller cap there than for walls.
-#define MAX_ACTIVE_LIGHTS_WALLS 8
+#define MAX_ACTIVE_LIGHTS_WALLS MAX_VISIBLE_LIGHTS
 #define MAX_ACTIVE_LIGHTS_PLANES 6
 
 static float deg_to_rad(float deg);
