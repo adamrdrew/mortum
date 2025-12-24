@@ -271,7 +271,7 @@ Pass 2:
     - `owner` (if `owner` is set)
     - targets with `max_hp <= 0`
     - pickup/projectile targets
-    - targets in different sectors
+    - targets in different sectors **only if** line-of-sight is blocked by a solid wall (portal walls do not block)
   - Requires both XY circle overlap and Z overlap of the vertical intervals:
     - projectile: `[z, z+height]`
     - target: `[z, z+height]`

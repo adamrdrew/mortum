@@ -35,6 +35,48 @@ static bool wall_is_solid(const Wall* w) {
 	return w->back_sector < 0;
 }
 
+static float orient2(float ax, float ay, float bx, float by, float cx, float cy) {
+	return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+}
+
+static bool on_segment2(float ax, float ay, float bx, float by, float px, float py) {
+	float minx = ax < bx ? ax : bx;
+	float maxx = ax > bx ? ax : bx;
+	float miny = ay < by ? ay : by;
+	float maxy = ay > by ? ay : by;
+	const float eps = 1e-6f;
+	return (px >= minx - eps && px <= maxx + eps && py >= miny - eps && py <= maxy + eps);
+}
+
+static bool segments_intersect2(float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
+	const float eps = 1e-6f;
+	float o1 = orient2(ax, ay, bx, by, cx, cy);
+	float o2 = orient2(ax, ay, bx, by, dx, dy);
+	float o3 = orient2(cx, cy, dx, dy, ax, ay);
+	float o4 = orient2(cx, cy, dx, dy, bx, by);
+
+	// General case.
+	if (((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) && ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps))) {
+		return true;
+	}
+
+	// Colinear/touching cases.
+	if (fabsf(o1) <= eps && on_segment2(ax, ay, bx, by, cx, cy)) {
+		return true;
+	}
+	if (fabsf(o2) <= eps && on_segment2(ax, ay, bx, by, dx, dy)) {
+		return true;
+	}
+	if (fabsf(o3) <= eps && on_segment2(cx, cy, dx, dy, ax, ay)) {
+		return true;
+	}
+	if (fabsf(o4) <= eps && on_segment2(cx, cy, dx, dy, bx, by)) {
+		return true;
+	}
+
+	return false;
+}
+
 static bool resolve_once(const World* world, float radius, float* io_x, float* io_y, float* io_vx, float* io_vy) {
 	bool any = false;
 	float px = *io_x;
@@ -131,4 +173,32 @@ CollisionMoveResult collision_move_circle(const World* world, float radius, floa
 	r.out_x = x;
 	r.out_y = y;
 	return r;
+}
+
+bool collision_line_of_sight(const World* world, float from_x, float from_y, float to_x, float to_y) {
+	if (!world || world->wall_count <= 0 || world->vertex_count <= 0) {
+		return true;
+	}
+	// Zero-length segments trivially have LOS.
+	float dx = to_x - from_x;
+	float dy = to_y - from_y;
+	if (dx * dx + dy * dy <= 1e-10f) {
+		return true;
+	}
+
+	for (int i = 0; i < world->wall_count; i++) {
+		const Wall* w = &world->walls[i];
+		if (!wall_is_solid(w)) {
+			continue;
+		}
+		if (w->v0 < 0 || w->v0 >= world->vertex_count || w->v1 < 0 || w->v1 >= world->vertex_count) {
+			continue;
+		}
+		Vertex a = world->vertices[w->v0];
+		Vertex b = world->vertices[w->v1];
+		if (segments_intersect2(from_x, from_y, to_x, to_y, a.x, a.y, b.x, b.y)) {
+			return false;
+		}
+	}
+	return true;
 }

@@ -1411,7 +1411,14 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 					continue;
 				}
 				if (t->body.sector != e->body.sector) {
-					continue;
+					// Allow cross-sector damage through portals/open spaces, but prevent
+					// damaging through solid walls.
+					if (e->body.sector < 0 || t->body.sector < 0) {
+						continue;
+					}
+					if (!collision_line_of_sight(es->world, e->body.x, e->body.y, t->body.x, t->body.y)) {
+						continue;
+					}
 				}
 				float dx = t->body.x - e->body.x;
 				float dy = t->body.y - e->body.y;
