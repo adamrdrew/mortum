@@ -25,18 +25,6 @@
     {"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]}
   ],
   "entities": [
-    {"type": "pickup_health", "x": 2.5, "y": 9.5},
-    {"type": "pickup_ammo", "x": 3.5, "y": 2.5},
-
-    {"type": "hazard_floor_growth", "x": 6.0, "y": 6.0},
-    {"type": "hazard_wall_growth", "x": 6.0, "y": 7.2},
-
-    {"type": "pickup_toxic_medkit", "x": 1.5, "y": 6.0},
-
-    {"type": "enemy_melee", "x": 9.0, "y": 6.0},
-    {"type": "enemy_turret", "x": 10.0, "y": 10.0},
-
-    {"type": "pickup_mortum_small", "x": 6.0, "y": 2.0},
-    {"type": "pickup_mortum_large", "x": 9.5, "y": 2.0}
+    {"def": "shambler", "x": 9, "y": 6, "yaw_deg": 180}
   ]
 }

@@ -5,6 +5,17 @@
 #include "assets/asset_paths.h"
 #include "game/world.h"
 
+// Map-authored entity placements.
+// These are authored spawn points; the runtime entity system is responsible for creating
+// live entities from them.
+typedef struct MapEntityPlacement {
+	float x;
+	float y;
+	float yaw_deg;
+	int sector;
+	char def_name[64];
+} MapEntityPlacement;
+
 typedef struct MapLoadResult {
 	World world;
 	float player_start_x;
@@ -19,6 +30,10 @@ typedef struct MapLoadResult {
 	// live emitters from them.
 	struct MapSoundEmitter* sounds; // owned
 	int sound_count;
+
+	// Optional: map-authored entities.
+	MapEntityPlacement* entities; // owned
+	int entity_count;
 } MapLoadResult;
 
 typedef struct MapSoundEmitter {

@@ -53,7 +53,8 @@
 
       "toggle_debug_overlay": "F3",
       "toggle_fps_overlay": "P",
-      "toggle_point_lights": "L",
+      "toggle_point_lights": "K",
+      "entity_dump": "L",
       "perf_trace": "O",
       "debug_dump": "Grave",
       "noclip": "F2",

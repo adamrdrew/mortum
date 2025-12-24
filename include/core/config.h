@@ -36,6 +36,7 @@ typedef struct InputBindingsConfig {
 	int toggle_debug_overlay;
 	int toggle_fps_overlay;
 	int toggle_point_lights;
+	int entity_dump;
 	int perf_trace;
 	int debug_dump;
 	int noclip;

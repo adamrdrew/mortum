@@ -74,7 +74,8 @@ Notes:
 | `input.bindings.weapon_next` | key | `"E"` | Reloadable | Wheel increment |
 | `input.bindings.toggle_debug_overlay` | key | `"F3"` | Reloadable | Toggles debug overlay |
 | `input.bindings.toggle_fps_overlay` | key | `"P"` | Reloadable | Toggles FPS overlay |
-| `input.bindings.toggle_point_lights` | key | `"L"` | Reloadable | Toggles point light emitters |
+| `input.bindings.toggle_point_lights` | key | `"K"` | Reloadable | Toggles point light emitters |
+| `input.bindings.entity_dump` | key | `"L"` | Reloadable | Dumps entity state + projection diagnostics |
 | `input.bindings.perf_trace` | key | `"O"` | Reloadable | Starts perf trace capture |
 | `input.bindings.debug_dump` | key | `"Grave"` | Reloadable | Dumps debug info (when enabled via CLI) |
 | `input.bindings.noclip` | key | `"F2"` | Reloadable | Toggles noclip |

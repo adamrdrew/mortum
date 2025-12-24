@@ -88,6 +88,9 @@ SRC := \
   src/game/sound_emitters.c
 
 SRC := $(SRC) \
+	src/game/entities.c
+
+SRC := $(SRC) \
   src/game/debug_dump.c
 
 SRC := $(SRC) \

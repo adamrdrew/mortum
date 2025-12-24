@@ -40,6 +40,8 @@
 #include "game/rules.h"
 #include "game/sector_height.h"
 
+#include "game/entities.h"
+
 #include "game/sound_emitters.h"
 
 #include <SDL.h>
@@ -258,6 +260,12 @@ int main(int argc, char** argv) {
 	SoundEmitters sfx_emitters;
 	sound_emitters_init(&sfx_emitters);
 
+	EntityDefs entity_defs;
+	entity_defs_init(&entity_defs);
+	(void)entity_defs_load(&entity_defs, &paths);
+	EntitySystem entities;
+	entity_system_init(&entities, 512u);
+
 	Window win;
 	if (!window_create(&win, cfg->window.title, cfg->window.width, cfg->window.height, cfg->window.vsync)) {
 		asset_paths_destroy(&paths);
@@ -314,6 +322,19 @@ int main(int argc, char** argv) {
 	}
 	if (map_name) {
 		map_ok = map_load(&map, &paths, map_name);
+		if (map_ok) {
+			log_info("Map loaded: entities=%d", map.entity_count);
+			if (map.entities && map.entity_count > 0) {
+				log_info(
+					"Map entity[0]: def='%s' sector=%d pos=(%.2f,%.2f) yaw=%.1f",
+					map.entities[0].def_name[0] ? map.entities[0].def_name : "(empty)",
+					map.entities[0].sector,
+					map.entities[0].x,
+					map.entities[0].y,
+					map.entities[0].yaw_deg
+				);
+			}
+		}
 		// Validate MIDI and SoundFont existence for background music
 		if (map_ok && audio_enabled) {
 			bool midi_exists = map.bgmusic[0] != '\0';
@@ -370,6 +391,11 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	entity_system_reset(&entities, map_ok ? &map.world : NULL, &entity_defs);
+	if (map_ok && map.entities && map.entity_count > 0) {
+		entity_system_spawn_map(&entities, map.entities, map.entity_count);
+	}
+
 	Input in;
 	memset(&in, 0, sizeof(in));
 
@@ -391,6 +417,7 @@ int main(int argc, char** argv) {
 	bool debug_overlay_enabled = false;
 	bool debug_prev_down = false;
 	bool dump_prev_down = false;
+	bool entity_dump_prev_down = false;
 	bool fps_overlay_enabled = false;
 	bool fps_prev_down = false;
 	bool perf_prev_down = false;
@@ -468,6 +495,34 @@ int main(int argc, char** argv) {
 		if (lights_pressed) {
 			point_lights_enabled = !point_lights_enabled;
 			raycast_set_point_lights_enabled(point_lights_enabled);
+		}
+
+		// Entity dump: press L (default) to print entity + projection diagnostics.
+		bool entdump_down = input_key_down(&in, cfg->input.entity_dump);
+		bool entdump_pressed = entdump_down && !entity_dump_prev_down;
+		entity_dump_prev_down = entdump_down;
+		if (entdump_pressed) {
+			Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->render.fov_deg);
+			{
+				float phase = player.weapon_view_bob_phase;
+				float amp = player.weapon_view_bob_amp;
+				float bob_amp = amp * amp;
+				float ang = player.angle_deg * (float)M_PI / 180.0f;
+				float fx = cosf(ang);
+				float fy = sinf(ang);
+				float rx = -fy;
+				float ry = fx;
+				float bob_side = sinf(phase) * bob_amp * 0.03f;
+				float bob_z = sinf(phase) * bob_amp * 0.006f;
+				cam.x += rx * bob_side;
+				cam.y += ry * bob_side;
+				float floor_z = 0.0f;
+				if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
+					floor_z = map.world.sectors[player.body.sector].floor_z;
+				}
+				cam.z = (player.body.z - floor_z) + bob_z;
+			}
+			debug_dump_print_entities(stdout, map_name, map_ok ? &map.world : NULL, &player, &cam, &entities, fb.width, fb.height, wall_depth);
 		}
 
 		// Performance trace capture: press O to gather 60 frames then dump a summary.
@@ -560,6 +615,145 @@ int main(int argc, char** argv) {
 				sector_height_update(map_ok ? &map.world : NULL, &player, &sfx_emitters, player.body.x, player.body.y, loop.fixed_dt_s);
 
 				player_controller_update(&player, map_ok ? &map.world : NULL, &ci, loop.fixed_dt_s);
+				entity_system_resolve_player_collisions(&entities, &player.body);
+
+				entity_system_tick(&entities, &player.body, (float)loop.fixed_dt_s);
+				{
+					uint32_t ei = 0u;
+					for (;;) {
+						uint32_t ev_count = 0u;
+						const EntityEvent* evs = entity_system_events(&entities, &ev_count);
+						if (ei >= ev_count) {
+							break;
+						}
+						const EntityEvent* ev = &evs[ei++];
+						switch (ev->type) {
+							case ENTITY_EVENT_PLAYER_TOUCH: {
+								if (ev->kind != ENTITY_KIND_PICKUP) {
+									break;
+								}
+								const EntityDef* def = &entity_defs.defs[ev->def_id];
+								if (def->u.pickup.type == PICKUP_TYPE_HEALTH) {
+									int after = player.health + def->u.pickup.heal_amount;
+									if (after > player.health_max) {
+										after = player.health_max;
+									}
+									if (after < 0) {
+										after = 0;
+									}
+									player.health = after;
+								} else if (def->u.pickup.type == PICKUP_TYPE_AMMO) {
+									(void)ammo_add(&player.ammo, def->u.pickup.ammo_type, def->u.pickup.ammo_amount);
+								}
+
+								// Pickups are consumed on touch (even if already full).
+								if (def->u.pickup.pickup_sound[0] != '\0') {
+									sound_emitters_play_one_shot_at(
+										&sfx_emitters,
+										def->u.pickup.pickup_sound,
+										ev->x,
+										ev->y,
+										true,
+										def->u.pickup.pickup_sound_gain,
+										player.body.x,
+										player.body.y
+									);
+								}
+								entity_system_request_despawn(&entities, ev->entity);
+							} break;
+
+							case ENTITY_EVENT_PROJECTILE_HIT_WALL: {
+								if (ev->kind != ENTITY_KIND_PROJECTILE) {
+									break;
+								}
+								const EntityDef* def = &entity_defs.defs[ev->def_id];
+								if (def->u.projectile.impact_sound[0] != '\0') {
+									sound_emitters_play_one_shot_at(
+										&sfx_emitters,
+										def->u.projectile.impact_sound,
+										ev->x,
+										ev->y,
+										true,
+										def->u.projectile.impact_sound_gain,
+										player.body.x,
+										player.body.y
+									);
+								}
+								// Despawn already requested by entity tick, but request again is harmless.
+								entity_system_request_despawn(&entities, ev->entity);
+							} break;
+
+							case ENTITY_EVENT_DAMAGE: {
+								// If a projectile dealt damage, reuse its impact sound at the hit location.
+								if (ev->kind == ENTITY_KIND_PROJECTILE) {
+									const EntityDef* def = &entity_defs.defs[ev->def_id];
+									if (def->u.projectile.impact_sound[0] != '\0') {
+										sound_emitters_play_one_shot_at(
+											&sfx_emitters,
+											def->u.projectile.impact_sound,
+											ev->x,
+											ev->y,
+											true,
+											def->u.projectile.impact_sound_gain,
+											player.body.x,
+											player.body.y
+										);
+									}
+									entity_system_request_despawn(&entities, ev->entity);
+								}
+
+								// Apply damage to target entity.
+								Entity* target = NULL;
+								if (entity_system_resolve(&entities, ev->other, &target) && ev->amount > 0) {
+									const EntityDef* tdef = &entity_defs.defs[target->def_id];
+									target->hp -= ev->amount;
+									if (target->hp <= 0) {
+										target->hp = 0;
+										EntityEvent died;
+										memset(&died, 0, sizeof(died));
+										died.type = ENTITY_EVENT_DIED;
+										died.entity = target->id;
+										died.other = ev->entity; // source
+										died.def_id = target->def_id;
+										died.kind = tdef->kind;
+										died.x = target->body.x;
+										died.y = target->body.y;
+										died.amount = 0;
+										(void)entity_system_emit_event(&entities, died);
+										if (tdef->kind == ENTITY_KIND_ENEMY) {
+											target->state = ENTITY_STATE_DYING;
+											target->state_time = 0.0f;
+										} else {
+											entity_system_request_despawn(&entities, target->id);
+										}
+									} else {
+										if (tdef->kind == ENTITY_KIND_ENEMY) {
+											target->state = ENTITY_STATE_DAMAGED;
+											target->state_time = 0.0f;
+										}
+									}
+								}
+							} break;
+
+							case ENTITY_EVENT_DIED: {
+								// Reserved for future: death sounds, drops, score, etc.
+							} break;
+
+							case ENTITY_EVENT_PLAYER_DAMAGE: {
+								if (ev->amount > 0) {
+									player.health -= ev->amount;
+									if (player.health < 0) {
+										player.health = 0;
+									}
+								}
+							} break;
+
+							default:
+								break;
+						}
+					}
+				}
+				entity_system_flush(&entities);
 
 				// Basic footsteps: emitted from player/camera position (non-spatial).
 				{
@@ -585,7 +779,7 @@ int main(int argc, char** argv) {
 					}
 				}
 
-				weapons_update(&player, map_ok ? &map.world : NULL, &sfx_emitters, player.body.x, player.body.y, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
+				weapons_update(&player, map_ok ? &map.world : NULL, &sfx_emitters, &entities, player.body.x, player.body.y, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
 				bool use_down = key_down2(&in, cfg->input.use_primary, cfg->input.use_secondary);
 				bool use_pressed = use_down && !player.use_prev_down;
 				player.use_prev_down = use_down;
@@ -618,6 +812,7 @@ int main(int argc, char** argv) {
 						episode_runner_apply_level_start(&player, &map);
 						player.footstep_timer_s = 0.0f;
 						sound_emitters_reset(&sfx_emitters);
+							entity_system_reset(&entities, &map.world, &entity_defs);
 						if (map.sounds && map.sound_count > 0) {
 							for (int i = 0; i < map.sound_count; i++) {
 								MapSoundEmitter* ms = &map.sounds[i];
@@ -627,6 +822,9 @@ int main(int argc, char** argv) {
 								}
 							}
 						}
+							if (map.entities && map.entity_count > 0) {
+								entity_system_spawn_map(&entities, map.entities, map.entity_count);
+							}
 						gs.mode = GAME_MODE_PLAYING;
 						// --- MUSIC CHANGE LOGIC ---
 						if (audio_enabled) {
@@ -705,6 +903,9 @@ int main(int argc, char** argv) {
 			start_sector,
 			rc_perf_ptr
 		);
+		if (map_ok) {
+			entity_system_draw_sprites(&entities, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth);
+		}
 		if (perf_trace_is_active(&perf)) {
 			render3d_t1 = platform_time_seconds();
 			ui_t0 = render3d_t1;
@@ -713,7 +914,7 @@ int main(int argc, char** argv) {
 		weapon_view_draw(&fb, &player, &texreg, &paths);
 		hud_draw(&fb, &player, &gs, fps, &texreg, &paths);
 		if (debug_overlay_enabled) {
-			debug_overlay_draw(&fb, &player, map_ok ? &map.world : NULL, fps);
+			debug_overlay_draw(&fb, &player, map_ok ? &map.world : NULL, &entities, fps);
 		}
 		if (fps_overlay_enabled) {
 			char fps_text[32];
@@ -780,6 +981,9 @@ int main(int argc, char** argv) {
 	if (ep_ok) {
 		episode_destroy(&ep);
 	}
+
+	entity_system_shutdown(&entities);
+	entity_defs_destroy(&entity_defs);
 
 	texture_registry_destroy(&texreg);
 	level_mesh_destroy(&mesh);

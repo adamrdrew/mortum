@@ -147,6 +147,9 @@ void map_load_result_destroy(MapLoadResult* self) {
 	free(self->sounds);
 	self->sounds = NULL;
 	self->sound_count = 0;
+	free(self->entities);
+	self->entities = NULL;
+	self->entity_count = 0;
 	world_destroy(&self->world);
 	memset(self, 0, sizeof(*self));
 }
@@ -207,6 +210,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	int t_walls = -1;
 	int t_lights = -1;
 	int t_sounds = -1;
+	int t_entities = -1;
 	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls)) {
 		log_error("Map JSON missing required fields");
 		json_doc_destroy(&doc);
@@ -214,6 +218,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	}
 	(void)json_object_get(&doc, 0, "lights", &t_lights);
 	(void)json_object_get(&doc, 0, "sounds", &t_sounds);
+	(void)json_object_get(&doc, 0, "entities", &t_entities);
 
 	// player_start
 	if (!json_token_is_object(&doc, t_player)) {
@@ -260,6 +265,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		out->world.vertices[i].x = x;
 		out->world.vertices[i].y = y;
 	}
+
+	// (remaining parse continues...) 
 
 	// sectors
 	int scount = json_array_size(&doc, t_sectors);
@@ -677,6 +684,94 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 			size_t n = sv.len < 63 ? sv.len : 63;
 			memcpy(out->world.walls[i].toggle_sound_finish, sv.data, n);
 			out->world.walls[i].toggle_sound_finish[n] = '\0';
+		}
+	}
+
+	// optional entity placements
+	if (t_entities != -1) {
+		if (!json_token_is_array(&doc, t_entities)) {
+			log_error("entities must be an array");
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		int ecount = json_array_size(&doc, t_entities);
+		if (ecount > 0) {
+			out->entities = (MapEntityPlacement*)calloc((size_t)ecount, sizeof(MapEntityPlacement));
+			if (!out->entities) {
+				log_error("failed to allocate entities");
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			out->entity_count = ecount;
+			for (int i = 0; i < ecount; i++) {
+				int te = json_array_nth(&doc, t_entities, i);
+				if (!json_token_is_object(&doc, te)) {
+					log_error("entity %d must be an object", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				int tdef = -1, ttype = -1, tx = -1, ty = -1, tyaw = -1;
+				(void)json_object_get(&doc, te, "def", &tdef);
+				(void)json_object_get(&doc, te, "type", &ttype); // legacy field (pre-entity-system)
+				if (!json_object_get(&doc, te, "x", &tx) || !json_object_get(&doc, te, "y", &ty)) {
+					log_error("entity %d missing required fields (x,y)", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				(void)json_object_get(&doc, te, "yaw_deg", &tyaw);
+
+				// Determine def name.
+				StringView sv_def = {0};
+				bool has_def = false;
+				if (tdef != -1 && json_token_is_string(&doc, tdef)) {
+					has_def = json_get_string(&doc, tdef, &sv_def);
+				} else if (ttype != -1 && json_token_is_string(&doc, ttype)) {
+					// Legacy mapping: map old "type" values to new entity def names.
+					StringView sv_type;
+					if (json_get_string(&doc, ttype, &sv_type)) {
+						if (sv_type.len == 13 && strncmp(sv_type.data, "pickup_health", 13) == 0) {
+							sv_def.data = "health_pickup";
+							sv_def.len = 13;
+							has_def = true;
+						}
+					}
+				}
+				if (!has_def) {
+					// Unknown legacy type or missing def; keep entry but mark as inactive.
+					out->entities[i].def_name[0] = '\0';
+					out->entities[i].sector = -1;
+					continue;
+				}
+
+				float x = 0.0f, y = 0.0f;
+				if (!json_get_float(&doc, tx, &x) || !json_get_float(&doc, ty, &y)) {
+					log_error("entity %d fields invalid", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				float yaw_deg = 0.0f;
+				if (tyaw != -1) {
+					(void)json_get_float(&doc, tyaw, &yaw_deg);
+				}
+				size_t n = sv_def.len < 63 ? sv_def.len : 63;
+				memcpy(out->entities[i].def_name, sv_def.data, n);
+				out->entities[i].def_name[n] = '\0';
+				out->entities[i].x = x;
+				out->entities[i].y = y;
+				out->entities[i].yaw_deg = yaw_deg;
+				out->entities[i].sector = world_find_sector_at_point(&out->world, x, y);
+				if (out->entities[i].sector < 0) {
+					log_error("entity %d def '%s' is not inside any sector (x=%.3f y=%.3f)", i, out->entities[i].def_name, x, y);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+			}
 		}
 	}
 

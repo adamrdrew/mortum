@@ -34,6 +34,37 @@ Public headers live in `include/` mirroring the module names.
 - Map sectors provide `floor_tex` and `ceil_tex` and the raycaster (`src/render/raycast.c`) draws textured floors/ceilings per sector.
 - Current PNG map textures are expected to be 64x64; invalid sizes are rejected with a clear log error.
 
+## Entity definitions
+
+- Entity definitions live in `Assets/Entities/entities.json` and are loaded by the gameplay module (`src/game/entities.c`).
+- Each entry in `defs[]` has common fields:
+	- `name` (string, unique)
+	- `kind` (string: `pickup`, `projectile`, ...)
+	- `radius` / `height` (numbers; collision bounds)
+	- `max_hp` (optional int; if > 0 the entity can receive damage)
+
+Enemies and the player share the same underlying `PhysicsBody` traversal system (step-up, portals, gravity/falling).
+
+### Sprite schema
+
+- `sprite` can be either:
+	- a legacy string filename (e.g. `"health_pickup.png"`), or
+	- an object with explicit metadata:
+		- `file.name` (string)
+		- `file.dimensions.x/y` (ints)
+		- `frames.count` (int >= 1) and `frames.dimensions.x/y` (ints)
+		- `scale` (number, default 1)
+		- `z_offset` (number, in sprite pixels above the floor; converted using 64px == 1 world unit)
+- Sprite sheets are currently treated as a horizontal strip of `frames.count` frames.
+- Sprite rendering treats the color key `FF00FF` (magenta) as transparent globally (in addition to alpha=0).
+
+### Spatial queries
+
+- `EntitySystem` maintains a deterministic spatial hash index rebuilt each tick.
+- `EntitySystem` maintains a deterministic spatial hash index rebuilt each tick.
+- `entity_system_query_circle(...)` returns nearby entity ids for fast proximity queries (used by projectiles and intended for AI).
+- Enemies also run a deterministic enemy–enemy separation pass to avoid interpenetration.
+
 ## Tools
 
 - `make validate` builds and runs an offline asset loader/validator (episode + maps).

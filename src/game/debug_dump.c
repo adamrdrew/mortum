@@ -4,6 +4,30 @@
 #include <stdint.h>
 #include <string.h>
 
+static const char* entity_kind_str(EntityKind k) {
+	switch (k) {
+		case ENTITY_KIND_PICKUP: return "pickup";
+		case ENTITY_KIND_PROJECTILE: return "projectile";
+		case ENTITY_KIND_TURRET: return "turret";
+		case ENTITY_KIND_ENEMY: return "enemy";
+		case ENTITY_KIND_SUPPORT: return "support";
+		default: return "invalid";
+	}
+}
+
+static const char* entity_state_str(EntityState s) {
+	switch (s) {
+		case ENTITY_STATE_SPAWNING: return "spawning";
+		case ENTITY_STATE_IDLE: return "idle";
+		case ENTITY_STATE_ENGAGED: return "engaged";
+		case ENTITY_STATE_ATTACK: return "attack";
+		case ENTITY_STATE_DAMAGED: return "damaged";
+		case ENTITY_STATE_DYING: return "dying";
+		case ENTITY_STATE_DEAD: return "dead";
+		default: return "(unknown)";
+	}
+}
+
 static float deg_to_rad(float deg) {
 	return deg * (float)M_PI / 180.0f;
 }
@@ -20,6 +44,25 @@ static float clampf(float v, float lo, float hi) {
 		return hi;
 	}
 	return v;
+}
+
+static float camera_world_z_for_sector_approx2(const World* world, int sector, float z_offset) {
+	// Keep in sync with render/raycast.c and entity sprite rendering.
+	const float eye_height = 1.5f;
+	const float headroom = 0.1f;
+	if (!world || (unsigned)sector >= (unsigned)world->sector_count) {
+		return eye_height + z_offset;
+	}
+	const Sector* s = &world->sectors[sector];
+	float z = s->floor_z + eye_height + z_offset;
+	float z_max = s->ceil_z - headroom;
+	if (z > z_max) {
+		z = z_max;
+	}
+	if (z < s->floor_z + headroom) {
+		z = s->floor_z + headroom;
+	}
+	return z;
 }
 
 // Ray: o + t*d, segment: a + u*s
@@ -213,5 +256,183 @@ void debug_dump_print(FILE* out, const char* map_name, const World* world, const
 	}
 
 	fprintf(out, "=== END DEBUG DUMP ===\n");
+	fflush(out);
+}
+
+void debug_dump_print_entities(
+	FILE* out,
+	const char* map_name,
+	const World* world,
+	const Player* player,
+	const Camera* cam,
+	const EntitySystem* entities,
+	int fb_width,
+	int fb_height,
+	const float* wall_depth
+) {
+	if (!out) {
+		out = stdout;
+	}
+	fprintf(out, "\n=== MORTUM ENTITY DUMP ===\n");
+	fprintf(out, "map: %s\n", map_name ? map_name : "(unknown)");
+	fprintf(out, "fb: %dx%d\n", fb_width, fb_height);
+
+	if (!world || !cam || !entities || !entities->defs) {
+		fprintf(out, "(missing world/camera/entities/defs)\n");
+		fprintf(out, "=== END ENTITY DUMP ===\n");
+		fflush(out);
+		return;
+	}
+
+	if (player) {
+		fprintf(
+			out,
+			"player: pos=(%.4f,%.4f,%.4f) sector=%d radius=%.3f on_ground=%d\n",
+			player->body.x,
+			player->body.y,
+			player->body.z,
+			player->body.sector,
+			player->body.radius,
+			player->body.on_ground ? 1 : 0
+		);
+	}
+
+	float cam_rad = deg_to_rad(cam->angle_deg);
+	float fx = cosf(cam_rad);
+	float fy = sinf(cam_rad);
+	float rx = -fy;
+	float ry = fx;
+	float fov_rad = deg_to_rad(cam->fov_deg);
+	float half_w = 0.5f * (float)fb_width;
+	float half_h = 0.5f * (float)fb_height;
+	float tan_half_fov = tanf(0.5f * fov_rad);
+	float focal = (tan_half_fov > 1e-4f) ? (half_w / tan_half_fov) : 0.0f;
+
+	int start_sector = (player && (unsigned)player->body.sector < (unsigned)world->sector_count) ? player->body.sector : 0;
+	float cam_z_world = camera_world_z_for_sector_approx2(world, start_sector, cam->z);
+
+	fprintf(out, "camera: pos=(%.4f,%.4f) z_off=%.4f z_world=%.4f angle=%.3f fov=%.3f\n", cam->x, cam->y, cam->z, cam_z_world, cam->angle_deg, cam->fov_deg);
+	fprintf(out, "camera_basis: fwd=(%.6f,%.6f) right=(%.6f,%.6f) tan_half_fov=%.6f focal_px=%.3f\n", fx, fy, rx, ry, tan_half_fov, focal);
+
+	fprintf(out, "entities: alive=%u cap=%u defs=%u\n", (unsigned)entities->alive_count, (unsigned)entities->capacity, (unsigned)entities->defs->count);
+
+	for (uint32_t i = 0; i < entities->capacity; i++) {
+		if (!entities->alive[i]) {
+			continue;
+		}
+		const Entity* e = &entities->entities[i];
+		const EntityDef* def = &entities->defs->defs[e->def_id];
+		fprintf(out, "\n- entity[%u]: id={%u,%u} def_id=%u def='%s' kind=%s\n", (unsigned)i, (unsigned)e->id.index, (unsigned)e->id.gen, (unsigned)e->def_id, def->name, entity_kind_str(def->kind));
+		fprintf(out, "  state=%s state_time=%.3f hp=%d pending_despawn=%d yaw_deg=%.3f sprite_frame=%u\n", entity_state_str(e->state), e->state_time, e->hp, e->pending_despawn ? 1 : 0, e->yaw_deg, (unsigned)e->sprite_frame);
+		fprintf(
+			out,
+			"  body: pos=(%.4f,%.4f,%.4f) vel=(%.4f,%.4f,%.4f) r=%.3f h=%.3f step_h=%.3f on_ground=%d sector=%d\n",
+			e->body.x,
+			e->body.y,
+			e->body.z,
+			e->body.vx,
+			e->body.vy,
+			e->body.vz,
+			e->body.radius,
+			e->body.height,
+			e->body.step_height,
+			e->body.on_ground ? 1 : 0,
+			e->body.sector
+		);
+		if ((unsigned)e->body.sector < (unsigned)world->sector_count) {
+			const Sector* s = &world->sectors[e->body.sector];
+			fprintf(out, "  sector: idx=%d id=%d floor_z=%.3f ceil_z=%.3f\n", e->body.sector, s->id, s->floor_z, s->ceil_z);
+		}
+		fprintf(out, "  sprite: file='%s' file_wh=%dx%d frame_wh=%dx%d frames=%d scale=%.3f z_offset_px=%.3f\n",
+			def->sprite.file.name,
+			def->sprite.file.width,
+			def->sprite.file.height,
+			def->sprite.frames.width,
+			def->sprite.frames.height,
+			def->sprite.frames.count,
+			def->sprite.scale,
+			def->sprite.z_offset
+		);
+
+		// Projection diagnostics (match entities.c sprite rendering, but without texture sampling).
+		float dx = e->body.x - cam->x;
+		float dy = e->body.y - cam->y;
+		float depth = dx * fx + dy * fy;
+		float side = dx * rx + dy * ry;
+		float dist2 = dx * dx + dy * dy;
+		float dist = dist2 > 0.0f ? sqrtf(dist2) : 0.0f;
+		float proj_depth = depth;
+		const float min_proj_depth = 0.25f;
+		int proj_clamped = 0;
+		if (proj_depth < min_proj_depth) {
+			proj_depth = min_proj_depth;
+			proj_clamped = 1;
+		}
+		float ent_z = e->body.z + (def->sprite.z_offset / 64.0f);
+		float scale = (proj_depth > 1e-6f) ? (focal / proj_depth) : 0.0f; // px per world unit
+
+		int sheet_w = def->sprite.file.width;
+		int sheet_h = def->sprite.file.height;
+		int frame_w = def->sprite.frames.width > 0 ? def->sprite.frames.width : sheet_w;
+		int frame_h = def->sprite.frames.height > 0 ? def->sprite.frames.height : sheet_h;
+		float sprite_w_world = ((float)frame_w / 64.0f) * def->sprite.scale;
+		float sprite_h_world = ((float)frame_h / 64.0f) * def->sprite.scale;
+		// Match renderer: clamp projected size by clamping scale itself (uniformly).
+		int max_w = fb_width * 2;
+		int max_h = fb_height * 2;
+		if (max_w > 0 && max_h > 0 && sprite_w_world > 1e-6f && sprite_h_world > 1e-6f) {
+			float max_scale_w = (float)max_w / sprite_w_world;
+			float max_scale_h = (float)max_h / sprite_h_world;
+			float max_scale = max_scale_w < max_scale_h ? max_scale_w : max_scale_h;
+			if (max_scale > 1e-6f && scale > max_scale) {
+				scale = max_scale;
+			}
+		}
+
+		float x_center = half_w + side * scale;
+		float y_base = half_h + (cam_z_world - ent_z) * scale;
+		float x_ndc = (tan_half_fov > 1e-6f && focal > 1e-6f) ? ((x_center - half_w) / half_w) : 0.0f;
+
+		int sprite_w_px = (int)(sprite_w_world * scale + 0.5f);
+		int sprite_h_px = (int)(sprite_h_world * scale + 0.5f);
+		if (sprite_w_px < 2) {
+			sprite_w_px = 2;
+		}
+		if (sprite_h_px < 2) {
+			sprite_h_px = 2;
+		}
+		int x0 = (int)(x_center - 0.5f * (float)sprite_w_px);
+		int x1 = x0 + sprite_w_px;
+		int y1_raw = (int)y_base;
+		int y1 = y1_raw;
+		int y0 = y1 - sprite_h_px;
+
+		const char* cull = "visible";
+		if (depth <= 0.05f) {
+			cull = "behind_or_too_close";
+		} else if (x_ndc < -1.2f || x_ndc > 1.2f) {
+			cull = "offscreen_x";
+		} else if (sprite_w_px <= 1 || sprite_h_px <= 1) {
+			cull = "too_small";
+		}
+
+		fprintf(out, "  proj: dx=%.4f dy=%.4f dist=%.4f depth=%.6f side=%.6f proj_depth=%.6f clamped=%d\n", dx, dy, dist, depth, side, proj_depth, proj_clamped);
+		fprintf(out, "  proj: scale=%.6f x_ndc=%.6f x_center=%.3f y_base=%.3f y1_raw=%d y1=%d ent_z=%.4f cam_z_world=%.4f\n", scale, x_ndc, x_center, y_base, y1_raw, y1, ent_z, cam_z_world);
+		fprintf(out, "  proj: sprite_px=%dx%d rect=[%d,%d]x[%d,%d] cull=%s\n", sprite_w_px, sprite_h_px, x0, x1, y0, y1, cull);
+
+		if (wall_depth && fb_width > 0) {
+			int sx = (int)(x_center + 0.5f);
+			if (sx < 0) {
+				sx = 0;
+			}
+			if (sx >= fb_width) {
+				sx = fb_width - 1;
+			}
+			float wd = wall_depth[sx];
+			fprintf(out, "  occlusion: wall_depth[x_center=%d]=%.6f depth=%.6f (%s)\n", sx, wd, depth, (depth >= wd) ? "occluded" : "in_front");
+		}
+	}
+
+	fprintf(out, "\n=== END ENTITY DUMP ===\n");
 	fflush(out);
 }

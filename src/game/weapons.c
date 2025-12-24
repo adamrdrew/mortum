@@ -3,6 +3,7 @@
 #include "core/config.h"
 
 #include "game/ammo.h"
+#include "game/entities.h"
 #include "game/weapon_defs.h"
 
 #include <math.h>
@@ -41,6 +42,7 @@ void weapons_update(
 	Player* player,
 	const World* world,
 	SoundEmitters* sfx,
+	EntitySystem* entities,
 	float listener_x,
 	float listener_y,
 	bool fire_down,
@@ -48,8 +50,6 @@ void weapons_update(
 	uint8_t weapon_select_mask,
 	double dt_s) {
 	(void)world;
-	(void)listener_x;
-	(void)listener_y;
 	if (!player || dt_s <= 0.0) {
 		return;
 	}
@@ -142,5 +142,28 @@ void weapons_update(
 			default: break;
 		}
 		sound_emitters_play_one_shot_at(sfx, wav, player->body.x, player->body.y, false, gain, listener_x, listener_y);
+	}
+
+	// Spawn a simple projectile entity for visuals/logic (handgun only for now).
+	if (entities && player->weapon_equipped == WEAPON_HANDGUN) {
+		const EntityDefs* defs = entities->defs;
+		if (defs) {
+			uint32_t def_idx = entity_defs_find(defs, "test_projectile");
+			if (def_idx != UINT32_MAX) {
+				// Spawn slightly in front of the player to avoid immediate overlap.
+				float ang = player->angle_deg * (float)M_PI / 180.0f;
+				float fx = cosf(ang);
+				float fy = sinf(ang);
+				float spawn_dist = player->body.radius + 0.25f;
+				float sx = player->body.x + fx * spawn_dist;
+				float sy = player->body.y + fy * spawn_dist;
+				int sector = player->body.sector >= 0 ? player->body.sector : player->body.last_valid_sector;
+				EntityId proj_id;
+				if (entity_system_spawn(entities, def_idx, sx, sy, player->angle_deg, sector, &proj_id)) {
+					// Player is not an entity yet; leave owner as none.
+					(void)proj_id;
+				}
+			}
+		}
 	}
 }
