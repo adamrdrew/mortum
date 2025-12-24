@@ -60,6 +60,7 @@ static float attenuate_gain(bool spatial, float base_gain, float ex, float ey, f
 void sound_emitters_init(SoundEmitters* self) {
 	memset(self, 0, sizeof(*self));
 	self->free_head = 0;
+	self->enabled = true;
 	for (uint16_t i = 0; i < (uint16_t)SOUND_EMITTER_MAX; i++) {
 		self->alive[i] = false;
 		self->generation[i] = 1;
@@ -72,6 +73,26 @@ void sound_emitters_init(SoundEmitters* self) {
 	}
 	self->free_next[SOUND_EMITTER_MAX - 1] = UINT16_MAX;
 	self->initialized = true;
+}
+
+void sound_emitters_set_enabled(SoundEmitters* self, bool enabled) {
+	if (!self || !self->initialized) {
+		return;
+	}
+	if (self->enabled == enabled) {
+		return;
+	}
+	self->enabled = enabled;
+	if (!enabled) {
+		// Stop any loops.
+		for (uint16_t i = 0; i < (uint16_t)SOUND_EMITTER_MAX; i++) {
+			if (self->alive[i] && self->loop_active[i]) {
+				sfx_voice_stop(self->loop_voice[i]);
+				self->loop_active[i] = false;
+				self->loop_voice[i] = (SfxVoiceId){0, 0};
+			}
+		}
+	}
 }
 
 void sound_emitters_shutdown(SoundEmitters* self) {
@@ -176,7 +197,9 @@ void sound_emitters_play_one_shot_at(
 	float base_gain,
 	float listener_x,
 	float listener_y) {
-	(void)self;
+	if (!self || !self->initialized || !self->enabled) {
+		return;
+	}
 	SfxSampleId s = sfx_load_effect_wav(wav_filename);
 	if (s.index == 0 && s.generation == 0) {
 		return;
@@ -191,6 +214,9 @@ void sound_emitter_start_loop(
 	const char* wav_filename,
 	float listener_x,
 	float listener_y) {
+	if (!self || !self->initialized || !self->enabled) {
+		return;
+	}
 	uint16_t i = 0;
 	if (!resolve(self, id, &i)) {
 		return;
@@ -206,6 +232,9 @@ void sound_emitter_start_loop(
 }
 
 void sound_emitter_stop_loop(SoundEmitters* self, SoundEmitterId id) {
+	if (!self || !self->initialized) {
+		return;
+	}
 	uint16_t i = 0;
 	if (!resolve(self, id, &i)) {
 		return;
@@ -219,7 +248,7 @@ void sound_emitter_stop_loop(SoundEmitters* self, SoundEmitterId id) {
 }
 
 void sound_emitters_update(SoundEmitters* self, float listener_x, float listener_y) {
-	if (!self || !self->initialized) {
+	if (!self || !self->initialized || !self->enabled) {
 		return;
 	}
 	for (uint16_t i = 0; i < (uint16_t)SOUND_EMITTER_MAX; i++) {

@@ -17,11 +17,13 @@
 
 typedef struct SoundEmitterId {
 	uint16_t index;
+	bool enabled;
 	uint16_t generation;
 } SoundEmitterId;
 
 typedef struct SoundEmitters {
 	bool initialized;
+	bool enabled;
 	uint16_t free_head;
 	uint16_t free_next[SOUND_EMITTER_MAX];
 	uint16_t generation[SOUND_EMITTER_MAX];
@@ -40,6 +42,13 @@ typedef struct SoundEmitters {
 
 void sound_emitters_init(SoundEmitters* self);
 void sound_emitters_shutdown(SoundEmitters* self);
+
+// Enables/disables all emitter playback. When disabling, any active loops are stopped.
+void sound_emitters_set_enabled(SoundEmitters* self, bool enabled);
+
+// Enables/disables all SFX emission from this system. When disabled, one-shots are
+// ignored and looping voices are stopped.
+void sound_emitters_set_enabled(SoundEmitters* self, bool enabled);
 
 // Destroys all emitters (stopping any loops) and re-initializes the pool.
 void sound_emitters_reset(SoundEmitters* self);

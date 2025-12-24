@@ -73,15 +73,6 @@ static CoreConfig g_cfg = {
 		.weapon_slot_5 = SDL_SCANCODE_5,
 		.weapon_prev = SDL_SCANCODE_Q,
 		.weapon_next = SDL_SCANCODE_E,
-		.toggle_debug_overlay = SDL_SCANCODE_F3,
-		.toggle_fps_overlay = SDL_SCANCODE_P,
-		.toggle_font_test = SDL_SCANCODE_F7,
-		.toggle_point_lights = SDL_SCANCODE_K,
-		.entity_dump = SDL_SCANCODE_L,
-		.perf_trace = SDL_SCANCODE_O,
-		.debug_dump = SDL_SCANCODE_GRAVE,
-		.noclip = SDL_SCANCODE_F2,
-		.reload_config_scancode = SDL_SCANCODE_U,
 	},
 	.player = {
 		.mouse_sens_deg_per_px = 0.12f,
@@ -833,15 +824,6 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 							"weapon_slot_5",
 							"weapon_prev",
 							"weapon_next",
-							"toggle_debug_overlay",
-							"toggle_fps_overlay",
-							"toggle_font_test",
-							"toggle_point_lights",
-							"entity_dump",
-							"perf_trace",
-							"debug_dump",
-							"noclip",
-							"reload_config",
 						};
 						warn_unknown_keys(&doc, t_bind, allowed_bind, (int)(sizeof(allowed_bind) / sizeof(allowed_bind[0])), "input.bindings");
 
@@ -887,20 +869,10 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 						PARSE_BIND1(weapon_slot_5, "weapon_slot_5");
 						PARSE_BIND1(weapon_prev, "weapon_prev");
 						PARSE_BIND1(weapon_next, "weapon_next");
-						PARSE_BIND1(toggle_debug_overlay, "toggle_debug_overlay");
-						PARSE_BIND1(toggle_fps_overlay, "toggle_fps_overlay");
-						PARSE_BIND1(toggle_font_test, "toggle_font_test");
-						PARSE_BIND1(toggle_point_lights, "toggle_point_lights");
-						PARSE_BIND1(entity_dump, "entity_dump");
-						PARSE_BIND1(perf_trace, "perf_trace");
-						PARSE_BIND1(debug_dump, "debug_dump");
-						PARSE_BIND1(noclip, "noclip");
-						PARSE_BIND1(reload_config_scancode, "reload_config");
+
 
 						#undef PARSE_BIND1
 						#undef PARSE_BIND2
-						int t_reload = -1;
-						(void)t_reload;
 					}
 				}
 			}
@@ -1240,4 +1212,467 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 		log_info("Config reloaded: %s", path);
 	}
 	return true;
+}
+
+static bool parse_int_strict(const char* s, int* out) {
+	if (!s || !out) {
+		return false;
+	}
+	char* end = NULL;
+	long v = strtol(s, &end, 10);
+	if (!end || end == s || *end != '\0') {
+		return false;
+	}
+	if (v < (long)INT32_MIN || v > (long)INT32_MAX) {
+		return false;
+	}
+	*out = (int)v;
+	return true;
+}
+
+static bool parse_float_strict(const char* s, float* out) {
+	if (!s || !out) {
+		return false;
+	}
+	char* end = NULL;
+	double v = strtod(s, &end);
+	if (!end || end == s || *end != '\0') {
+		return false;
+	}
+	if (!isfinite(v)) {
+		return false;
+	}
+	*out = (float)v;
+	return true;
+}
+
+static bool key_eq(const char* a, const char* b) {
+	return a && b && strcmp(a, b) == 0;
+}
+
+static bool has_path_sep(const char* s) {
+	if (!s) {
+		return false;
+	}
+	for (const char* p = s; *p; p++) {
+		if (*p == '/' || *p == '\\') {
+			return true;
+		}
+	}
+	return false;
+}
+
+static CoreConfigSetStatus type_mismatch(CoreConfigValueKind expected, CoreConfigValueKind provided, CoreConfigValueKind* out_expected) {
+	if (out_expected) {
+		*out_expected = expected;
+	}
+	(void)provided;
+	return CORE_CONFIG_SET_TYPE_MISMATCH;
+}
+
+static CoreConfigSetStatus set_bool(bool* dst, const char* key_path, CoreConfigValueKind provided_kind, const char* value_str, CoreConfigValueKind* out_expected) {
+	(void)key_path;
+	if (provided_kind != CORE_CONFIG_VALUE_BOOL) {
+		return type_mismatch(CORE_CONFIG_VALUE_BOOL, provided_kind, out_expected);
+	}
+	if (!value_str) {
+		return CORE_CONFIG_SET_INVALID_VALUE;
+	}
+	if (strcmp(value_str, "true") == 0) {
+		*dst = true;
+		return CORE_CONFIG_SET_OK;
+	}
+	if (strcmp(value_str, "false") == 0) {
+		*dst = false;
+		return CORE_CONFIG_SET_OK;
+	}
+	return CORE_CONFIG_SET_INVALID_VALUE;
+}
+
+static CoreConfigSetStatus set_int(int* dst, int lo, int hi, CoreConfigValueKind provided_kind, const char* value_str, CoreConfigValueKind* out_expected) {
+	if (provided_kind != CORE_CONFIG_VALUE_NUMBER) {
+		return type_mismatch(CORE_CONFIG_VALUE_NUMBER, provided_kind, out_expected);
+	}
+	int v = 0;
+	if (!parse_int_strict(value_str, &v)) {
+		return CORE_CONFIG_SET_INVALID_VALUE;
+	}
+	if (v < lo || v > hi) {
+		return CORE_CONFIG_SET_INVALID_VALUE;
+	}
+	*dst = v;
+	return CORE_CONFIG_SET_OK;
+}
+
+static CoreConfigSetStatus set_float(float* dst, float lo, float hi, CoreConfigValueKind provided_kind, const char* value_str, CoreConfigValueKind* out_expected) {
+	if (provided_kind != CORE_CONFIG_VALUE_NUMBER) {
+		return type_mismatch(CORE_CONFIG_VALUE_NUMBER, provided_kind, out_expected);
+	}
+	float v = 0.0f;
+	if (!parse_float_strict(value_str, &v)) {
+		return CORE_CONFIG_SET_INVALID_VALUE;
+	}
+	if (v < lo || v > hi) {
+		return CORE_CONFIG_SET_INVALID_VALUE;
+	}
+	*dst = v;
+	return CORE_CONFIG_SET_OK;
+}
+
+static CoreConfigSetStatus set_string(char* dst, size_t cap, CoreConfigValueKind provided_kind, const char* value_str, CoreConfigValueKind* out_expected) {
+	if (provided_kind != CORE_CONFIG_VALUE_STRING) {
+		return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected);
+	}
+	if (!value_str || value_str[0] == '\0') {
+		return CORE_CONFIG_SET_INVALID_VALUE;
+	}
+	strncpy(dst, value_str, cap - 1);
+	dst[cap - 1] = '\0';
+	return CORE_CONFIG_SET_OK;
+}
+
+static CoreConfigSetStatus set_scancode(int* dst, CoreConfigValueKind provided_kind, const char* value_str, CoreConfigValueKind* out_expected) {
+	if (provided_kind != CORE_CONFIG_VALUE_STRING && provided_kind != CORE_CONFIG_VALUE_NUMBER) {
+		return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected);
+	}
+	if (!value_str) {
+		return CORE_CONFIG_SET_INVALID_VALUE;
+	}
+	if (provided_kind == CORE_CONFIG_VALUE_NUMBER) {
+		int sc = 0;
+		if (!parse_int_strict(value_str, &sc) || sc < 0 || sc >= 512) {
+			return CORE_CONFIG_SET_INVALID_VALUE;
+		}
+		*dst = sc;
+		return CORE_CONFIG_SET_OK;
+	}
+
+	// Reuse config parser's key name support.
+	JsonDoc dummy;
+	memset(&dummy, 0, sizeof(dummy));
+	// parse_scancode expects a JsonDoc token; we don't have one.
+	// Implement minimal scancode parsing from string here.
+	const char* p = value_str;
+	const char* prefix = "SDL_SCANCODE_";
+	if (strncmp(p, prefix, strlen(prefix)) == 0) {
+		p += strlen(prefix);
+	}
+	char lower[64];
+	{
+		size_t n = strlen(p);
+		if (n >= sizeof(lower)) {
+			n = sizeof(lower) - 1;
+		}
+		for (size_t i = 0; i < n; i++) {
+			lower[i] = (char)tolower((unsigned char)p[i]);
+		}
+		lower[n] = '\0';
+	}
+	if (strcmp(lower, "grave") == 0 || strcmp(lower, "backquote") == 0 || strcmp(lower, "`") == 0) {
+		*dst = (int)SDL_SCANCODE_GRAVE;
+		return CORE_CONFIG_SET_OK;
+	}
+	if (strcmp(lower, "escape") == 0 || strcmp(lower, "esc") == 0) {
+		*dst = (int)SDL_SCANCODE_ESCAPE;
+		return CORE_CONFIG_SET_OK;
+	}
+	SDL_Scancode sc = SDL_GetScancodeFromName(p);
+	if (sc == SDL_SCANCODE_UNKNOWN) {
+		return CORE_CONFIG_SET_INVALID_VALUE;
+	}
+	*dst = (int)sc;
+	return CORE_CONFIG_SET_OK;
+}
+
+CoreConfigSetStatus core_config_try_set_by_path(
+	const char* key_path,
+	CoreConfigValueKind provided_kind,
+	const char* value_str,
+	CoreConfigValueKind* out_expected_kind) {
+	if (!key_path || key_path[0] == '\0') {
+		return CORE_CONFIG_SET_UNKNOWN_KEY;
+	}
+	if (out_expected_kind) {
+		*out_expected_kind = CORE_CONFIG_VALUE_STRING;
+	}
+
+	// Normalize bool strings coming from console.
+	char bool_norm[6];
+	if (provided_kind == CORE_CONFIG_VALUE_BOOL && value_str) {
+		// Expect already normalized to "true"/"false".
+		(void)bool_norm;
+	}
+
+	// window
+	if (key_eq(key_path, "window.title")) {
+		return set_string(g_cfg.window.title, sizeof(g_cfg.window.title), provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "window.width")) {
+		return set_int(&g_cfg.window.width, 320, 16384, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "window.height")) {
+		return set_int(&g_cfg.window.height, 240, 16384, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "window.vsync")) {
+		return set_bool(&g_cfg.window.vsync, key_path, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "window.grab_mouse")) {
+		return set_bool(&g_cfg.window.grab_mouse, key_path, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "window.relative_mouse")) {
+		return set_bool(&g_cfg.window.relative_mouse, key_path, provided_kind, value_str, out_expected_kind);
+	}
+
+	// render
+	if (key_eq(key_path, "render.internal_width")) {
+		return set_int(&g_cfg.render.internal_width, 64, 8192, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.internal_height")) {
+		return set_int(&g_cfg.render.internal_height, 64, 8192, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.fov_deg")) {
+		return set_float(&g_cfg.render.fov_deg, 1.0f, 179.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.point_lights_enabled")) {
+		return set_bool(&g_cfg.render.point_lights_enabled, key_path, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.lighting.enabled")) {
+		return set_bool(&g_cfg.render.lighting.enabled, key_path, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.lighting.fog_start")) {
+		return set_float(&g_cfg.render.lighting.fog_start, 0.0f, 100000.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.lighting.fog_end")) {
+		return set_float(&g_cfg.render.lighting.fog_end, 0.0f, 100000.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.lighting.ambient_scale")) {
+		return set_float(&g_cfg.render.lighting.ambient_scale, 0.0f, 10.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.lighting.min_visibility")) {
+		return set_float(&g_cfg.render.lighting.min_visibility, 0.0f, 10.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.lighting.quantize_steps")) {
+		return set_int(&g_cfg.render.lighting.quantize_steps, 1, 256, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "render.lighting.quantize_low_cutoff")) {
+		return set_float(&g_cfg.render.lighting.quantize_low_cutoff, 0.0f, 1.0f, provided_kind, value_str, out_expected_kind);
+	}
+
+	// audio
+	if (key_eq(key_path, "audio.enabled")) {
+		return set_bool(&g_cfg.audio.enabled, key_path, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "audio.sfx_master_volume")) {
+		return set_float(&g_cfg.audio.sfx_master_volume, 0.0f, 1.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "audio.sfx_atten_min_dist")) {
+		return set_float(&g_cfg.audio.sfx_atten_min_dist, 0.0f, 9999.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "audio.sfx_atten_max_dist")) {
+		return set_float(&g_cfg.audio.sfx_atten_max_dist, 0.0f, 9999.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "audio.sfx_device_freq")) {
+		return set_int(&g_cfg.audio.sfx_device_freq, 8000, 192000, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "audio.sfx_device_buffer_samples")) {
+		return set_int(&g_cfg.audio.sfx_device_buffer_samples, 64, 65536, provided_kind, value_str, out_expected_kind);
+	}
+
+	// content
+	if (key_eq(key_path, "content.default_episode")) {
+		// Allow path separators? Keep consistent with existing load behavior: episode loader expects filename.
+		if (provided_kind != CORE_CONFIG_VALUE_STRING) {
+			return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected_kind);
+		}
+		if (!value_str || value_str[0] == '\0') {
+			return CORE_CONFIG_SET_INVALID_VALUE;
+		}
+		strncpy(g_cfg.content.default_episode, value_str, sizeof(g_cfg.content.default_episode) - 1);
+		g_cfg.content.default_episode[sizeof(g_cfg.content.default_episode) - 1] = '\0';
+		return CORE_CONFIG_SET_OK;
+	}
+
+	// ui.font
+	if (key_eq(key_path, "ui.font.file")) {
+		if (provided_kind != CORE_CONFIG_VALUE_STRING) {
+			return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected_kind);
+		}
+		if (!value_str || value_str[0] == '\0' || has_path_sep(value_str)) {
+			return CORE_CONFIG_SET_INVALID_VALUE;
+		}
+		strncpy(g_cfg.ui.font.file, value_str, sizeof(g_cfg.ui.font.file) - 1);
+		g_cfg.ui.font.file[sizeof(g_cfg.ui.font.file) - 1] = '\0';
+		return CORE_CONFIG_SET_OK;
+	}
+	if (key_eq(key_path, "ui.font.size")) {
+		return set_int(&g_cfg.ui.font.size_px, 6, 96, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "ui.font.atlas_size")) {
+		return set_int(&g_cfg.ui.font.atlas_size, 128, 4096, provided_kind, value_str, out_expected_kind);
+	}
+
+	// input.bindings.*
+	const char* pfx = "input.bindings.";
+	if (strncmp(key_path, pfx, strlen(pfx)) == 0) {
+		const char* which = key_path + strlen(pfx);
+		if (which[0] == '\0') {
+			return CORE_CONFIG_SET_UNKNOWN_KEY;
+		}
+		#define BIND2(name, field_p, field_s) \
+			if (strcmp(which, (name)) == 0) { \
+				CoreConfigSetStatus st = set_scancode(&g_cfg.input.field_p, provided_kind, value_str, out_expected_kind); \
+				if (st == CORE_CONFIG_SET_OK) { \
+					g_cfg.input.field_s = (int)SDL_SCANCODE_UNKNOWN; \
+				} \
+				return st; \
+			}
+		#define BIND1(name, field) \
+			if (strcmp(which, (name)) == 0) { \
+				return set_scancode(&g_cfg.input.field, provided_kind, value_str, out_expected_kind); \
+			}
+
+		BIND2("forward", forward_primary, forward_secondary);
+		BIND2("back", back_primary, back_secondary);
+		BIND2("left", left_primary, left_secondary);
+		BIND2("right", right_primary, right_secondary);
+		BIND2("dash", dash_primary, dash_secondary);
+		BIND2("action", action_primary, action_secondary);
+		BIND2("use", use_primary, use_secondary);
+		BIND1("weapon_slot_1", weapon_slot_1);
+		BIND1("weapon_slot_2", weapon_slot_2);
+		BIND1("weapon_slot_3", weapon_slot_3);
+		BIND1("weapon_slot_4", weapon_slot_4);
+		BIND1("weapon_slot_5", weapon_slot_5);
+		BIND1("weapon_prev", weapon_prev);
+		BIND1("weapon_next", weapon_next);
+
+		#undef BIND1
+		#undef BIND2
+		return CORE_CONFIG_SET_UNKNOWN_KEY;
+	}
+
+	// player
+	if (key_eq(key_path, "player.mouse_sens_deg_per_px")) {
+		return set_float(&g_cfg.player.mouse_sens_deg_per_px, 0.0f, 10.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "player.move_speed")) {
+		return set_float(&g_cfg.player.move_speed, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "player.dash_distance")) {
+		return set_float(&g_cfg.player.dash_distance, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "player.dash_cooldown_s")) {
+		return set_float(&g_cfg.player.dash_cooldown_s, 0.0f, 60.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "player.weapon_view_bob_smooth_rate")) {
+		return set_float(&g_cfg.player.weapon_view_bob_smooth_rate, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "player.weapon_view_bob_phase_rate")) {
+		return set_float(&g_cfg.player.weapon_view_bob_phase_rate, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "player.weapon_view_bob_phase_base")) {
+		return set_float(&g_cfg.player.weapon_view_bob_phase_base, 0.0f, 10.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "player.weapon_view_bob_phase_amp")) {
+		return set_float(&g_cfg.player.weapon_view_bob_phase_amp, 0.0f, 10.0f, provided_kind, value_str, out_expected_kind);
+	}
+
+	// footsteps
+	if (key_eq(key_path, "footsteps.enabled")) {
+		return set_bool(&g_cfg.footsteps.enabled, key_path, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "footsteps.min_speed")) {
+		return set_float(&g_cfg.footsteps.min_speed, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "footsteps.interval_s")) {
+		return set_float(&g_cfg.footsteps.interval_s, 0.0f, 60.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "footsteps.variant_count")) {
+		return set_int(&g_cfg.footsteps.variant_count, 1, 999, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "footsteps.filename_pattern")) {
+		CoreConfigSetStatus st = set_string(g_cfg.footsteps.filename_pattern, sizeof(g_cfg.footsteps.filename_pattern), provided_kind, value_str, out_expected_kind);
+		if (st != CORE_CONFIG_SET_OK) {
+			return st;
+		}
+		// Keep the same guidance as load-time validation.
+		if (g_cfg.footsteps.filename_pattern[0] != '\0' && strstr(g_cfg.footsteps.filename_pattern, "%03") == NULL) {
+			return CORE_CONFIG_SET_INVALID_VALUE;
+		}
+		return CORE_CONFIG_SET_OK;
+	}
+	if (key_eq(key_path, "footsteps.gain")) {
+		return set_float(&g_cfg.footsteps.gain, 0.0f, 1.0f, provided_kind, value_str, out_expected_kind);
+	}
+
+	// weapons.view
+	if (key_eq(key_path, "weapons.view.shoot_anim_fps")) {
+		return set_float(&g_cfg.weapons.view.shoot_anim_fps, 0.0001f, 240.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "weapons.view.shoot_anim_frames")) {
+		return set_int(&g_cfg.weapons.view.shoot_anim_frames, 1, 128, provided_kind, value_str, out_expected_kind);
+	}
+
+	// weapons.sfx
+	if (key_eq(key_path, "weapons.sfx.handgun_shot")) {
+		return set_string(g_cfg.weapons.sfx.handgun_shot, sizeof(g_cfg.weapons.sfx.handgun_shot), provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "weapons.sfx.shotgun_shot")) {
+		return set_string(g_cfg.weapons.sfx.shotgun_shot, sizeof(g_cfg.weapons.sfx.shotgun_shot), provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "weapons.sfx.rifle_shot")) {
+		return set_string(g_cfg.weapons.sfx.rifle_shot, sizeof(g_cfg.weapons.sfx.rifle_shot), provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "weapons.sfx.smg_shot")) {
+		return set_string(g_cfg.weapons.sfx.smg_shot, sizeof(g_cfg.weapons.sfx.smg_shot), provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "weapons.sfx.rocket_shot")) {
+		return set_string(g_cfg.weapons.sfx.rocket_shot, sizeof(g_cfg.weapons.sfx.rocket_shot), provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "weapons.sfx.shot_gain")) {
+		return set_float(&g_cfg.weapons.sfx.shot_gain, 0.0f, 1.0f, provided_kind, value_str, out_expected_kind);
+	}
+
+	// weapons.balance.* (handgun/shotgun/rifle/smg/rocket)
+	const char* balp = "weapons.balance.";
+	if (strncmp(key_path, balp, strlen(balp)) == 0) {
+		const char* rest = key_path + strlen(balp);
+		WeaponBalanceConfig* dst = NULL;
+		const char* field = NULL;
+		if (strncmp(rest, "handgun.", 8) == 0) { dst = &g_cfg.weapons.handgun; field = rest + 8; }
+		else if (strncmp(rest, "shotgun.", 8) == 0) { dst = &g_cfg.weapons.shotgun; field = rest + 8; }
+		else if (strncmp(rest, "rifle.", 6) == 0) { dst = &g_cfg.weapons.rifle; field = rest + 6; }
+		else if (strncmp(rest, "smg.", 4) == 0) { dst = &g_cfg.weapons.smg; field = rest + 4; }
+		else if (strncmp(rest, "rocket.", 7) == 0) { dst = &g_cfg.weapons.rocket; field = rest + 7; }
+		if (!dst || !field || field[0] == '\0') {
+			return CORE_CONFIG_SET_UNKNOWN_KEY;
+		}
+		if (strcmp(field, "ammo_per_shot") == 0) {
+			return set_int(&dst->ammo_per_shot, 0, 999, provided_kind, value_str, out_expected_kind);
+		}
+		if (strcmp(field, "shot_cooldown_s") == 0) {
+			return set_float(&dst->shot_cooldown_s, 0.0f, 60.0f, provided_kind, value_str, out_expected_kind);
+		}
+		if (strcmp(field, "pellets") == 0) {
+			return set_int(&dst->pellets, 1, 128, provided_kind, value_str, out_expected_kind);
+		}
+		if (strcmp(field, "spread_deg") == 0) {
+			return set_float(&dst->spread_deg, 0.0f, 180.0f, provided_kind, value_str, out_expected_kind);
+		}
+		if (strcmp(field, "proj_speed") == 0) {
+			return set_float(&dst->proj_speed, 0.0f, 999.0f, provided_kind, value_str, out_expected_kind);
+		}
+		if (strcmp(field, "proj_radius") == 0) {
+			return set_float(&dst->proj_radius, 0.0f, 10.0f, provided_kind, value_str, out_expected_kind);
+		}
+		if (strcmp(field, "proj_life_s") == 0) {
+			return set_float(&dst->proj_life_s, 0.0f, 60.0f, provided_kind, value_str, out_expected_kind);
+		}
+		if (strcmp(field, "proj_damage") == 0) {
+			return set_int(&dst->proj_damage, 0, 1000000, provided_kind, value_str, out_expected_kind);
+		}
+		return CORE_CONFIG_SET_UNKNOWN_KEY;
+	}
+
+	return CORE_CONFIG_SET_UNKNOWN_KEY;
 }

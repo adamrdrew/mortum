@@ -56,17 +56,7 @@
       "weapon_slot_4": "4",
       "weapon_slot_5": "5",
       "weapon_prev": "Q",
-      "weapon_next": "E",
-
-      "toggle_debug_overlay": "F3",
-      "toggle_fps_overlay": "P",
-      "toggle_font_test": "F7",
-      "toggle_point_lights": "K",
-      "entity_dump": "L",
-      "perf_trace": "O",
-      "debug_dump": "Grave",
-      "noclip": "F2",
-      "reload_config": "U"
+      "weapon_next": "E"
     }
   },
   "player": {

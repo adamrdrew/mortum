@@ -33,15 +33,6 @@ typedef struct InputBindingsConfig {
 	int weapon_slot_5;
 	int weapon_prev;
 	int weapon_next;
-	int toggle_debug_overlay;
-	int toggle_fps_overlay;
-	int toggle_font_test;
-	int toggle_point_lights;
-	int entity_dump;
-	int perf_trace;
-	int debug_dump;
-	int noclip;
-	int reload_config_scancode;
 } InputBindingsConfig;
 
 typedef struct PlayerTuningConfig {
@@ -168,4 +159,33 @@ const CoreConfig* core_config_get(void);
 // On CONFIG_LOAD_STARTUP: returns false on failure and logs why (caller should exit).
 // On CONFIG_LOAD_RELOAD: returns false on failure, logs why, and keeps previous config.
 bool core_config_load_from_file(const char* path, const AssetPaths* assets, ConfigLoadMode mode);
+
+typedef enum CoreConfigValueKind {
+	CORE_CONFIG_VALUE_STRING = 0,
+	CORE_CONFIG_VALUE_BOOL = 1,
+	CORE_CONFIG_VALUE_NUMBER = 2,
+} CoreConfigValueKind;
+
+typedef enum CoreConfigSetStatus {
+	CORE_CONFIG_SET_OK = 0,
+	CORE_CONFIG_SET_UNKNOWN_KEY = 1,
+	CORE_CONFIG_SET_TYPE_MISMATCH = 2,
+	CORE_CONFIG_SET_INVALID_VALUE = 3,
+} CoreConfigSetStatus;
+
+// Validated in-memory config mutation. This is intended for the in-game console.
+//
+// `key_path` uses JSON-style paths, e.g. "audio.sfx_master_volume" or
+// "input.bindings.dash".
+//
+// `provided_kind` should be how the console parsed the value token.
+// For numbers, the function will parse as int/float depending on the target.
+//
+// On CORE_CONFIG_SET_TYPE_MISMATCH, `out_expected_kind` is set to what the key
+// expects.
+CoreConfigSetStatus core_config_try_set_by_path(
+	const char* key_path,
+	CoreConfigValueKind provided_kind,
+	const char* value_str,
+	CoreConfigValueKind* out_expected_kind);
 

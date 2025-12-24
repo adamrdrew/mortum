@@ -45,6 +45,9 @@
 
 #include "game/sound_emitters.h"
 
+#include "game/console.h"
+#include "game/console_commands.h"
+
 #include <SDL.h>
 #include <stdbool.h>
 #include <math.h>
@@ -190,7 +193,6 @@ int main(int argc, char** argv) {
 	char prev_bgmusic[64] = "";
 	char prev_soundfont[64] = "";
 
-	bool debug_dump_enabled = false;
 	const char* config_path_arg = NULL;
 	const char* map_name_arg = NULL;
 	for (int i = 1; i < argc; i++) {
@@ -207,10 +209,6 @@ int main(int argc, char** argv) {
 		}
 		if (strncmp(a, "CONFIG=", 7) == 0) {
 			config_path_arg = a + 7;
-			continue;
-		}
-		if (strcmp(a, "--debug-dump") == 0) {
-			debug_dump_enabled = true;
 			continue;
 		}
 		// Treat non-flag args as a map filename relative to Assets/Levels/.
@@ -261,6 +259,9 @@ int main(int argc, char** argv) {
 
 	const CoreConfig* cfg = core_config_get();
 	bool audio_enabled = cfg->audio.enabled;
+	bool music_enabled = true;
+
+	// Runtime toggles controlled by the console.
 
 	FontSystem ui_font;
 	if (!font_system_init(&ui_font, cfg->ui.font.file, cfg->ui.font.size_px, cfg->ui.font.atlas_size, cfg->ui.font.atlas_size, &paths)) {
@@ -329,19 +330,24 @@ int main(int argc, char** argv) {
 	MapLoadResult map;
 	memset(&map, 0, sizeof(map));
 	bool map_ok = false;
-	const char* map_name = NULL;
+	char map_name_buf[64] = "";
 	EpisodeRunner runner;
 	episode_runner_init(&runner);
 	bool using_episode = false;
 	if (map_name_arg) {
 		// A filename relative to Assets/Levels/ (e.g. "mortum_test.json").
-		map_name = map_name_arg;
+		strncpy(map_name_buf, map_name_arg, sizeof(map_name_buf));
+		map_name_buf[sizeof(map_name_buf) - 1] = '\0';
 	} else if (ep_ok && episode_runner_start(&runner, &ep)) {
 		using_episode = true;
-		map_name = episode_runner_current_map(&runner, &ep);
+		const char* ep_map = episode_runner_current_map(&runner, &ep);
+		if (ep_map) {
+			strncpy(map_name_buf, ep_map, sizeof(map_name_buf));
+			map_name_buf[sizeof(map_name_buf) - 1] = '\0';
+		}
 	}
-	if (map_name) {
-		map_ok = map_load(&map, &paths, map_name);
+	if (map_name_buf[0] != '\0') {
+		map_ok = map_load(&map, &paths, map_name_buf);
 		if (map_ok) {
 			log_info("Map loaded: entities=%d", map.entity_count);
 			if (map.entities && map.entity_count > 0) {
@@ -356,7 +362,7 @@ int main(int argc, char** argv) {
 			}
 		}
 		// Validate MIDI and SoundFont existence for background music
-		if (map_ok && audio_enabled) {
+		if (map_ok && audio_enabled && music_enabled) {
 			bool midi_exists = map.bgmusic[0] != '\0';
 			bool sf_exists = map.soundfont[0] != '\0';
 			if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
@@ -438,24 +444,64 @@ int main(int argc, char** argv) {
 	int frames = 0;
 	double fps_t0 = platform_time_seconds();
 	int fps = 0;
-	bool debug_overlay_enabled = false;
-	bool debug_prev_down = false;
-	bool dump_prev_down = false;
-	bool entity_dump_prev_down = false;
-	bool fps_overlay_enabled = false;
-	bool fps_prev_down = false;
-	bool font_test_enabled = false;
-	bool font_test_prev_down = false;
-	bool perf_prev_down = false;
+
+	// Runtime toggles controlled by the console.
+	bool show_debug = false;
+	bool show_fps = false;
+	bool show_font_test = false;
+	bool light_emitters_enabled = cfg->render.point_lights_enabled;
+	bool sound_emitters_enabled = true;
+
+
 	PerfTrace perf;
 	perf_trace_init(&perf);
-	bool lights_prev_down = false;
-	bool point_lights_enabled = cfg->render.point_lights_enabled;
-	raycast_set_point_lights_enabled(point_lights_enabled);
+
+	raycast_set_point_lights_enabled(light_emitters_enabled);
+	sound_emitters_set_enabled(&sfx_emitters, audio_enabled && sound_emitters_enabled);
+
+	Console console;
+	console_init(&console);
+	console_commands_register_all(&console);
+
+	ConsoleCommandContext console_ctx;
+	memset(&console_ctx, 0, sizeof(console_ctx));
+	console_ctx.argc = argc;
+	console_ctx.argv = argv;
+	console_ctx.config_path = config_path;
+	console_ctx.paths = &paths;
+	console_ctx.win = &win;
+	console_ctx.cfg = &cfg;
+	console_ctx.audio_enabled = &audio_enabled;
+	console_ctx.music_enabled = &music_enabled;
+	console_ctx.sound_emitters_enabled = &sound_emitters_enabled;
+	console_ctx.light_emitters_enabled = &light_emitters_enabled;
+	console_ctx.show_fps = &show_fps;
+	console_ctx.show_debug = &show_debug;
+	console_ctx.show_font_test = &show_font_test;
+	console_ctx.map = &map;
+	console_ctx.map_ok = &map_ok;
+	console_ctx.map_name_buf = map_name_buf;
+	console_ctx.map_name_cap = sizeof(map_name_buf);
+	console_ctx.using_episode = &using_episode;
+	console_ctx.ep = &ep;
+	console_ctx.runner = &runner;
+	console_ctx.mesh = &mesh;
+	console_ctx.player = &player;
+	console_ctx.gs = &gs;
+	console_ctx.entities = &entities;
+	console_ctx.entity_defs = &entity_defs;
+	console_ctx.sfx_emitters = &sfx_emitters;
+	console_ctx.perf = &perf;
+	console_ctx.fb = &fb;
+	console_ctx.wall_depth = wall_depth;
+	console_ctx.prev_bgmusic = prev_bgmusic;
+	console_ctx.prev_bgmusic_cap = sizeof(prev_bgmusic);
+	console_ctx.prev_soundfont = prev_soundfont;
+	console_ctx.prev_soundfont_cap = sizeof(prev_soundfont);
 	bool q_prev_down = false;
 	bool e_prev_down = false;
 	bool win_prev = false;
-	bool reload_prev_down = false;
+
 
 	while (running) {
 		double frame_t0 = platform_time_seconds();
@@ -468,163 +514,47 @@ int main(int argc, char** argv) {
 
 		input_begin_frame(&in);
 		input_poll(&in);
-		if (in.quit_requested || input_key_down(&in, SDL_SCANCODE_ESCAPE)) {
+		// Toggle console with tilde / grave.
+		if (input_key_pressed(&in, SDL_SCANCODE_GRAVE)) {
+			console_set_open(&console, !console_is_open(&console));
+		}
+		bool console_open = console_is_open(&console);
+		if (console_open) {
+			console_update(&console, &in, &console_ctx);
+		}
+
+		if (in.quit_requested || (!console_open && input_key_down(&in, SDL_SCANCODE_ESCAPE))) {
 			running = false;
 			if (audio_enabled) {
-				midi_stop(); // Stop music on quit
+				midi_stop();
 			}
 		}
 
-		// Config reload (default U; rebindable).
-		bool reload_down = input_key_down(&in, cfg->input.reload_config_scancode);
-		bool reload_pressed = reload_down && !reload_prev_down;
-		reload_prev_down = reload_down;
-		if (reload_pressed) {
-			char* reload_path = config_path ? dup_cstr(config_path) : resolve_config_path(argc, argv);
-			if (!reload_path) {
-				log_warn("Config reload requested but no config path found");
-			} else {
-				if (core_config_load_from_file(reload_path, &paths, CONFIG_LOAD_RELOAD)) {
-					cfg = core_config_get();
-					audio_enabled = cfg->audio.enabled;
-					sfx_set_master_volume(cfg->audio.sfx_master_volume);
-					SDL_SetWindowGrab(win.window, cfg->window.grab_mouse ? SDL_TRUE : SDL_FALSE);
-					SDL_SetRelativeMouseMode(cfg->window.relative_mouse ? SDL_TRUE : SDL_FALSE);
-					raycast_set_point_lights_enabled(cfg->render.point_lights_enabled);
-					point_lights_enabled = cfg->render.point_lights_enabled;
-					log_warn("Some config changes are startup-only (window size, internal resolution, vsync, SFX device params, UI font)");
-				}
-			}
-			free(reload_path);
+		bool allow_game_input = !console_open;
+		PlayerControllerInput ci = allow_game_input ? gather_controls(&in, &cfg->input) : (PlayerControllerInput){0};
+		if (!allow_game_input) {
+			ci.mouse_dx = 0.0f;
 		}
-
-		// Dev toggles
-		bool dbg_down = input_key_down(&in, cfg->input.toggle_debug_overlay);
-		bool dbg_pressed = dbg_down && !debug_prev_down;
-		debug_prev_down = dbg_down;
-		if (dbg_pressed) {
-			debug_overlay_enabled = !debug_overlay_enabled;
-		}
-
-		// FPS overlay toggle (upper-right).
-		bool fps_down = input_key_down(&in, cfg->input.toggle_fps_overlay);
-		bool fps_pressed = fps_down && !fps_prev_down;
-		fps_prev_down = fps_down;
-		if (fps_pressed) {
-			fps_overlay_enabled = !fps_overlay_enabled;
-		}
-
-		// Font smoke-test page toggle (configurable).
-		bool ft_down = input_key_down(&in, cfg->input.toggle_font_test);
-		bool ft_pressed = ft_down && !font_test_prev_down;
-		font_test_prev_down = ft_down;
-		if (ft_pressed) {
-			font_test_enabled = !font_test_enabled;
-		}
-
-		// Toggle point-light emitters (debug). This removes the emitter processing code path.
-		bool lights_down = input_key_down(&in, cfg->input.toggle_point_lights);
-		bool lights_pressed = lights_down && !lights_prev_down;
-		lights_prev_down = lights_down;
-		if (lights_pressed) {
-			point_lights_enabled = !point_lights_enabled;
-			raycast_set_point_lights_enabled(point_lights_enabled);
-		}
-
-		// Entity dump: press L (default) to print entity + projection diagnostics.
-		bool entdump_down = input_key_down(&in, cfg->input.entity_dump);
-		bool entdump_pressed = entdump_down && !entity_dump_prev_down;
-		entity_dump_prev_down = entdump_down;
-		if (entdump_pressed) {
-			Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->render.fov_deg);
-			{
-				float phase = player.weapon_view_bob_phase;
-				float amp = player.weapon_view_bob_amp;
-				float bob_amp = amp * amp;
-				float ang = player.angle_deg * (float)M_PI / 180.0f;
-				float fx = cosf(ang);
-				float fy = sinf(ang);
-				float rx = -fy;
-				float ry = fx;
-				float bob_side = sinf(phase) * bob_amp * 0.03f;
-				float bob_z = sinf(phase) * bob_amp * 0.006f;
-				cam.x += rx * bob_side;
-				cam.y += ry * bob_side;
-				float floor_z = 0.0f;
-				if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
-					floor_z = map.world.sectors[player.body.sector].floor_z;
-				}
-				cam.z = (player.body.z - floor_z) + bob_z;
-			}
-			debug_dump_print_entities(stdout, map_name, map_ok ? &map.world : NULL, &player, &cam, &entities, fb.width, fb.height, wall_depth);
-		}
-
-		// Performance trace capture: press O to gather 60 frames then dump a summary.
-		bool perf_down = input_key_down(&in, cfg->input.perf_trace);
-		bool perf_pressed = perf_down && !perf_prev_down;
-		perf_prev_down = perf_down;
-		if (perf_pressed) {
-			perf_trace_start(&perf, map_name, fb.width, fb.height);
-			fprintf(stdout, "\n(perf trace) capturing %d frames...\n", PERF_TRACE_FRAME_COUNT);
-			fflush(stdout);
-		}
-
-		// Debug dump: only when enabled via CLI and user presses `~` (grave).
-		bool dump_down = input_key_down(&in, cfg->input.debug_dump);
-		bool dump_pressed = dump_down && !dump_prev_down;
-		dump_prev_down = dump_down;
-		if (debug_dump_enabled && dump_pressed) {
-			Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->render.fov_deg);
-			{
-				float phase = player.weapon_view_bob_phase;
-				float amp = player.weapon_view_bob_amp;
-				float bob_amp = amp * amp;
-				float ang = player.angle_deg * (float)M_PI / 180.0f;
-				float fx = cosf(ang);
-				float fy = sinf(ang);
-				float rx = -fy;
-				float ry = fx;
-				float bob_side = sinf(phase) * bob_amp * 0.03f;
-				float bob_z = sinf(phase) * bob_amp * 0.006f;
-				cam.x += rx * bob_side;
-				cam.y += ry * bob_side;
-				float floor_z = 0.0f;
-				if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
-					floor_z = map.world.sectors[player.body.sector].floor_z;
-				}
-				cam.z = (player.body.z - floor_z) + bob_z;
-			}
-			debug_dump_print(stdout, map_name, map_ok ? &map.world : NULL, &player, &cam);
-		}
-
-		bool noclip_down = input_key_down(&in, cfg->input.noclip);
-		bool noclip_pressed = noclip_down && !player.noclip_prev_down;
-		player.noclip_prev_down = noclip_down;
-		if (noclip_pressed) {
-			player.noclip = !player.noclip;
-		}
-
-		PlayerControllerInput ci = gather_controls(&in, &cfg->input);
-		bool fire_down = gather_fire(&in);
+		bool fire_down = allow_game_input ? gather_fire(&in) : false;
 		uint8_t weapon_select_mask = 0;
-		if (input_key_down(&in, cfg->input.weapon_slot_1)) {
+		if (allow_game_input && input_key_down(&in, cfg->input.weapon_slot_1)) {
 			weapon_select_mask |= 1u << 0;
 		}
-		if (input_key_down(&in, cfg->input.weapon_slot_2)) {
+		if (allow_game_input && input_key_down(&in, cfg->input.weapon_slot_2)) {
 			weapon_select_mask |= 1u << 1;
 		}
-		if (input_key_down(&in, cfg->input.weapon_slot_3)) {
+		if (allow_game_input && input_key_down(&in, cfg->input.weapon_slot_3)) {
 			weapon_select_mask |= 1u << 2;
 		}
-		if (input_key_down(&in, cfg->input.weapon_slot_4)) {
+		if (allow_game_input && input_key_down(&in, cfg->input.weapon_slot_4)) {
 			weapon_select_mask |= 1u << 3;
 		}
-		if (input_key_down(&in, cfg->input.weapon_slot_5)) {
+		if (allow_game_input && input_key_down(&in, cfg->input.weapon_slot_5)) {
 			weapon_select_mask |= 1u << 4;
 		}
-		int weapon_wheel_delta = in.mouse_wheel;
-		bool q_down = input_key_down(&in, cfg->input.weapon_prev);
-		bool e_down = input_key_down(&in, cfg->input.weapon_next);
+		int weapon_wheel_delta = allow_game_input ? in.mouse_wheel : 0;
+		bool q_down = allow_game_input && input_key_down(&in, cfg->input.weapon_prev);
+		bool e_down = allow_game_input && input_key_down(&in, cfg->input.weapon_next);
 		bool q_pressed = q_down && !q_prev_down;
 		bool e_pressed = e_down && !e_prev_down;
 		q_prev_down = q_down;
@@ -816,7 +746,7 @@ int main(int argc, char** argv) {
 				}
 
 				weapons_update(&player, map_ok ? &map.world : NULL, &sfx_emitters, &entities, player.body.x, player.body.y, fire_down, weapon_wheel_delta, weapon_select_mask, loop.fixed_dt_s);
-				bool use_down = key_down2(&in, cfg->input.use_primary, cfg->input.use_secondary);
+				bool use_down = allow_game_input && key_down2(&in, cfg->input.use_primary, cfg->input.use_secondary);
 				bool use_pressed = use_down && !player.use_prev_down;
 				player.use_prev_down = use_down;
 				if (use_pressed) {
@@ -844,11 +774,14 @@ int main(int argc, char** argv) {
 					}
 					map_ok = map_load(&map, &paths, next_map);
 					if (map_ok) {
+						strncpy(map_name_buf, next_map, sizeof(map_name_buf));
+						map_name_buf[sizeof(map_name_buf) - 1] = '\0';
 						level_mesh_build(&mesh, &map.world);
 						episode_runner_apply_level_start(&player, &map);
 						player.footstep_timer_s = 0.0f;
 						sound_emitters_reset(&sfx_emitters);
-							entity_system_reset(&entities, &map.world, &entity_defs);
+						sound_emitters_set_enabled(&sfx_emitters, audio_enabled && sound_emitters_enabled);
+						entity_system_reset(&entities, &map.world, &entity_defs);
 						if (map.sounds && map.sound_count > 0) {
 							for (int i = 0; i < map.sound_count; i++) {
 								MapSoundEmitter* ms = &map.sounds[i];
@@ -858,12 +791,12 @@ int main(int argc, char** argv) {
 								}
 							}
 						}
-							if (map.entities && map.entity_count > 0) {
-								entity_system_spawn_map(&entities, map.entities, map.entity_count);
-							}
+						if (map.entities && map.entity_count > 0) {
+							entity_system_spawn_map(&entities, map.entities, map.entity_count);
+						}
 						gs.mode = GAME_MODE_PLAYING;
 						// --- MUSIC CHANGE LOGIC ---
-						if (audio_enabled) {
+						if (audio_enabled && music_enabled) {
 							bool midi_exists = map.bgmusic[0] != '\0';
 							bool sf_exists = map.soundfont[0] != '\0';
 							if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
@@ -950,13 +883,13 @@ int main(int argc, char** argv) {
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);
 		hud_draw(&ui_font, &fb, &player, &gs, fps, &texreg, &paths);
-		if (debug_overlay_enabled) {
+		if (show_debug) {
 			debug_overlay_draw(&ui_font, &fb, &player, map_ok ? &map.world : NULL, &entities, fps);
 		}
-		if (font_test_enabled) {
+		if (show_font_test) {
 			font_draw_test_page(&ui_font, &fb, 16, 16);
 		}
-		if (fps_overlay_enabled) {
+		if (show_fps) {
 			char fps_text[32];
 			snprintf(fps_text, sizeof(fps_text), "FPS: %d", fps);
 			int w = font_measure_text_width(&ui_font, fps_text, 1.0f);
@@ -967,6 +900,7 @@ int main(int argc, char** argv) {
 			}
 			font_draw_text(&ui_font, &fb, x, y, fps_text, color_from_abgr(0xFFFFFFFFu), 1.0f);
 		}
+		console_draw(&console, &ui_font, &fb);
 		if (perf_trace_is_active(&perf)) {
 			ui_t1 = platform_time_seconds();
 			present_t0 = ui_t1;
