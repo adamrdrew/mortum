@@ -5,9 +5,18 @@
 #include "game/weapon_visuals.h"
 
 #include "render/draw.h"
-#include "render/font.h"
+#include "game/font.h"
 
 #include <stdio.h>
+
+static inline ColorRGBA color_from_abgr(uint32_t abgr) {
+	ColorRGBA c;
+	c.a = (uint8_t)((abgr >> 24) & 0xFFu);
+	c.b = (uint8_t)((abgr >> 16) & 0xFFu);
+	c.g = (uint8_t)((abgr >> 8) & 0xFFu);
+	c.r = (uint8_t)(abgr & 0xFFu);
+	return c;
+}
 
 static int count_bits_u32(unsigned int v) {
 	int n = 0;
@@ -27,8 +36,11 @@ static void hud_draw_panel(Framebuffer* fb, int x, int y, int w, int h, uint32_t
 	draw_rect(fb, x + w - 2, y, 2, h, lo);
 }
 
-void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int fps, TextureRegistry* texreg, const AssetPaths* paths) {
+void hud_draw(FontSystem* font, Framebuffer* fb, const Player* player, const GameState* state, int fps, TextureRegistry* texreg, const AssetPaths* paths) {
 	(void)fps;
+	if (!font) {
+		return;
+	}
 	const WeaponDef* w = player ? weapon_def_get(player->weapon_equipped) : NULL;
 	int hp = player ? player->health : 0;
 	int hp_max = player ? player->health_max : 0;
@@ -54,8 +66,8 @@ void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int
 	uint32_t bg = 0xFF202020u;
 	uint32_t hi = 0xFF404040u;
 	uint32_t lo = 0xFF101010u;
-	uint32_t text = 0xFFFFFFFFu;
-	uint32_t text2 = 0xFFFFE0A0u;
+	ColorRGBA text = color_from_abgr(0xFFFFFFFFu);
+	ColorRGBA text2 = color_from_abgr(0xFFFFE0A0u);
 
 	draw_rect(fb, 0, bar_y, fb->width, bar_h, bg);
 	// bevel the whole bar
@@ -81,21 +93,21 @@ void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int
 	hud_draw_panel(fb, x, panel_y, panel_w, panel_h, 0xFF282828u, hi, lo);
 	char buf[64];
 	snprintf(buf, sizeof(buf), "HP %d/%d", hp, hp_max);
-	font_draw_text(fb, x + 6, panel_y + 6, buf, text);
+	font_draw_text(font, fb, x + 6, panel_y + 6, buf, text, 1.0f);
 
 	x += panel_w + panel_gap;
 	hud_draw_panel(fb, x, panel_y, panel_w, panel_h, 0xFF282828u, hi, lo);
 	snprintf(buf, sizeof(buf), "MORTUM %d%%", mortum);
-	font_draw_text(fb, x + 6, panel_y + 6, buf, text2);
+	font_draw_text(font, fb, x + 6, panel_y + 6, buf, text2, 1.0f);
 	if (player && player->undead_active && panel_h >= 28) {
 		snprintf(buf, sizeof(buf), "UNDEAD %d/%d", player->undead_shards_collected, player->undead_shards_required);
-		font_draw_text(fb, x + 6, panel_y + 20, buf, 0xFFFF9090u);
+		font_draw_text(font, fb, x + 6, panel_y + 20, buf, color_from_abgr(0xFFFF9090u), 1.0f);
 	}
 
 	x += panel_w + panel_gap;
 	hud_draw_panel(fb, x, panel_y, panel_w, panel_h, 0xFF282828u, hi, lo);
 	snprintf(buf, sizeof(buf), "AMMO %d/%d", ammo_cur, ammo_max);
-	font_draw_text(fb, x + 6, panel_y + 6, buf, text);
+	font_draw_text(font, fb, x + 6, panel_y + 6, buf, text, 1.0f);
 
 	// Weapon icon (optional): draw inside the ammo panel.
 	if (player && texreg && paths) {
@@ -116,11 +128,11 @@ void hud_draw(Framebuffer* fb, const Player* player, const GameState* state, int
 	x += panel_w + panel_gap;
 	hud_draw_panel(fb, x, panel_y, panel_w, panel_h, 0xFF282828u, hi, lo);
 	snprintf(buf, sizeof(buf), "KEYS %d", keys);
-	font_draw_text(fb, x + 6, panel_y + 6, buf, text);
+	font_draw_text(font, fb, x + 6, panel_y + 6, buf, text, 1.0f);
 
 	if (state && state->mode == GAME_MODE_WIN) {
-		font_draw_text(fb, 8, 8, "YOU ESCAPED", 0xFF90FF90u);
+		font_draw_text(font, fb, 8, 8, "YOU ESCAPED", color_from_abgr(0xFF90FF90u), 1.0f);
 	} else if (state && state->mode == GAME_MODE_LOSE) {
-		font_draw_text(fb, 8, 8, "YOU DIED", 0xFFFF9090u);
+		font_draw_text(font, fb, 8, 8, "YOU DIED", color_from_abgr(0xFFFF9090u), 1.0f);
 	}
 }

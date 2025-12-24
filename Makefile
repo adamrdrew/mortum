@@ -50,7 +50,6 @@ SRC := \
   src/render/framebuffer.c \
   src/render/present_sdl.c \
   src/render/draw.c \
-  src/render/font.c \
   src/render/camera.c \
   src/render/raycast.c \
   src/render/texture.c \
@@ -71,6 +70,7 @@ SRC := \
   src/game/player.c \
   src/game/game_state.c \
   src/game/hud.c \
+  src/game/font.c \
   src/game/weapons.c \
   src/game/ammo.c \
   src/game/weapon_defs.c \

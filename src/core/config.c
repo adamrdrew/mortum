@@ -44,6 +44,12 @@ static CoreConfig g_cfg = {
 	.content = {
 		.default_episode = "episode1.json",
 	},
+	.ui = {
+		.font_file = "Assets/Fonts/ProggyClean.ttf",
+		.font_size_px = 14,
+		.font_atlas_w = 512,
+		.font_atlas_h = 512,
+	},
 	.input = {
 		.forward_primary = SDL_SCANCODE_W,
 		.forward_secondary = SDL_SCANCODE_UP,
@@ -404,7 +410,7 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 	}
 
 	if (ok) {
-		static const char* const allowed_root[] = {"window", "render", "audio", "content", "input", "player", "footsteps", "weapons"};
+		static const char* const allowed_root[] = {"window", "render", "audio", "content", "ui", "input", "player", "footsteps", "weapons"};
 		warn_unknown_keys(&doc, 0, allowed_root, (int)(sizeof(allowed_root) / sizeof(allowed_root[0])), "");
 
 		// window
@@ -720,6 +726,62 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 						ok = false;
 					} else {
 						copy_sv_to_buf(next.content.default_episode, sizeof(next.content.default_episode), sv);
+					}
+				}
+			}
+		}
+
+		// ui
+		int t_ui = -1;
+		if (json_object_get(&doc, 0, "ui", &t_ui)) {
+			if (!json_token_is_object(&doc, t_ui)) {
+				log_error("Config: %s: ui must be an object", path);
+				ok = false;
+			} else {
+				static const char* const allowed_ui[] = {"ui_font_file", "ui_font_size_px", "ui_font_atlas_w", "ui_font_atlas_h"};
+				warn_unknown_keys(&doc, t_ui, allowed_ui, (int)(sizeof(allowed_ui) / sizeof(allowed_ui[0])), "ui");
+
+				int t_ff = -1;
+				if (json_object_get(&doc, t_ui, "ui_font_file", &t_ff)) {
+					StringView sv;
+					if (!json_get_string(&doc, t_ff, &sv) || sv.len == 0) {
+						log_error("Config: %s: ui.ui_font_file must be a non-empty string", path);
+						ok = false;
+					} else {
+						copy_sv_to_buf(next.ui.font_file, sizeof(next.ui.font_file), sv);
+					}
+				}
+
+				int t_fs = -1;
+				if (json_object_get(&doc, t_ui, "ui_font_size_px", &t_fs)) {
+					int v = 0;
+					if (!json_get_int(&doc, t_fs, &v) || v < 6 || v > 96) {
+						log_error("Config: %s: ui.ui_font_size_px must be int in [6..96]", path);
+						ok = false;
+					} else {
+						next.ui.font_size_px = v;
+					}
+				}
+
+				int t_aw = -1;
+				if (json_object_get(&doc, t_ui, "ui_font_atlas_w", &t_aw)) {
+					int v = 0;
+					if (!json_get_int(&doc, t_aw, &v) || v < 128 || v > 4096) {
+						log_error("Config: %s: ui.ui_font_atlas_w must be int in [128..4096]", path);
+						ok = false;
+					} else {
+						next.ui.font_atlas_w = v;
+					}
+				}
+
+				int t_ah = -1;
+				if (json_object_get(&doc, t_ui, "ui_font_atlas_h", &t_ah)) {
+					int v = 0;
+					if (!json_get_int(&doc, t_ah, &v) || v < 128 || v > 4096) {
+						log_error("Config: %s: ui.ui_font_atlas_h must be int in [128..4096]", path);
+						ok = false;
+					} else {
+						next.ui.font_atlas_h = v;
 					}
 				}
 			}

@@ -139,11 +139,19 @@ typedef struct ContentConfig {
 	char default_episode[64];
 } ContentConfig;
 
+typedef struct UiConfig {
+	char font_file[128];
+	int font_size_px;
+	int font_atlas_w;
+	int font_atlas_h;
+} UiConfig;
+
 typedef struct CoreConfig {
 	WindowConfig window;
 	RenderConfig render;
 	AudioConfig audio;
 	ContentConfig content;
+	UiConfig ui;
 	InputBindingsConfig input;
 	PlayerTuningConfig player;
 	FootstepsConfig footsteps;

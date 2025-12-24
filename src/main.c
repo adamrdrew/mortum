@@ -12,7 +12,6 @@
 #include "render/draw.h"
 #include "render/camera.h"
 #include "render/framebuffer.h"
-#include "render/font.h"
 #include "render/present.h"
 #include "render/raycast.h"
 #include "render/level_mesh.h"
@@ -27,6 +26,8 @@
 #include "game/player_controller.h"
 #include "game/game_state.h"
 #include "game/hud.h"
+
+#include "game/font.h"
 
 #include "game/weapon_view.h"
 
@@ -50,6 +51,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static inline ColorRGBA color_from_abgr(uint32_t abgr) {
+	ColorRGBA c;
+	c.a = (uint8_t)((abgr >> 24) & 0xFFu);
+	c.b = (uint8_t)((abgr >> 16) & 0xFFu);
+	c.g = (uint8_t)((abgr >> 8) & 0xFFu);
+	c.r = (uint8_t)(abgr & 0xFFu);
+	return c;
+}
 
 static bool file_exists(const char* path) {
 	if (!path || path[0] == '\0') {
@@ -252,6 +262,16 @@ int main(int argc, char** argv) {
 	const CoreConfig* cfg = core_config_get();
 	bool audio_enabled = cfg->audio.enabled;
 
+	FontSystem ui_font;
+	if (!font_system_init(&ui_font, cfg->ui.font_file, cfg->ui.font_size_px, cfg->ui.font_atlas_w, cfg->ui.font_atlas_h, &paths)) {
+		free(config_path);
+		asset_paths_destroy(&paths);
+		fs_paths_destroy(&fs);
+		platform_shutdown();
+		log_shutdown();
+		return 1;
+	}
+
 	// SFX core (WAV sound effects) is separate from MIDI music.
 	if (!sfx_init(&paths, audio_enabled, cfg->audio.sfx_device_freq, cfg->audio.sfx_device_buffer_samples)) {
 		log_warn("SFX init failed; continuing with SFX disabled");
@@ -424,6 +444,8 @@ int main(int argc, char** argv) {
 	bool entity_dump_prev_down = false;
 	bool fps_overlay_enabled = false;
 	bool fps_prev_down = false;
+	bool font_test_enabled = false;
+	bool font_test_prev_down = false;
 	bool perf_prev_down = false;
 	PerfTrace perf;
 	perf_trace_init(&perf);
@@ -490,6 +512,14 @@ int main(int argc, char** argv) {
 		fps_prev_down = fps_down;
 		if (fps_pressed) {
 			fps_overlay_enabled = !fps_overlay_enabled;
+		}
+
+		// Font smoke-test page toggle (F7).
+		bool ft_down = input_key_down(&in, SDL_SCANCODE_F7);
+		bool ft_pressed = ft_down && !font_test_prev_down;
+		font_test_prev_down = ft_down;
+		if (ft_pressed) {
+			font_test_enabled = !font_test_enabled;
 		}
 
 		// Toggle point-light emitters (debug). This removes the emitter processing code path.
@@ -919,20 +949,23 @@ int main(int argc, char** argv) {
 		}
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);
-		hud_draw(&fb, &player, &gs, fps, &texreg, &paths);
+		hud_draw(&ui_font, &fb, &player, &gs, fps, &texreg, &paths);
 		if (debug_overlay_enabled) {
-			debug_overlay_draw(&fb, &player, map_ok ? &map.world : NULL, &entities, fps);
+			debug_overlay_draw(&ui_font, &fb, &player, map_ok ? &map.world : NULL, &entities, fps);
+		}
+		if (font_test_enabled) {
+			font_draw_test_page(&ui_font, &fb, 16, 16);
 		}
 		if (fps_overlay_enabled) {
 			char fps_text[32];
 			snprintf(fps_text, sizeof(fps_text), "FPS: %d", fps);
-			int w = (int)strlen(fps_text) * 7;
+			int w = font_measure_text_width(&ui_font, fps_text, 1.0f);
 			int x = fb.width - 8 - w;
 			int y = 8;
 			if (x < 0) {
 				x = 0;
 			}
-			font_draw_text(&fb, x, y, fps_text, 0xFFFFFFFFu);
+			font_draw_text(&ui_font, &fb, x, y, fps_text, color_from_abgr(0xFFFFFFFFu), 1.0f);
 		}
 		if (perf_trace_is_active(&perf)) {
 			ui_t1 = platform_time_seconds();
@@ -1002,6 +1035,7 @@ int main(int argc, char** argv) {
 	window_destroy(&win);
 	asset_paths_destroy(&paths);
 	fs_paths_destroy(&fs);
+	font_system_shutdown(&ui_font);
 	sound_emitters_shutdown(&sfx_emitters);
 	sfx_shutdown();
 	midi_shutdown(); // Clean up music resources

@@ -33,6 +33,12 @@
   "content": {
     "default_episode": "episode1.json"
   },
+  "ui": {
+    "ui_font_file": "Assets/Fonts/ProggyClean.ttf",
+    "ui_font_size_px": 14,
+    "ui_font_atlas_w": 512,
+    "ui_font_atlas_h": 512
+  },
   "input": {
     "bindings": {
       "forward": ["W", "Up"],
