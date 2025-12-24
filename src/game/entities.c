@@ -1303,7 +1303,8 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 
 			if (e->state == ENTITY_STATE_DAMAGED) {
 				if (e->state_time >= ed->damaged_time_s) {
-					e->state = (dist <= ed->engage_range) ? ENTITY_STATE_ENGAGED : ENTITY_STATE_IDLE;
+					// Damage reaction ends by re-engaging (DOOM-style alertness).
+					e->state = ENTITY_STATE_ENGAGED;
 					e->state_time = 0.0f;
 				}
 				continue;
@@ -1312,7 +1313,11 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			if (e->state == ENTITY_STATE_IDLE) {
 				// Still update physics so step-down/falling works.
 				physics_body_update(&e->body, es->world, 0.0f, 0.0f, (double)dt_s, &phys);
-				if (dist <= ed->engage_range) {
+				// Sight-based engagement: keep a sensible minimum so enemies can see the player
+				// across multiple portal-connected sectors.
+				const float min_sight_range = 16.0f;
+				float sight_range = fmaxf2(min_sight_range, fmaxf2(ed->disengage_range, ed->engage_range));
+				if (dist <= sight_range && collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
 					e->state = ENTITY_STATE_ENGAGED;
 					e->state_time = 0.0f;
 				}
@@ -1320,7 +1325,9 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			}
 
 			if (e->state == ENTITY_STATE_ENGAGED) {
-				if (dist > ed->disengage_range) {
+				// Only drop back to IDLE if the player is both far away and not visible.
+				// This prevents immediate "wake then sleep" behavior due to LOS jitter.
+				if (dist > ed->disengage_range && !collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
 					e->state = ENTITY_STATE_IDLE;
 					e->state_time = 0.0f;
 					continue;

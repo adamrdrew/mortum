@@ -294,9 +294,9 @@ Pass 1:
 - State machine:
   - `IDLE`:
     - Updates physics with zero wish velocity.
-    - If `dist <= engage_range`, transitions to `ENGAGED`.
+    - If the player is within a **sight range** (at least ~50ft-ish; larger of a minimum and the authored ranges) and there is solid-wall line-of-sight to the player, transitions to `ENGAGED`.
   - `ENGAGED`:
-    - If `dist > disengage_range`, transitions to `IDLE`.
+    - If `dist > disengage_range` **and** the player is not in solid-wall line-of-sight, transitions to `IDLE`.
     - If `dist <= max(attack_range, min_approach)`, transitions to `ATTACK`.
     - Otherwise chases the player by applying a wish velocity toward the player.
     - When near the player, uses a portal-blocking physics update to avoid portal transitions.
@@ -307,7 +307,7 @@ Pass 1:
     - At `attack_windup_s`, if player is within range, emits `ENTITY_EVENT_PLAYER_DAMAGE` once.
     - At `attack_cooldown_s`, returns to `ENGAGED`.
   - `DAMAGED`:
-    - Holds for `damaged_time_s`, then returns to `ENGAGED` or `IDLE` depending on distance.
+    - Holds for `damaged_time_s`, then returns to `ENGAGED`.
   - Death pipeline (driven by `hp <= 0`):
     - Transitions to `DYING`, then `DEAD`, then requests despawn after `dead_time_s`.
 
@@ -553,7 +553,7 @@ The main fixed-step loop in [src/main.c](../src/main.c) integrates entities like
 4. Apply effects by consuming events:
    - Pickups: modify player health/ammo, play pickup SFX, request pickup despawn.
    - Projectile wall hits: play impact SFX, request despawn.
-   - Projectile damage: apply target HP change; on kill emit `ENTITY_EVENT_DIED` via `entity_system_emit_event`; set enemy to `DYING` or despawn non-enemy targets.
+  - Projectile damage: apply target HP change; on kill emit `ENTITY_EVENT_DIED` via `entity_system_emit_event`; set enemy to `DYING` or despawn non-enemy targets. If the enemy survives, it enters `DAMAGED` briefly, then transitions to `ENGAGED`.
    - Enemy melee: apply `ENTITY_EVENT_PLAYER_DAMAGE` to the player.
 5. `entity_system_flush(&entities)`.
 

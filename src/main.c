@@ -728,8 +728,10 @@ int main(int argc, char** argv) {
 										}
 									} else {
 										if (tdef->kind == ENTITY_KIND_ENEMY) {
+											// Taking damage triggers a brief DAMAGED reaction, then the enemy will re-engage.
 											target->state = ENTITY_STATE_DAMAGED;
 											target->state_time = 0.0f;
+											target->attack_has_hit = false;
 										}
 									}
 								}

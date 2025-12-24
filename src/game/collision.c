@@ -35,47 +35,6 @@ static bool wall_is_solid(const Wall* w) {
 	return w->back_sector < 0;
 }
 
-static float orient2(float ax, float ay, float bx, float by, float cx, float cy) {
-	return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-}
-
-static bool on_segment2(float ax, float ay, float bx, float by, float px, float py) {
-	float minx = ax < bx ? ax : bx;
-	float maxx = ax > bx ? ax : bx;
-	float miny = ay < by ? ay : by;
-	float maxy = ay > by ? ay : by;
-	const float eps = 1e-6f;
-	return (px >= minx - eps && px <= maxx + eps && py >= miny - eps && py <= maxy + eps);
-}
-
-static bool segments_intersect2(float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
-	const float eps = 1e-6f;
-	float o1 = orient2(ax, ay, bx, by, cx, cy);
-	float o2 = orient2(ax, ay, bx, by, dx, dy);
-	float o3 = orient2(cx, cy, dx, dy, ax, ay);
-	float o4 = orient2(cx, cy, dx, dy, bx, by);
-
-	// General case.
-	if (((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps)) && ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps))) {
-		return true;
-	}
-
-	// Colinear/touching cases.
-	if (fabsf(o1) <= eps && on_segment2(ax, ay, bx, by, cx, cy)) {
-		return true;
-	}
-	if (fabsf(o2) <= eps && on_segment2(ax, ay, bx, by, dx, dy)) {
-		return true;
-	}
-	if (fabsf(o3) <= eps && on_segment2(cx, cy, dx, dy, ax, ay)) {
-		return true;
-	}
-	if (fabsf(o4) <= eps && on_segment2(cx, cy, dx, dy, bx, by)) {
-		return true;
-	}
-
-	return false;
-}
 
 static bool resolve_once(const World* world, float radius, float* io_x, float* io_y, float* io_vx, float* io_vy) {
 	bool any = false;
@@ -180,12 +139,16 @@ bool collision_line_of_sight(const World* world, float from_x, float from_y, flo
 		return true;
 	}
 	// Zero-length segments trivially have LOS.
-	float dx = to_x - from_x;
-	float dy = to_y - from_y;
-	if (dx * dx + dy * dy <= 1e-10f) {
+	float seg_dx = to_x - from_x;
+	float seg_dy = to_y - from_y;
+	float seg_len2 = seg_dx * seg_dx + seg_dy * seg_dy;
+	if (seg_len2 <= 1e-10f) {
 		return true;
 	}
 
+	// Proper segment intersection test against solid wall segments.
+	// We ignore endpoint grazes to avoid LOS flicker when the line passes exactly through a vertex.
+	const float eps = 1e-4f;
 	for (int i = 0; i < world->wall_count; i++) {
 		const Wall* w = &world->walls[i];
 		if (!wall_is_solid(w)) {
@@ -196,7 +159,20 @@ bool collision_line_of_sight(const World* world, float from_x, float from_y, flo
 		}
 		Vertex a = world->vertices[w->v0];
 		Vertex b = world->vertices[w->v1];
-		if (segments_intersect2(from_x, from_y, to_x, to_y, a.x, a.y, b.x, b.y)) {
+
+		float r_x = to_x - from_x;
+		float r_y = to_y - from_y;
+		float s_x = b.x - a.x;
+		float s_y = b.y - a.y;
+		float denom = r_x * s_y - r_y * s_x;
+		if (fabsf(denom) <= 1e-10f) {
+			continue; // parallel/colinear -> treat as non-blocking for LOS
+		}
+		float qpx = a.x - from_x;
+		float qpy = a.y - from_y;
+		float t = (qpx * s_y - qpy * s_x) / denom;
+		float u = (qpx * r_y - qpy * r_x) / denom;
+		if (t > eps && t < 1.0f - eps && u > eps && u < 1.0f - eps) {
 			return false;
 		}
 	}
