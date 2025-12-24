@@ -191,10 +191,12 @@ All declarations are in [include/game/entities.h](../include/game/entities.h).
 
 ### Rendering
 
-- `void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const World* world, const Camera* cam, int start_sector, TextureRegistry* texreg, const AssetPaths* paths, const float* wall_depth)`
-  - Renders billboard sprites with wall occlusion.
-  - Requires `wall_depth` from the raycaster for per-column occlusion.
-    - `wall_depth[x]` is **portal-aware**: it represents the nearest occluding depth along that screen column after recursing through any portal open spans. Fully open portal boundaries do not occlude sprites, so entities can render across sector boundaries when there is line-of-sight.
+`void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const World* world, const Camera* cam, int start_sector, TextureRegistry* texreg, const AssetPaths* paths, const float* wall_depth, const float* depth_pixels)`
+  - Renders billboard sprites with occlusion against the already-rendered world.
+  - Depth inputs:
+    - `wall_depth` (per-column): `wall_depth[x]` is **portal-aware** and represents the nearest *occluding wall* depth along that screen column after recursing through portal open spans. Fully open portal boundaries do not occlude sprites, so entities can render across sector boundaries when there is line-of-sight.
+    - `depth_pixels` (per-pixel): `depth_pixels[y*width + x]` is the nearest world depth for the already-rendered pixel at `(x,y)` (walls + floors + ceilings). This enables correct partial sprite occlusion on steps (floor/ceiling height discontinuities).
+  - Callers typically pass both buffers from the raycaster; passing only `wall_depth` preserves the older “walls-only” occlusion behavior.
 
 Important rendering rules:
 - Sprites are sorted back-to-front by depth using a **stable** insertion sort.
@@ -273,7 +275,7 @@ Pass 2:
     - `owner` (if `owner` is set)
     - targets with `max_hp <= 0`
     - pickup/projectile targets
-    - targets in different sectors **only if** line-of-sight is blocked by a solid wall (portal walls do not block)
+    - targets in different sectors if solid-wall line-of-sight is blocked (portal walls do not block)
   - Requires both XY circle overlap and Z overlap of the vertical intervals:
     - projectile: `[z, z+height]`
     - target: `[z, z+height]`
@@ -294,7 +296,7 @@ Pass 1:
 - State machine:
   - `IDLE`:
     - Updates physics with zero wish velocity.
-    - If the player is within a **sight range** (at least ~50ft-ish; larger of a minimum and the authored ranges) and there is solid-wall line-of-sight to the player, transitions to `ENGAGED`.
+    - If the player is within a **sight range** (`max(16.0, max(disengage_range, engage_range))`) and there is solid-wall line-of-sight to the player, transitions to `ENGAGED`.
   - `ENGAGED`:
     - If `dist > disengage_range` **and** the player is not in solid-wall line-of-sight, transitions to `IDLE`.
     - If `dist <= max(attack_range, min_approach)`, transitions to `ATTACK`.
