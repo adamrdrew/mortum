@@ -35,6 +35,7 @@ typedef struct InputBindingsConfig {
 	int weapon_next;
 	int toggle_debug_overlay;
 	int toggle_fps_overlay;
+	int toggle_font_test;
 	int toggle_point_lights;
 	int entity_dump;
 	int perf_trace;

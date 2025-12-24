@@ -77,6 +77,7 @@ Notes:
 | `input.bindings.weapon_next` | key | `"E"` | Reloadable | Wheel increment |
 | `input.bindings.toggle_debug_overlay` | key | `"F3"` | Reloadable | Toggles debug overlay |
 | `input.bindings.toggle_fps_overlay` | key | `"P"` | Reloadable | Toggles FPS overlay |
+| `input.bindings.toggle_font_test` | key | `"F7"` | Reloadable | Toggles font smoke-test page |
 | `input.bindings.toggle_point_lights` | key | `"K"` | Reloadable | Toggles point light emitters |
 | `input.bindings.entity_dump` | key | `"L"` | Reloadable | Dumps entity state + projection diagnostics |
 | `input.bindings.perf_trace` | key | `"O"` | Reloadable | Starts perf trace capture |
@@ -114,7 +115,7 @@ Build/run:
 - `make run`
 
 Dev:
-- `F7` toggles a font smoke-test page
+- `input.bindings.toggle_font_test` toggles a font smoke-test page
 
 Docs:
 - Architecture: `docs/ARCHITECTURE.md`

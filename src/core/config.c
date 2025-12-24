@@ -75,6 +75,7 @@ static CoreConfig g_cfg = {
 		.weapon_next = SDL_SCANCODE_E,
 		.toggle_debug_overlay = SDL_SCANCODE_F3,
 		.toggle_fps_overlay = SDL_SCANCODE_P,
+		.toggle_font_test = SDL_SCANCODE_F7,
 		.toggle_point_lights = SDL_SCANCODE_K,
 		.entity_dump = SDL_SCANCODE_L,
 		.perf_trace = SDL_SCANCODE_O,
@@ -834,6 +835,7 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 							"weapon_next",
 							"toggle_debug_overlay",
 							"toggle_fps_overlay",
+							"toggle_font_test",
 							"toggle_point_lights",
 							"entity_dump",
 							"perf_trace",
@@ -887,6 +889,7 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 						PARSE_BIND1(weapon_next, "weapon_next");
 						PARSE_BIND1(toggle_debug_overlay, "toggle_debug_overlay");
 						PARSE_BIND1(toggle_fps_overlay, "toggle_fps_overlay");
+						PARSE_BIND1(toggle_font_test, "toggle_font_test");
 						PARSE_BIND1(toggle_point_lights, "toggle_point_lights");
 						PARSE_BIND1(entity_dump, "entity_dump");
 						PARSE_BIND1(perf_trace, "perf_trace");

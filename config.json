@@ -60,6 +60,7 @@
 
       "toggle_debug_overlay": "F3",
       "toggle_fps_overlay": "P",
+      "toggle_font_test": "F7",
       "toggle_point_lights": "K",
       "entity_dump": "L",
       "perf_trace": "O",

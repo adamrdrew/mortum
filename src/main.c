@@ -514,8 +514,8 @@ int main(int argc, char** argv) {
 			fps_overlay_enabled = !fps_overlay_enabled;
 		}
 
-		// Font smoke-test page toggle (F7).
-		bool ft_down = input_key_down(&in, SDL_SCANCODE_F7);
+		// Font smoke-test page toggle (configurable).
+		bool ft_down = input_key_down(&in, cfg->input.toggle_font_test);
 		bool ft_pressed = ft_down && !font_test_prev_down;
 		font_test_prev_down = ft_down;
 		if (ft_pressed) {
