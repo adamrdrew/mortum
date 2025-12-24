@@ -30,6 +30,9 @@ The **header files** are treated as the API source of truth, and the **.c implem
   - Load: [src/assets/map_loader.c](../src/assets/map_loader.c)
   - Validate: [src/assets/map_validate.c](../src/assets/map_validate.c)
 
+Related:
+- Entity-attached lights: [include/game/entities.h](../include/game/entities.h), [src/game/entities.c](../src/game/entities.c)
+
 ---
 
 ## Sound Emitters
@@ -276,7 +279,10 @@ From [include/game/world.h](../include/game/world.h) and [src/game/world.c](../s
 
 - `World` stores:
   - `PointLight* lights` (owned)
-  - `int light_count`
+  - `uint8_t* light_alive` (owned)
+  - `int* light_free` (owned)
+  - `int light_free_count`, `int light_free_cap`
+  - `int light_count` (slot count; may include dead slots)
   - `int light_capacity`
 
 Allocation + mutation API:
@@ -285,15 +291,17 @@ Allocation + mutation API:
   - Frees any existing `lights` array and allocates exactly `count` lights.
   - Initializes default `color = white`, `flicker = none`, `seed = 0`.
 - `int world_light_spawn(World* self, PointLight light)`
-  - Appends a light, growing capacity (doubling strategy) as needed.
-  - Returns the inserted light index, or `-1` on failure.
+  - Reuses a freed slot if available; otherwise appends, growing capacity as needed.
+  - Returns the inserted light slot index, or `-1` on failure.
 - `bool world_light_remove(World* self, int light_index)`
-  - Removes by swapping the last light into `light_index` and decrementing `light_count`.
-  - **Important**: removal is not stable; indices after removals may refer to different lights.
+  - Removes by marking the slot dead and pushing the index onto a free-list.
+  - Indices are stable while alive (no swap-remove), but a removed slot index may be reused later.
 - `bool world_light_set_pos(World* self, int light_index, float x, float y, float z)`
 - `bool world_light_set_intensity(World* self, int light_index, float intensity)`
 
-**Actionable invariant**: if gameplay stores light indices, it must tolerate index instability after `world_light_remove`. If you need stable identities, introduce a handle+generation scheme similar to `SoundEmitterId`.
+**Renderer integration note**: iteration over `world->lights[0..light_count)` must skip dead slots (`world->light_alive[i] == 0`).
+
+**Actionable invariant**: if gameplay stores light indices long-term, it must tolerate slot reuse after `world_light_remove`. If you need to detect stale references, introduce a handle+generation scheme similar to `SoundEmitterId`.
 
 ### Shading behavior (lighting model)
 
@@ -424,4 +432,4 @@ Typical pattern:
 
 ### Making light identities stable
 
-If gameplay starts storing light references for long periods, prefer a handle+generation scheme (like `SoundEmitterId`) instead of raw indices, because `world_light_remove` swaps elements.
+If gameplay starts storing light references for long periods, prefer a handle+generation scheme (like `SoundEmitterId`) instead of raw indices, because light slot indices can be reused after removal.

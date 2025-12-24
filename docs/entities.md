@@ -121,10 +121,67 @@ All declarations are in [include/game/entities.h](../include/game/entities.h).
 - `void entity_system_shutdown(EntitySystem* es)`
   - Frees all allocations.
 
-- `void entity_system_reset(EntitySystem* es, const World* world, const EntityDefs* defs)`
+- `void entity_system_reset(EntitySystem* es, World* world, const EntityDefs* defs)`
   - Clears all entities for a new level.
   - Preserves capacity but invalidates existing `EntityId`s by incrementing generation for every slot.
   - Sets `es->world` and `es->defs` pointers (not owned).
+  - Detaches any entity-attached lights from the previous world.
+
+### Entity-Attached Light Emitters
+
+Entities can optionally own **one** point light that:
+
+- Is **spawned from an entity def** (`Assets/Entities/entities.json`) or attached via code.
+- Is always centered on the entity (position in defs is ignored).
+- **Follows the entity** as it moves.
+- Is **destroyed** when the entity dies or is despawned/removed.
+
+Relevant API/data:
+
+- `EntityDef.light` (`EntityLightDef`)
+- `Entity.light_index` (runtime index into `World` light slots; `-1` means none)
+- Light control APIs:
+  - `bool entity_system_light_attach(EntitySystem* es, EntityId id, PointLight light_template)`
+  - `void entity_system_light_detach(EntitySystem* es, EntityId id)`
+  - `bool entity_system_light_set_radius(EntitySystem* es, EntityId id, float radius)`
+
+Lifecycle rules (implementation truth):
+
+- Spawn: if `def.light.enabled`, a light is attached during `entity_system_spawn()`.
+- Tick: attached lights update to the entity center once per tick.
+- Death: enemy lights are detached when the enemy transitions into `DYING`.
+- Despawn/removal: lights are detached immediately on `entity_system_request_despawn()` and also defensively during slot free/reset/shutdown.
+
+#### Entity Def JSON schema: `light`
+
+Inside each entity def object, `light` is optional:
+
+- Required:
+  - `radius` (number)
+- Optional:
+  - `intensity` (number, default `1.0`, clamped to $\ge 0$)
+  - `color` (either a hex string like `"#RRGGBB"`/`"RRGGBB"` or an object `{ "r": <float>, "g": <float>, "b": <float> }`)
+  - `flicker` (string: `"none" | "flame" | "malfunction"`)
+  - `seed` (integer; if omitted/0, a deterministic seed is derived from the entity id)
+
+Example:
+
+```json
+{
+  "name": "void_lurker",
+  "kind": "enemy",
+  "radius": 0.35,
+  "height": 1.2,
+  "max_hp": 20,
+  "light": {
+    "radius": 6.0,
+    "intensity": 1.0,
+    "color": "#66AAFF",
+    "flicker": "malfunction",
+    "seed": 12345
+  }
+}
+```
 
 ### Spawning and Resolving Entities
 

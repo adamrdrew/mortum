@@ -5,13 +5,148 @@
 
 #include "game/collision.h"
 
+#include "game/world.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+static bool json_get_float2(const JsonDoc* doc, int tok, float* out);
+static bool json_get_int2(const JsonDoc* doc, int tok, int* out);
+
 static float fmaxf2(float a, float b) {
 	return a > b ? a : b;
+}
+
+static uint32_t hash_u32_2(uint32_t x) {
+	// SplitMix32
+	x += 0x9E3779B9u;
+	x = (x ^ (x >> 16)) * 0x85EBCA6Bu;
+	x = (x ^ (x >> 13)) * 0xC2B2AE35u;
+	return x ^ (x >> 16);
+}
+
+static bool hex_nibble2(char c, uint8_t* out) {
+	if (c >= '0' && c <= '9') {
+		*out = (uint8_t)(c - '0');
+		return true;
+	}
+	if (c >= 'a' && c <= 'f') {
+		*out = (uint8_t)(10 + (c - 'a'));
+		return true;
+	}
+	if (c >= 'A' && c <= 'F') {
+		*out = (uint8_t)(10 + (c - 'A'));
+		return true;
+	}
+	return false;
+}
+
+static bool parse_hex_color_sv2(StringView sv, LightColor* out) {
+	if (!out) {
+		return false;
+	}
+	// Accept "RRGGBB" or "#RRGGBB".
+	if (sv.len == 7 && sv.data[0] == '#') {
+		sv.data++;
+		sv.len--;
+	}
+	if (sv.len != 6) {
+		return false;
+	}
+	uint8_t n0, n1, n2, n3, n4, n5;
+	if (!hex_nibble2(sv.data[0], &n0) || !hex_nibble2(sv.data[1], &n1) ||
+		!hex_nibble2(sv.data[2], &n2) || !hex_nibble2(sv.data[3], &n3) ||
+		!hex_nibble2(sv.data[4], &n4) || !hex_nibble2(sv.data[5], &n5)) {
+		return false;
+	}
+	uint8_t r = (uint8_t)((n0 << 4) | n1);
+	uint8_t g = (uint8_t)((n2 << 4) | n3);
+	uint8_t b = (uint8_t)((n4 << 4) | n5);
+	out->r = (float)r / 255.0f;
+	out->g = (float)g / 255.0f;
+	out->b = (float)b / 255.0f;
+	return true;
+}
+
+static bool json_get_light_color_obj2(const JsonDoc* doc, int tok, LightColor* out) {
+	if (!doc || tok < 0 || !out || !json_token_is_object(doc, tok)) {
+		return false;
+	}
+	int tr = -1, tg = -1, tb = -1;
+	if (!json_object_get(doc, tok, "r", &tr) || !json_object_get(doc, tok, "g", &tg) || !json_object_get(doc, tok, "b", &tb)) {
+		return false;
+	}
+	float r = 0, g = 0, b = 0;
+	if (!json_get_float2(doc, tr, &r) || !json_get_float2(doc, tg, &g) || !json_get_float2(doc, tb, &b)) {
+		return false;
+	}
+	out->r = r;
+	out->g = g;
+	out->b = b;
+	return true;
+}
+
+static bool json_get_light_color_any2(const JsonDoc* doc, int tok, LightColor* out) {
+	if (!doc || tok < 0 || !out) {
+		return false;
+	}
+	if (json_token_is_string(doc, tok)) {
+		StringView sv;
+		if (!json_get_string(doc, tok, &sv)) {
+			return false;
+		}
+		return parse_hex_color_sv2(sv, out);
+	}
+	return json_get_light_color_obj2(doc, tok, out);
+}
+
+static bool json_get_light_flicker2(const JsonDoc* doc, int tok, LightFlicker* out) {
+	if (!doc || tok < 0 || !out || !json_token_is_string(doc, tok)) {
+		return false;
+	}
+	StringView sv;
+	if (!json_get_string(doc, tok, &sv)) {
+		return false;
+	}
+	if (sv.len == 4 && strncmp(sv.data, "none", 4) == 0) {
+		*out = LIGHT_FLICKER_NONE;
+		return true;
+	}
+	if (sv.len == 5 && strncmp(sv.data, "flame", 5) == 0) {
+		*out = LIGHT_FLICKER_FLAME;
+		return true;
+	}
+	if (sv.len == 11 && strncmp(sv.data, "malfunction", 11) == 0) {
+		*out = LIGHT_FLICKER_MALFUNCTION;
+		return true;
+	}
+	return false;
+}
+
+static void entity_light_detach_ptr(EntitySystem* es, Entity* e) {
+	if (!es || !e) {
+		return;
+	}
+	if (e->light_index < 0) {
+		return;
+	}
+	if (es->world) {
+		(void)world_light_remove(es->world, e->light_index);
+	}
+	e->light_index = -1;
+}
+
+static void entity_light_update_pos(EntitySystem* es, const Entity* e) {
+	if (!es || !es->world || !e) {
+		return;
+	}
+	if (e->light_index < 0) {
+		return;
+	}
+	float zc = e->body.z + 0.5f * e->body.height;
+	(void)world_light_set_pos(es->world, e->light_index, e->body.x, e->body.y, zc);
 }
 
 static void physics_body_move_delta_block_portals(PhysicsBody* b, const World* world, float dx, float dy, const PhysicsBodyParams* params) {
@@ -37,9 +172,6 @@ static void physics_body_update_block_portals(PhysicsBody* b, const World* world
 }
 
 static float deg_to_rad2(float deg);
-
-static bool json_get_float2(const JsonDoc* doc, int tok, float* out);
-static bool json_get_int2(const JsonDoc* doc, int tok, int* out);
 
 static void spatial_invalidate(EntitySystem* es);
 static void spatial_rebuild(EntitySystem* es);
@@ -397,6 +529,11 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 		def.radius = 0.35f;
 		def.height = 1.0f;
 		def.max_hp = 0;
+		def.light.enabled = false;
+		memset(&def.light.light, 0, sizeof(def.light.light));
+		def.light.light.color = light_color_white();
+		def.light.light.flicker = LIGHT_FLICKER_NONE;
+		def.light.light.seed = 0u;
 
 		int t_name = -1;
 		int t_kind = -1;
@@ -579,6 +716,89 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 		}
 		def.radius = fmaxf2(def.radius, 0.01f);
 		def.height = fmaxf2(def.height, 0.01f);
+
+		// Optional entity-attached point light emitter.
+		int t_light = -1;
+		if (json_object_get(&doc, t_def, "light", &t_light) && t_light >= 0) {
+			if (!json_token_is_object(&doc, t_light)) {
+				log_error("entity def '%s' light must be an object", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+			int t_lr = -1;
+			if (!json_object_get(&doc, t_light, "radius", &t_lr) || t_lr < 0) {
+				log_error("entity def '%s' light missing required field radius", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+			float radius = 0.0f;
+			if (!json_get_float2(&doc, t_lr, &radius)) {
+				log_error("entity def '%s' light.radius invalid", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+			if (radius < 0.0f) {
+				radius = 0.0f;
+			}
+			float intensity = 1.0f;
+			int t_li = -1;
+			if (json_object_get(&doc, t_light, "intensity", &t_li) && t_li >= 0) {
+				if (!json_get_float2(&doc, t_li, &intensity)) {
+					log_error("entity def '%s' light.intensity invalid", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+			}
+			if (intensity < 0.0f) {
+				intensity = 0.0f;
+			}
+
+			LightColor lc = light_color_white();
+			int t_color = -1;
+			if (json_object_get(&doc, t_light, "color", &t_color) && t_color >= 0) {
+				if (!json_get_light_color_any2(&doc, t_color, &lc)) {
+					log_error("entity def '%s' light.color invalid (expected hex string like \"EE0000\" or {r,g,b})", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+			}
+
+			LightFlicker flicker = LIGHT_FLICKER_NONE;
+			int t_flicker = -1;
+			if (json_object_get(&doc, t_light, "flicker", &t_flicker) && t_flicker >= 0) {
+				if (!json_get_light_flicker2(&doc, t_flicker, &flicker)) {
+					log_error("entity def '%s' light.flicker invalid (none|flame|malfunction)", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+			}
+
+			uint32_t seed = 0u;
+			int t_seed = -1;
+			if (json_object_get(&doc, t_light, "seed", &t_seed) && t_seed >= 0) {
+				int s = 0;
+				if (!json_get_int2(&doc, t_seed, &s)) {
+					log_error("entity def '%s' light.seed invalid", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+				seed = (uint32_t)s;
+			}
+
+			def.light.enabled = true;
+			def.light.light.radius = radius;
+			def.light.light.intensity = intensity;
+			def.light.light.color = lc;
+			def.light.light.flicker = flicker;
+			def.light.light.seed = seed;
+		}
 
 		// Kind-specific payloads
 		if (def.kind == ENTITY_KIND_PICKUP) {
@@ -883,6 +1103,7 @@ static void entity_slot_clear(EntitySystem* es, uint32_t idx) {
 	e->owner = entity_id_none();
 	e->sprite_frame = 0u;
 	e->attack_has_hit = false;
+	e->light_index = -1;
 }
 
 static void entity_events_clear(EntitySystem* es) {
@@ -958,6 +1179,15 @@ void entity_system_shutdown(EntitySystem* es) {
 	if (!es) {
 		return;
 	}
+	// Best-effort cleanup: detach any entity-owned world lights.
+	if (es->world && es->entities && es->alive) {
+		for (uint32_t i = 0; i < es->capacity; i++) {
+			if (!es->alive[i]) {
+				continue;
+			}
+			entity_light_detach_ptr(es, &es->entities[i]);
+		}
+	}
 	free(es->entities);
 	free(es->generation);
 	free(es->free_next);
@@ -970,9 +1200,18 @@ void entity_system_shutdown(EntitySystem* es) {
 	memset(es, 0, sizeof(*es));
 }
 
-void entity_system_reset(EntitySystem* es, const World* world, const EntityDefs* defs) {
+void entity_system_reset(EntitySystem* es, World* world, const EntityDefs* defs) {
 	if (!es) {
 		return;
+	}
+	// Detach any existing entity lights from the previous world before switching.
+	if (es->world && es->entities && es->alive) {
+		for (uint32_t i = 0; i < es->capacity; i++) {
+			if (!es->alive[i]) {
+				continue;
+			}
+			entity_light_detach_ptr(es, &es->entities[i]);
+		}
 	}
 	es->world = world;
 	es->defs = defs;
@@ -1016,6 +1255,7 @@ static void free_slot(EntitySystem* es, uint32_t idx) {
 	if (!es || idx >= es->capacity) {
 		return;
 	}
+	entity_light_detach_ptr(es, &es->entities[idx]);
 	es->alive[idx] = 0;
 	es->alive_count--;
 	es->generation[idx] += 1u;
@@ -1062,6 +1302,11 @@ bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y,
 	e->body.last_valid_sector = sector;
 	spatial_invalidate(es);
 
+	// Optional per-entity light.
+	if (def->light.enabled) {
+		(void)entity_system_light_attach(es, e->id, def->light.light);
+	}
+
 
 	if (out_id) {
 		*out_id = e->id;
@@ -1080,6 +1325,62 @@ bool entity_system_emit_event(EntitySystem* es, EntityEvent ev) {
 	return true;
 }
 
+bool entity_system_light_attach(EntitySystem* es, EntityId id, PointLight light_template) {
+	if (!es || !es->world || entity_id_is_none(id)) {
+		return false;
+	}
+	Entity* e = NULL;
+	if (!entity_system_resolve(es, id, &e)) {
+		return false;
+	}
+	// Replace any existing light.
+	entity_light_detach_ptr(es, e);
+
+	// Override position to entity center.
+	light_template.x = e->body.x;
+	light_template.y = e->body.y;
+	light_template.z = e->body.z + 0.5f * e->body.height;
+	// Stable-ish default seed if none specified.
+	if (light_template.seed == 0u) {
+		light_template.seed = hash_u32_2((uint32_t)e->id.index ^ (e->id.gen * 0x9E3779B9u));
+	}
+
+	int li = world_light_spawn(es->world, light_template);
+	if (li < 0) {
+		return false;
+	}
+	e->light_index = li;
+	return true;
+}
+
+void entity_system_light_detach(EntitySystem* es, EntityId id) {
+	if (!es || entity_id_is_none(id)) {
+		return;
+	}
+	Entity* e = NULL;
+	if (!entity_system_resolve(es, id, &e)) {
+		return;
+	}
+	entity_light_detach_ptr(es, e);
+}
+
+bool entity_system_light_set_radius(EntitySystem* es, EntityId id, float radius) {
+	if (!es || !es->world || entity_id_is_none(id)) {
+		return false;
+	}
+	Entity* e = NULL;
+	if (!entity_system_resolve(es, id, &e)) {
+		return false;
+	}
+	if (e->light_index < 0) {
+		return false;
+	}
+	if (radius < 0.0f) {
+		radius = 0.0f;
+	}
+	return world_light_set_radius(es->world, e->light_index, radius);
+}
+
 void entity_system_request_despawn(EntitySystem* es, EntityId id) {
 	if (!es || entity_id_is_none(id)) {
 		return;
@@ -1092,6 +1393,8 @@ void entity_system_request_despawn(EntitySystem* es, EntityId id) {
 		return;
 	}
 	e->pending_despawn = true;
+	// Requirement: entity-attached lights are destroyed on despawn/removal.
+	entity_light_detach_ptr(es, e);
 	if (es->despawn_count == es->despawn_cap) {
 		uint32_t new_cap = es->despawn_cap ? es->despawn_cap * 2u : 256u;
 		EntityId* nq = (EntityId*)xrealloc(es->despawn_queue, (size_t)new_cap * sizeof(EntityId));
@@ -1287,6 +1590,8 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			// Death pipeline is state-driven (lets dying/dead frames show).
 			if (e->hp <= 0) {
 				if (e->state != ENTITY_STATE_DYING && e->state != ENTITY_STATE_DEAD) {
+					// Requirement: destroy entity light on death.
+					entity_light_detach_ptr(es, e);
 					e->state = ENTITY_STATE_DYING;
 					e->state_time = 0.0f;
 					e->attack_has_hit = false;
@@ -1321,6 +1626,7 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 					e->state = ENTITY_STATE_ENGAGED;
 					e->state_time = 0.0f;
 				}
+				entity_light_update_pos(es, e);
 				continue;
 			}
 
@@ -1371,6 +1677,7 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 					float push = (min_approach - dist);
 					physics_body_move_delta_block_portals(&e->body, es->world, -nx * push, -ny * push, &phys);
 				}
+				entity_light_update_pos(es, e);
 				continue;
 			}
 
@@ -1414,6 +1721,7 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 					e->state_time = 0.0f;
 					e->attack_has_hit = false;
 				}
+				entity_light_update_pos(es, e);
 				continue;
 			}
 		}
@@ -1601,6 +1909,14 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			}
 			continue;
 		}
+	}
+
+	// Keep any attached lights centered on their owning entities.
+	for (uint32_t i = 0; i < es->capacity; i++) {
+		if (!es->alive[i]) {
+			continue;
+		}
+		entity_light_update_pos(es, &es->entities[i]);
 	}
 }
 

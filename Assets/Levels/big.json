@@ -1011,59 +1011,6 @@
             "color": "55FFDD",
             "flicker": "flame",
             "seed": 3002
-        },
-
-        {
-            "x": 33.0,
-            "y": 15.0,
-            "z": 2.0,
-            "radius": 8.0,
-            "brightness": 1.8,
-            "color": "00FF88",
-            "flicker": "malfunction",
-            "seed": 4001
-        },
-        {
-            "x": 30.5,
-            "y": 11.5,
-            "z": 2.0,
-            "radius": 12.0,
-            "brightness": 2.1,
-            "color": "FF3366",
-            "flicker": "flame",
-            "seed": 4002
-        },
-
-        {
-            "x": 15.0,
-            "y": 3.0,
-            "z": 1.7,
-            "radius": 12.0,
-            "brightness": 2.2,
-            "color": "FF8800",
-            "flicker": "flame",
-            "seed": 5001
-        },
-        {
-            "x": 20.5,
-            "y": 3.0,
-            "z": 1.7,
-            "radius": 9.0,
-            "brightness": 1.7,
-            "color": "AAFF88",
-            "flicker": "none",
-            "seed": 5003
-        },
-
-        {
-            "x": 2.0,
-            "y": 22.0,
-            "z": 1.8,
-            "radius": 9.0,
-            "brightness": 1.6,
-            "color": "66FF66",
-            "flicker": "flame",
-            "seed": 6002
         }
     ]
 }

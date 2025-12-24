@@ -196,6 +196,9 @@ static int build_visible_lights_uncapped(
 
 	int n = 0;
 	for (int i = 0; i < world->light_count && n < out_cap; i++) {
+		if (world->light_alive && !world->light_alive[i]) {
+			continue;
+		}
 		const PointLight* L = &world->lights[i];
 		if (L->radius <= 0.0f || L->intensity <= 0.0f) {
 			continue;

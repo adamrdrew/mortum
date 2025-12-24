@@ -11,6 +11,7 @@
 
 #include "render/camera.h"
 #include "render/framebuffer.h"
+#include "render/lighting.h"
 #include "render/texture.h"
 
 // NOTE: This is the initial entity system implementation (slice 1: pickups).
@@ -142,9 +143,18 @@ typedef struct EntitySprite {
 	float z_offset; // sprite-space pixels above floor; converted to world units using 64px == 1 world unit
 } EntitySprite;
 
+// Optional per-entity point light emitter.
+// Note: x/y/z are ignored in defs and overwritten at runtime to track the owning entity.
+// The renderer currently uses x/y for distance checks; z is kept for future flexibility.
+typedef struct EntityLightDef {
+	bool enabled;
+	PointLight light;
+} EntityLightDef;
+
 typedef struct EntityDef {
 	char name[64];
 	EntitySprite sprite;
+	EntityLightDef light;
 	EntityKind kind;
 	float radius;
 	float height;
@@ -186,6 +196,9 @@ typedef struct Entity {
 	EntityId owner;
 	bool attack_has_hit;
 
+	// Optional runtime-attached point light index in World. -1 means none.
+	int light_index;
+
 	bool pending_despawn;
 } Entity;
 
@@ -217,7 +230,7 @@ typedef struct EntitySystem {
 	uint32_t spatial_stamp;
 	bool spatial_valid;
 
-	const World* world; // not owned
+	World* world; // not owned
 	const EntityDefs* defs; // not owned
 } EntitySystem;
 
@@ -225,7 +238,7 @@ void entity_system_init(EntitySystem* es, uint32_t max_entities);
 void entity_system_shutdown(EntitySystem* es);
 
 // Resets for a new level (clears all entities).
-void entity_system_reset(EntitySystem* es, const World* world, const EntityDefs* defs);
+void entity_system_reset(EntitySystem* es, World* world, const EntityDefs* defs);
 
 bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y, float yaw_deg, int sector, EntityId* out_id);
 
@@ -240,6 +253,13 @@ bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y,
 bool entity_system_projectile_autoaim(EntitySystem* es, EntityId projectile_id, bool target_player, const PhysicsBody* player_body);
 
 void entity_system_request_despawn(EntitySystem* es, EntityId id);
+
+// Entity-attached point lights (one per entity).
+// These lights are owned by the World and automatically track the entity's center.
+// Attaching a light replaces any existing entity light.
+bool entity_system_light_attach(EntitySystem* es, EntityId id, PointLight light_template);
+void entity_system_light_detach(EntitySystem* es, EntityId id);
+bool entity_system_light_set_radius(EntitySystem* es, EntityId id, float radius);
 
 bool entity_system_resolve(EntitySystem* es, EntityId id, Entity** out);
 

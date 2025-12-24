@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "core/base.h"
 #include "render/lighting.h"
@@ -62,7 +63,11 @@ typedef struct World {
 	int* sector_wall_indices;      // owned, length sector_wall_index_count
 	int sector_wall_index_count;
 	PointLight* lights; // owned
-	int light_count;
+	uint8_t* light_alive; // owned, size=light_capacity (0=free slot)
+	int* light_free; // owned stack of free indices
+	int light_free_count;
+	int light_free_cap;
+	int light_count; // total slots in use in lights[] (may include free slots)
 	int light_capacity;
 } World;
 
@@ -80,6 +85,7 @@ int world_light_spawn(World* self, PointLight light);
 bool world_light_remove(World* self, int light_index);
 bool world_light_set_pos(World* self, int light_index, float x, float y, float z);
 bool world_light_set_intensity(World* self, int light_index, float intensity);
+bool world_light_set_radius(World* self, int light_index, float radius);
 
 // Build a per-sector wall index (acceleration structure).
 // Safe to call multiple times; frees/rebuilds any existing index.

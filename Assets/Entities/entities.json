@@ -17,6 +17,12 @@
       },
       "radius": 0.35,
       "height": 0.6,
+      "light": {
+        "radius": 4.0,
+        "intensity": 1.0,
+        "color": "#4CFF4C",
+        "flicker": "none"
+      },
       "pickup": {
         "heal_amount": 25,
         "trigger_radius": 0.6,
@@ -41,6 +47,12 @@
       },
       "radius": 0.35,
       "height": 0.6,
+      "light": {
+        "radius": 8.0,
+        "intensity": 1.0,
+        "color": "#FF9A3D",
+        "flicker": "none"
+      },
       "pickup": {
         "ammo_type": "bullets",
         "ammo_amount": 15,
@@ -66,6 +78,12 @@
       },
       "radius": 0.12,
       "height": 0.12,
+      "light": {
+        "radius": 8.0,
+        "intensity": 1.0,
+        "color": "#FFD24A",
+        "flicker": "none"
+      },
       "projectile": {
         "speed": 12.0,
         "lifetime_s": 2.0,
