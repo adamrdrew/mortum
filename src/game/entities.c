@@ -1839,11 +1839,21 @@ static float camera_world_z_for_sector_approx(const World* world, int sector, fl
 	return z;
 }
 
-void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const World* world, const Camera* cam, int start_sector, TextureRegistry* texreg, const AssetPaths* paths, const float* wall_depth) {
+void entity_system_draw_sprites(
+	const EntitySystem* es,
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	int start_sector,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const float* wall_depth,
+	const float* depth_pixels
+) {
 	if (!es || !fb || !fb->pixels || !world || !cam || !texreg || !paths || !es->defs) {
 		return;
 	}
-	if (!wall_depth) {
+	if (!wall_depth && !depth_pixels) {
 		return;
 	}
 
@@ -2005,7 +2015,7 @@ void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const W
 
 		for (int x = clip_x0; x < clip_x1; x++) {
 			// Wall occlusion check per column.
-			if (depth >= wall_depth[x]) {
+			if (wall_depth && depth >= wall_depth[x]) {
 				continue;
 			}
 			float u = (float)(x - x0) / (float)(sprite_w_px - 1);
@@ -2014,6 +2024,12 @@ void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const W
 			float tex_u_span = (float)(frame_w - 1) / (float)(sheet_w - 1);
 			tex_u = tex_u + u * tex_u_span;
 			for (int y = clip_y0; y < clip_y1; y++) {
+				if (depth_pixels) {
+					float world_depth = depth_pixels[y * fb->width + x];
+					if (depth >= world_depth) {
+						continue;
+					}
+				}
 				float v = (float)(y - y0) / (float)(sprite_h_px - 1);
 				v = clampf2(v, 0.0f, 1.0f);
 				float tex_v = (float)(frame_y) / (float)(sheet_h - 1);

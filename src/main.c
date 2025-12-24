@@ -406,6 +406,10 @@ int main(int argc, char** argv) {
 	if (!wall_depth) {
 		log_error("out of memory allocating depth buffer");
 	}
+	float* depth_pixels = (float*)malloc((size_t)fb.width * (size_t)fb.height * sizeof(float));
+	if (!depth_pixels) {
+		log_error("out of memory allocating per-pixel depth buffer");
+	}
 
 	GameLoop loop;
 	game_loop_init(&loop, 1.0 / 60.0);
@@ -902,11 +906,12 @@ int main(int argc, char** argv) {
 			&paths,
 			map_ok ? map.sky : NULL,
 			wall_depth,
+			depth_pixels,
 			start_sector,
 			rc_perf_ptr
 		);
 		if (map_ok) {
-			entity_system_draw_sprites(&entities, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth);
+			entity_system_draw_sprites(&entities, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
 		}
 		if (perf_trace_is_active(&perf)) {
 			render3d_t1 = platform_time_seconds();
@@ -990,6 +995,7 @@ int main(int argc, char** argv) {
 	texture_registry_destroy(&texreg);
 	level_mesh_destroy(&mesh);
 	free(wall_depth);
+	free(depth_pixels);
 
 	present_shutdown(&presenter);
 	framebuffer_destroy(&fb);

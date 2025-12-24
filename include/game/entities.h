@@ -273,8 +273,20 @@ const EntityEvent* entity_system_events(const EntitySystem* es, uint32_t* out_co
 uint32_t entity_system_query_circle(EntitySystem* es, float x, float y, float radius, EntityId* out_ids, uint32_t out_cap);
 
 // Renders billboard sprites for entities with def.sprite set.
-// Uses wall_depth for occlusion against walls.
-void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const World* world, const Camera* cam, int start_sector, TextureRegistry* texreg, const AssetPaths* paths, const float* wall_depth);
+// Uses depth buffers for occlusion against the already-rendered world:
+// - wall_depth: per-column nearest wall distance
+// - depth_pixels: per-pixel nearest world distance (walls + floors + ceilings)
+void entity_system_draw_sprites(
+	const EntitySystem* es,
+	Framebuffer* fb,
+	const World* world,
+	const Camera* cam,
+	int start_sector,
+	TextureRegistry* texreg,
+	const AssetPaths* paths,
+	const float* wall_depth,
+	const float* depth_pixels
+);
 
 uint32_t entity_system_alive_count(const EntitySystem* es);
 

@@ -598,8 +598,19 @@ static bool is_sky_sentinel(const char* s) {
 	return s && (strcmp(s, "SKY") == 0 || strcmp(s, "sky") == 0);
 }
 
+static inline void depth_pixels_write_min(float* depth_pixels, int w, int x, int y, float depth) {
+	if (!depth_pixels || w <= 0 || x < 0 || y < 0) {
+		return;
+	}
+	size_t idx = (size_t)y * (size_t)w + (size_t)x;
+	if (depth_pixels[idx] > depth) {
+		depth_pixels[idx] = depth;
+	}
+}
+
 static void draw_sector_ceiling_column(
 	Framebuffer* fb,
+	float* out_depth_pixels,
 	int x,
 	int y_top,
 	int y_bot,
@@ -677,6 +688,7 @@ static void draw_sector_ceiling_column(
 				continue;
 			}
 			float row_dist = ((ceil_z - cam_z) * proj_dist) / denom;
+			depth_pixels_write_min(out_depth_pixels, fb->width, x, y, row_dist);
 			float t = row_dist / corr_safe;
 			float wx = cam_x + dx * t;
 			float wy = cam_y + dy * t;
@@ -730,6 +742,7 @@ static void draw_sector_ceiling_column(
 
 static void draw_sector_floor_column(
 	Framebuffer* fb,
+	float* out_depth_pixels,
 	int x,
 	int y_top,
 	int y_bot,
@@ -783,6 +796,7 @@ static void draw_sector_floor_column(
 				continue;
 			}
 			float row_dist = ((cam_z - floor_z) * proj_dist) / denom;
+			depth_pixels_write_min(out_depth_pixels, fb->width, x, y, row_dist);
 			float t = row_dist / corr_safe;
 			float wx = cam_x + dx * t;
 			float wy = cam_y + dy * t;
@@ -836,6 +850,7 @@ static void draw_sector_floor_column(
 
 static void render_wall_span_textured(
 	Framebuffer* fb,
+	float* out_depth_pixels,
 	int x,
 	int y_top,
 	int y_bot,
@@ -918,6 +933,7 @@ static void render_wall_span_textured(
 	float dz = -dist * inv_proj;
 
 	for (int y = y_top; y < y_bot; y++) {
+		depth_pixels_write_min(out_depth_pixels, fb->width, x, y, dist);
 		float vv = fractf(z0 * wall_uv_scale_v);
 		uint32_t c = tex ? texture_sample_nearest(tex, uu, vv) : base;
 		uint8_t a = (uint8_t)((c >> 24) & 0xFF);
@@ -934,6 +950,7 @@ static void render_wall_span_textured(
 
 static void draw_sector_planes_column(
 	Framebuffer* fb,
+	float* out_depth_pixels,
 	int x,
 	int y_top,
 	int y_bot,
@@ -958,6 +975,7 @@ static void draw_sector_planes_column(
 ) {
 	draw_sector_ceiling_column(
 		fb,
+		out_depth_pixels,
 		x,
 		y_top,
 		y_bot,
@@ -980,6 +998,7 @@ static void draw_sector_planes_column(
 	);
 	draw_sector_floor_column(
 		fb,
+		out_depth_pixels,
 		x,
 		y_top,
 		y_bot,
@@ -1026,6 +1045,7 @@ static void render_column_textured_recursive(
 	int ignore_wall,
 	int depth,
 	float* out_depth,
+	float* out_depth_pixels,
 	RaycastPerf* perf
 ) {
 	if (!fb || !world || !cam) {
@@ -1084,6 +1104,7 @@ static void render_column_textured_recursive(
 		}
 		draw_sector_planes_column(
 			fb,
+			out_depth_pixels,
 			x,
 			y_clip_top,
 			y_clip_bot,
@@ -1212,6 +1233,7 @@ static void render_column_textured_recursive(
 			if (y_clip_top < y_wall0) {
 				draw_sector_planes_column(
 					fb,
+							out_depth_pixels,
 					x,
 					y_clip_top,
 					y_wall0,
@@ -1238,6 +1260,7 @@ static void render_column_textured_recursive(
 			if (y_wall1 < y_clip_bot) {
 				draw_sector_planes_column(
 					fb,
+							out_depth_pixels,
 					x,
 					y_wall1,
 					y_clip_bot,
@@ -1264,6 +1287,7 @@ static void render_column_textured_recursive(
 		} else {
 			draw_sector_planes_column(
 				fb,
+			out_depth_pixels,
 				x,
 				y_clip_top,
 				y_clip_bot,
@@ -1293,6 +1317,7 @@ static void render_column_textured_recursive(
 
 		render_wall_span_textured(
 			fb,
+			out_depth_pixels,
 			x,
 			y_top,
 			y_bot,
@@ -1383,6 +1408,7 @@ static void render_column_textured_recursive(
 			hit_wall,
 			depth + 1,
 			out_depth,
+			out_depth_pixels,
 			perf
 		);
 	}
@@ -1395,6 +1421,7 @@ static void render_column_textured_recursive(
 		if (y_clip_top < y_open0) {
 			draw_sector_planes_column(
 				fb,
+				out_depth_pixels,
 				x,
 				y_clip_top,
 				y_open0,
@@ -1421,6 +1448,7 @@ static void render_column_textured_recursive(
 		if (y_open1 < y_clip_bot) {
 			draw_sector_planes_column(
 				fb,
+				out_depth_pixels,
 				x,
 				y_open1,
 				y_clip_bot,
@@ -1447,6 +1475,7 @@ static void render_column_textured_recursive(
 	} else {
 		draw_sector_planes_column(
 			fb,
+			out_depth_pixels,
 			x,
 			y_clip_top,
 			y_clip_bot,
@@ -1484,6 +1513,7 @@ static void render_column_textured_recursive(
 		int y_bot = project_y(half_h, proj_dist, cam_z, so->ceil_z, dist);
 		render_wall_span_textured(
 			fb,
+			out_depth_pixels,
 			x,
 			y_top,
 			y_bot,
@@ -1518,6 +1548,7 @@ static void render_column_textured_recursive(
 		int y_bot = project_y(half_h, proj_dist, cam_z, s->floor_z, dist);
 		render_wall_span_textured(
 			fb,
+			out_depth_pixels,
 			x,
 			y_top,
 			y_bot,
@@ -1554,6 +1585,7 @@ static void raycast_render_textured_from_sector_internal(
 	const AssetPaths* paths,
 	const char* sky_filename,
 	float* out_depth,
+	float* out_depth_pixels,
 	int start_sector,
 	RaycastPerf* out_perf
 ) {
@@ -1565,6 +1597,12 @@ static void raycast_render_textured_from_sector_internal(
 
 	// Background: sky (floor/ceiling are drawn per column based on ray hit sector)
 	draw_clear(fb, 0xFF0B0E14u);
+	if (out_depth_pixels && fb && fb->width > 0 && fb->height > 0) {
+		size_t n = (size_t)fb->width * (size_t)fb->height;
+		for (size_t i = 0; i < n; i++) {
+			out_depth_pixels[i] = 1e30f;
+		}
+	}
 
 	if (!world || world->wall_count <= 0 || world->vertex_count <= 0) {
 		if (out_depth) {
@@ -1666,6 +1704,7 @@ static void raycast_render_textured_from_sector_internal(
 			-1,
 			0,
 			out_depth,
+			out_depth_pixels,
 			out_perf
 		);
 	}
@@ -1684,9 +1723,10 @@ void raycast_render_textured(
 	TextureRegistry* texreg,
 	const AssetPaths* paths,
 	const char* sky_filename,
-	float* out_depth
+	float* out_depth,
+	float* out_depth_pixels
 ) {
-	raycast_render_textured_from_sector(fb, world, cam, texreg, paths, sky_filename, out_depth, -1);
+	raycast_render_textured_from_sector(fb, world, cam, texreg, paths, sky_filename, out_depth, out_depth_pixels, -1);
 }
 
 void raycast_render_textured_from_sector(
@@ -1697,9 +1737,10 @@ void raycast_render_textured_from_sector(
 	const AssetPaths* paths,
 	const char* sky_filename,
 	float* out_depth,
+	float* out_depth_pixels,
 	int start_sector
 ) {
-	raycast_render_textured_from_sector_internal(fb, world, cam, texreg, paths, sky_filename, out_depth, start_sector, NULL);
+	raycast_render_textured_from_sector_internal(fb, world, cam, texreg, paths, sky_filename, out_depth, out_depth_pixels, start_sector, NULL);
 }
 
 void raycast_render_textured_from_sector_profiled(
@@ -1710,8 +1751,9 @@ void raycast_render_textured_from_sector_profiled(
 	const AssetPaths* paths,
 	const char* sky_filename,
 	float* out_depth,
+	float* out_depth_pixels,
 	int start_sector,
 	RaycastPerf* out_perf
 ) {
-	raycast_render_textured_from_sector_internal(fb, world, cam, texreg, paths, sky_filename, out_depth, start_sector, out_perf);
+	raycast_render_textured_from_sector_internal(fb, world, cam, texreg, paths, sky_filename, out_depth, out_depth_pixels, start_sector, out_perf);
 }
