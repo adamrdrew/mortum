@@ -159,6 +159,9 @@ typedef struct EntityDef {
 	float radius;
 	float height;
 	int max_hp;
+	// If true (default), sprite shading includes world point lights. If false, the sprite
+	// still respects fog + sector ambient/tint, but ignores world point lights.
+	bool react_to_world_lights;
 
 	union {
 		EntityDefPickup pickup;

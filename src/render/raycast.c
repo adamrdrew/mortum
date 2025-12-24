@@ -257,6 +257,16 @@ static int build_visible_lights(
 	return limit_visible_lights(out, n, MAX_ACTIVE_LIGHTS_WALLS, cam->x, cam->y);
 }
 
+int raycast_build_visible_lights(PointLight* out, int out_cap, const World* world, const Camera* cam, float time_s) {
+	if (!out || out_cap <= 0 || !world || !cam) {
+		return 0;
+	}
+	if (!g_point_lights_enabled) {
+		return 0;
+	}
+	return build_visible_lights(out, out_cap, world, cam, time_s);
+}
+
 static void raycast_perf_reset(RaycastPerf* p) {
 	if (!p) {
 		return;

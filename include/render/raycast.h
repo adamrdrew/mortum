@@ -42,6 +42,12 @@ typedef struct RaycastPerf {
 // iterate point-light emitters at all.
 void raycast_set_point_lights_enabled(bool enabled);
 
+// Builds a per-frame list of visible point lights for the given camera.
+// The returned lights include runtime flicker modulation and are capped similarly to the
+// main textured wall lighting path.
+// Returns the number of lights written to `out` (0 if point lights are disabled).
+int raycast_build_visible_lights(PointLight* out, int out_cap, const World* world, const Camera* cam, float time_s);
+
 // Untextured baseline raycast renderer.
 void raycast_render_untextured(Framebuffer* fb, const World* world, const Camera* cam);
 

@@ -257,6 +257,8 @@ Example:
 
 Point lights are authored and/or spawned as `PointLight` structs and stored on the `World`. The renderer uses them to **additively brighten** the base sector lighting multipliers.
 
+Point lights also affect **entity sprite** shading (sampled at the entity position). Individual entity defs can opt out of point-light influence via `react_to_world_lights` (see docs/entities.md).
+
 They are “emitters” in the sense that they emit light into nearby shading samples, but there is no separate runtime system object—**the `World` owns the light list**.
 
 ### Data model (API surface)

@@ -261,6 +261,11 @@ Important rendering rules:
 - Global transparent color key: `FF00FF` (magenta) is treated as transparent.
 - Close-range stability: size clamping is done by clamping the **projection scale** consistently.
 
+Lighting + fog integration:
+- Entity sprites now use the same **fog-to-black** distance falloff as the world lighting system.
+- Entity sprites are affected by world **point lights** (including flicker), sampled at the entity's position.
+- You can disable point-light influence per entity def via `react_to_world_lights` (sprites will still respect fog + sector ambient/tint).
+
 ## Event Model (Exact)
 
 `EntityEvent` fields:
@@ -413,6 +418,8 @@ Optional common fields:
 - `radius` (float; default `0.35`, clamped to `>= 0.01`)
 - `height` (float; default `1.0`, clamped to `>= 0.01`)
 - `max_hp` (int; default `0`; must be `> 0` for `enemy`)
+- `react_to_world_lights` (bool; default `true`)
+  - If `false`, the sprite ignores world point lights (no colored lighting), but still respects fog + sector ambient/tint.
 
 Sprite field:
 - `sprite` is optional.

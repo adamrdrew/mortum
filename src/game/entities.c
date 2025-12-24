@@ -7,6 +7,9 @@
 
 #include "game/world.h"
 
+#include "platform/time.h"
+#include "render/raycast.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +17,7 @@
 
 static bool json_get_float2(const JsonDoc* doc, int tok, float* out);
 static bool json_get_int2(const JsonDoc* doc, int tok, int* out);
+static bool json_get_bool2(const JsonDoc* doc, int tok, bool* out);
 
 static float fmaxf2(float a, float b) {
 	return a > b ? a : b;
@@ -120,6 +124,23 @@ static bool json_get_light_flicker2(const JsonDoc* doc, int tok, LightFlicker* o
 	}
 	if (sv.len == 11 && strncmp(sv.data, "malfunction", 11) == 0) {
 		*out = LIGHT_FLICKER_MALFUNCTION;
+		return true;
+	}
+	return false;
+}
+
+static bool json_get_bool2(const JsonDoc* doc, int tok, bool* out) {
+	if (!doc || tok < 0 || !out) {
+		return false;
+	}
+	StringView sv = json_token_sv(doc, tok);
+	// JSMN represents booleans as PRIMITIVE tokens; accept the literal spellings.
+	if (sv.len == 4 && strncmp(sv.data, "true", 4) == 0) {
+		*out = true;
+		return true;
+	}
+	if (sv.len == 5 && strncmp(sv.data, "false", 5) == 0) {
+		*out = false;
 		return true;
 	}
 	return false;
@@ -529,6 +550,7 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 		def.radius = 0.35f;
 		def.height = 1.0f;
 		def.max_hp = 0;
+		def.react_to_world_lights = true;
 		def.light.enabled = false;
 		memset(&def.light.light, 0, sizeof(def.light.light));
 		def.light.light.color = light_color_white();
@@ -580,6 +602,19 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 				return false;
 			}
 			def.max_hp = mhp;
+		}
+
+		// Optional sprite lighting behavior.
+		int t_rtwl = -1;
+		if (json_object_get(&doc, t_def, "react_to_world_lights", &t_rtwl) && t_rtwl >= 0) {
+			bool b = true;
+			if (!json_get_bool2(&doc, t_rtwl, &b)) {
+				log_error("entity def '%s' react_to_world_lights invalid (expected boolean)", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+			def.react_to_world_lights = b;
 		}
 
 		// Sprite (preferred: object with file/frames/scale/z_offset; legacy: string filename)
@@ -2123,6 +2158,27 @@ static float clampf2(float v, float lo, float hi) {
 	return v;
 }
 
+static uint8_t clamp_u8_2(int v) {
+	if (v < 0) {
+		return 0;
+	}
+	if (v > 255) {
+		return 255;
+	}
+	return (uint8_t)v;
+}
+
+static uint32_t apply_lighting_mul_u8_2(uint32_t rgba, int r_mul_i, int g_mul_i, int b_mul_i) {
+	uint8_t a = (uint8_t)((rgba >> 24) & 0xFF);
+	uint8_t r = (uint8_t)((rgba >> 16) & 0xFF);
+	uint8_t g = (uint8_t)((rgba >> 8) & 0xFF);
+	uint8_t b = (uint8_t)(rgba & 0xFF);
+	int rr = (r * r_mul_i + 128) >> 8;
+	int gg = (g * g_mul_i + 128) >> 8;
+	int bb = (b * b_mul_i + 128) >> 8;
+	return ((uint32_t)a << 24) | ((uint32_t)clamp_u8_2(rr) << 16) | ((uint32_t)clamp_u8_2(gg) << 8) | (uint32_t)clamp_u8_2(bb);
+}
+
 static void sort_sprites_back_to_front(SpriteDrawItem* items, int n) {
 	// Stable insertion sort (deterministic for equal depths).
 	for (int i = 1; i < n; i++) {
@@ -2172,6 +2228,10 @@ void entity_system_draw_sprites(
 	if (!wall_depth && !depth_pixels) {
 		return;
 	}
+
+	// Match raycaster point-light behavior (view culling + flicker). Keep this in sync with src/render/raycast.c.
+	PointLight vis_lights[96];
+	int vis_count = raycast_build_visible_lights(vis_lights, (int)MORTUM_ARRAY_COUNT(vis_lights), world, cam, (float)platform_time_seconds());
 
 	// Gather visible sprite entities.
 	SpriteDrawItem items[256];
@@ -2268,6 +2328,7 @@ void entity_system_draw_sprites(
 		float dy = e->body.y - cam->y;
 		float depth = dx * fx + dy * fy;
 		float side = dx * rx + dy * ry;
+		float dist = sqrtf(dx * dx + dy * dy);
 		// Projection scale used for sprites. Key rule: if we clamp the *size* for stability,
 		// we must also clamp the *projection scale* (pixels-per-world-unit) consistently.
 		// Otherwise, when a sprite hits a max pixel size, it can keep shifting vertically
@@ -2329,6 +2390,29 @@ void entity_system_draw_sprites(
 			continue;
 		}
 
+		// Compute a single lighting multiplier for the whole sprite at the entity's position.
+		// This keeps sprite lighting cheap and deterministic.
+		int sector = e->body.sector;
+		if ((unsigned)sector >= (unsigned)world->sector_count) {
+			sector = start_sector;
+		}
+		float sector_intensity = 1.0f;
+		LightColor sector_tint = light_color_white();
+		if ((unsigned)sector < (unsigned)world->sector_count) {
+			sector_intensity = world->sectors[sector].light;
+			sector_tint = world->sectors[sector].light_color;
+		}
+
+		const PointLight* lights = def->react_to_world_lights ? vis_lights : NULL;
+		int light_count = def->react_to_world_lights ? vis_count : 0;
+		LightColor mul = lighting_compute_multipliers(dist, sector_intensity, sector_tint, lights, light_count, e->body.x, e->body.y);
+		float r_mul = lighting_quantize_factor(mul.r);
+		float g_mul = lighting_quantize_factor(mul.g);
+		float b_mul = lighting_quantize_factor(mul.b);
+		int r_mul_i = (int)lroundf(clampf2(r_mul, 0.0f, 1.0f) * 255.0f);
+		int g_mul_i = (int)lroundf(clampf2(g_mul, 0.0f, 1.0f) * 255.0f);
+		int b_mul_i = (int)lroundf(clampf2(b_mul, 0.0f, 1.0f) * 255.0f);
+
 		for (int x = clip_x0; x < clip_x1; x++) {
 			// Wall occlusion check per column.
 			if (wall_depth && depth >= wall_depth[x]) {
@@ -2359,7 +2443,7 @@ void entity_system_draw_sprites(
 				if ((c & 0xFF000000u) == 0u) {
 					continue;
 				}
-				fb->pixels[y * fb->width + x] = c;
+				fb->pixels[y * fb->width + x] = apply_lighting_mul_u8_2(c, r_mul_i, g_mul_i, b_mul_i);
 			}
 		}
 	}
