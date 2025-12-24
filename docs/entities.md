@@ -260,6 +260,8 @@ Event types and their semantics:
 Pass 1:
 - Optional lifetime despawn: if `lifetime_s > 0` and `state_time >= lifetime_s`, request despawn.
 - Moves in XY based on `yaw_deg` and `speed`.
+- Vertical movement: projectiles may also have a vertical velocity (`PhysicsBody.vz`) applied each tick.
+  - This is used for DOOM-style **vertical auto-aim** (no mouse-look) so projectiles can still hit targets at different floor heights.
 - Uses `collision_move_circle` (world collision in XY).
 - On collision, emits `ENTITY_EVENT_PROJECTILE_HIT_WALL` and requests despawn.
 
@@ -276,6 +278,14 @@ Pass 2:
     - projectile: `[z, z+height]`
     - target: `[z, z+height]`
   - Emits `ENTITY_EVENT_DAMAGE` and requests despawn.
+
+### DOOM-style vertical auto-aim (projectiles)
+
+Because Mortum uses DOOM-style controls (no mouse-look), projectile weapons can feel unfair when targets are on a different floor height. To compensate, projectile entities support **vertical auto-aim**:
+
+- Call `entity_system_projectile_autoaim()` after spawning a projectile.
+- The helper picks a target along the projectile's yaw direction (either the player, or the nearest damageable entity) and sets `projectile.body.vz` so the projectile's Z will intersect the target at the estimated time-of-flight.
+- Occlusion rule: the auto-aim helper uses solid-wall line-of-sight. Portal walls do not block.
 
 ### Enemies
 

@@ -160,8 +160,9 @@ void weapons_update(
 				int sector = player->body.sector >= 0 ? player->body.sector : player->body.last_valid_sector;
 				EntityId proj_id;
 				if (entity_system_spawn(entities, def_idx, sx, sy, player->angle_deg, sector, &proj_id)) {
-					// Player is not an entity yet; leave owner as none.
-					(void)proj_id;
+					// DOOM-style vertical auto-aim: adjust projectile vz so it can connect with
+					// a target at a different floor height even without mouse-look.
+					(void)entity_system_projectile_autoaim(entities, proj_id, false, &player->body);
 				}
 			}
 		}

@@ -45,6 +45,142 @@ static void spatial_invalidate(EntitySystem* es);
 static void spatial_rebuild(EntitySystem* es);
 static uint32_t spatial_query_circle_indices(EntitySystem* es, float x, float y, float radius, uint32_t* out_idx, uint32_t out_cap);
 
+static float clampf3(float v, float lo, float hi) {
+	if (v < lo) {
+		return lo;
+	}
+	if (v > hi) {
+		return hi;
+	}
+	return v;
+}
+
+static bool projectile_autoaim_apply(EntitySystem* es, Entity* proj, const PhysicsBody* player_body, bool target_player) {
+	if (!es || !proj || !es->defs) {
+		return false;
+	}
+	const EntityDef* def = &es->defs->defs[proj->def_id];
+	if (def->kind != ENTITY_KIND_PROJECTILE) {
+		return false;
+	}
+	if (!es->world) {
+		return false;
+	}
+	float speed = def->u.projectile.speed;
+	if (speed <= 1e-4f) {
+		return false;
+	}
+
+	float ang = deg_to_rad2(proj->yaw_deg);
+	float fx = cosf(ang);
+	float fy = sinf(ang);
+	float rx = -fy;
+	float ry = fx;
+
+	// Choose the closest valid target along the projectile's yaw direction.
+	float best_forward = 1e30f;
+	float best_tx = 0.0f;
+	float best_ty = 0.0f;
+	float best_tz_center = 0.0f;
+	float best_radius = 0.0f;
+	bool found = false;
+
+	if (target_player) {
+		if (!player_body) {
+			return false;
+		}
+		float vx = player_body->x - proj->body.x;
+		float vy = player_body->y - proj->body.y;
+		float forward = vx * fx + vy * fy;
+		if (forward > 0.05f) {
+			float lateral = fabsf(vx * rx + vy * ry);
+			float rr = proj->body.radius + player_body->radius;
+			if (lateral <= rr) {
+				if (collision_line_of_sight(es->world, proj->body.x, proj->body.y, player_body->x, player_body->y)) {
+					best_forward = forward;
+					best_tx = player_body->x;
+					best_ty = player_body->y;
+					best_tz_center = player_body->z + 0.5f * player_body->height;
+					best_radius = player_body->radius;
+					found = true;
+				}
+			}
+		}
+	} else {
+		for (uint32_t i = 0; i < es->capacity; i++) {
+			if (!es->alive[i]) {
+				continue;
+			}
+			Entity* t = &es->entities[i];
+			if (t == proj || t->pending_despawn) {
+				continue;
+			}
+			if (!entity_id_is_none(proj->owner) && t->id.index == proj->owner.index && t->id.gen == proj->owner.gen) {
+				continue;
+			}
+			const EntityDef* tdef = &es->defs->defs[t->def_id];
+			if (tdef->max_hp <= 0) {
+				continue;
+			}
+			if (tdef->kind == ENTITY_KIND_PICKUP || tdef->kind == ENTITY_KIND_PROJECTILE) {
+				continue;
+			}
+
+			float vx = t->body.x - proj->body.x;
+			float vy = t->body.y - proj->body.y;
+			float forward = vx * fx + vy * fy;
+			if (forward <= 0.05f || forward >= best_forward) {
+				continue;
+			}
+			float lateral = fabsf(vx * rx + vy * ry);
+			float rr = proj->body.radius + t->body.radius;
+			if (lateral > rr) {
+				continue;
+			}
+			if (!collision_line_of_sight(es->world, proj->body.x, proj->body.y, t->body.x, t->body.y)) {
+				continue;
+			}
+			best_forward = forward;
+			best_tx = t->body.x;
+			best_ty = t->body.y;
+			best_tz_center = t->body.z + 0.5f * t->body.height;
+			best_radius = t->body.radius;
+			found = true;
+		}
+	}
+
+	if (!found) {
+		return false;
+	}
+
+	// Convert forward distance into a time-of-flight estimate.
+	float t_hit = best_forward / speed;
+	// Avoid extreme vertical velocities for point-blank shots.
+	t_hit = clampf3(t_hit, 0.05f, 10.0f);
+
+	float proj_z_center0 = proj->body.z + 0.5f * proj->body.height;
+	float desired_vz = (best_tz_center - proj_z_center0) / t_hit;
+
+	// Mild clamp to avoid absurd values; still allows significant height differences.
+	float max_vz = speed * 4.0f;
+	proj->body.vz = clampf3(desired_vz, -max_vz, max_vz);
+	(void)best_tx;
+	(void)best_ty;
+	(void)best_radius;
+	return true;
+}
+
+bool entity_system_projectile_autoaim(EntitySystem* es, EntityId projectile_id, bool target_player, const PhysicsBody* player_body) {
+	if (!es) {
+		return false;
+	}
+	Entity* proj = NULL;
+	if (!entity_system_resolve(es, projectile_id, &proj)) {
+		return false;
+	}
+	return projectile_autoaim_apply(es, proj, player_body, target_player);
+}
+
 static void* xrealloc(void* p, size_t n) {
 	void* q = realloc(p, n);
 	return q;
@@ -1106,6 +1242,14 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			CollisionMoveResult mr = collision_move_circle(es->world, e->body.radius, e->body.x, e->body.y, to_x, to_y);
 			e->body.x = mr.out_x;
 			e->body.y = mr.out_y;
+			// Projectiles move in XY but may have a vertical velocity (DOOM-style auto-aim).
+			e->body.z += e->body.vz * dt_s;
+			// Keep sector bookkeeping up to date as the projectile crosses portal boundaries.
+			int sec = world_find_sector_at_point_stable(es->world, e->body.x, e->body.y, e->body.last_valid_sector);
+			e->body.sector = sec;
+			if (sec >= 0) {
+				e->body.last_valid_sector = sec;
+			}
 			if (mr.collided) {
 				EntityEvent ev;
 				memset(&ev, 0, sizeof(ev));

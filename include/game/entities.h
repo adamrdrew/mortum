@@ -228,6 +228,17 @@ void entity_system_shutdown(EntitySystem* es);
 void entity_system_reset(EntitySystem* es, const World* world, const EntityDefs* defs);
 
 bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y, float yaw_deg, int sector, EntityId* out_id);
+
+// Applies DOOM-style vertical auto-aim to an existing projectile entity.
+// This adjusts the projectile's vertical velocity (body.vz) so that, when fired in the XY plane
+// (no mouse-look), it can still connect with a target at a different floor/sector height.
+//
+// target_player == false: aims toward the nearest damageable entity along the projectile's yaw.
+// target_player == true: aims toward the player body (player is not an entity).
+//
+// Returns true if a target was found and an aim adjustment was applied.
+bool entity_system_projectile_autoaim(EntitySystem* es, EntityId projectile_id, bool target_player, const PhysicsBody* player_body);
+
 void entity_system_request_despawn(EntitySystem* es, EntityId id);
 
 bool entity_system_resolve(EntitySystem* es, EntityId id, Entity** out);
