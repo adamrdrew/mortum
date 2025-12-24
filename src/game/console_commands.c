@@ -254,6 +254,11 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 	if (!name_is_safe_filename(map_name)) {
 		return false;
 	}
+	// map_load() overwrites the MapLoadResult struct; destroy prior owned allocations first.
+	if (*ctx->map_ok) {
+		map_load_result_destroy(ctx->map);
+		*ctx->map_ok = false;
+	}
 	bool ok = map_load(ctx->map, ctx->paths, map_name);
 	*ctx->map_ok = ok;
 	if (!ok) {
@@ -280,6 +285,8 @@ static bool load_episode_by_name(ConsoleCommandContext* ctx, const char* episode
 	if (!ctx || !ctx->ep || !ctx->runner || !name_is_safe_filename(episode_name)) {
 		return false;
 	}
+	// episode_load() overwrites the Episode struct; destroy prior owned allocations first.
+	episode_destroy(ctx->ep);
 	if (!episode_load(ctx->ep, ctx->paths, episode_name)) {
 		return false;
 	}
@@ -419,14 +426,30 @@ static bool cmd_config_change(Console* con, int argc, const char** argv, void* u
 		return false;
 	}
 	const char* key_path = argv[0];
-	char value_norm[256];
-	strncpy(value_norm, argv[1] ? argv[1] : "", sizeof(value_norm) - 1);
-	value_norm[sizeof(value_norm) - 1] = '\0';
-	lower_inplace(value_norm);
+	char value_raw[256];
+	strncpy(value_raw, argv[1] ? argv[1] : "", sizeof(value_raw) - 1);
+	value_raw[sizeof(value_raw) - 1] = '\0';
 
-	CoreConfigValueKind provided = infer_value_kind(value_norm);
+	// Preserve string case (filenames, titles) but accept case-insensitive booleans.
+	char value_lower[256];
+	strncpy(value_lower, value_raw, sizeof(value_lower) - 1);
+	value_lower[sizeof(value_lower) - 1] = '\0';
+	lower_inplace(value_lower);
+
+	CoreConfigValueKind provided = CORE_CONFIG_VALUE_STRING;
+	const char* value_to_pass = value_raw;
+	if (strcmp(value_lower, "true") == 0 || strcmp(value_lower, "false") == 0) {
+		provided = CORE_CONFIG_VALUE_BOOL;
+		value_to_pass = value_lower; // core_config_try_set_by_path expects normalized "true"/"false".
+	} else if (looks_like_number(value_raw)) {
+		provided = CORE_CONFIG_VALUE_NUMBER;
+		value_to_pass = value_raw;
+	} else {
+		provided = CORE_CONFIG_VALUE_STRING;
+		value_to_pass = value_raw;
+	}
 	CoreConfigValueKind expected = CORE_CONFIG_VALUE_STRING;
-	CoreConfigSetStatus st = core_config_try_set_by_path(key_path, provided, value_norm, &expected);
+	CoreConfigSetStatus st = core_config_try_set_by_path(key_path, provided, value_to_pass, &expected);
 	if (st == CORE_CONFIG_SET_UNKNOWN_KEY) {
 		console_print(con, "Error: Unknown config key");
 		return false;
