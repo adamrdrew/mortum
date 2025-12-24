@@ -64,6 +64,7 @@
     {
       "name": "test_projectile",
       "kind": "projectile",
+      "react_to_world_lights": false,
       "sprite": {
         "file": {
           "name": "test_projectile.png",

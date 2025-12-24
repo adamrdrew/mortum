@@ -62,10 +62,13 @@ In practice:
 `EntityDef` fields:
 - `name` (string)
 - `sprite` (`EntitySprite`)
+- `light` (`EntityLightDef`) (optional entity-attached point light)
 - `kind` (`EntityKind`)
 - `radius` (float)
 - `height` (float)
 - `max_hp` (int)
+- `react_to_world_lights` (bool; default `true`)
+  - If `false`, the sprite ignores world point lights (but still respects fog + sector ambient/tint).
 - `u` union:
   - `pickup: EntityDefPickup`
   - `projectile: EntityDefProjectile`
