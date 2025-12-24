@@ -194,6 +194,7 @@ All declarations are in [include/game/entities.h](../include/game/entities.h).
 - `void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const World* world, const Camera* cam, int start_sector, TextureRegistry* texreg, const AssetPaths* paths, const float* wall_depth)`
   - Renders billboard sprites with wall occlusion.
   - Requires `wall_depth` from the raycaster for per-column occlusion.
+    - `wall_depth[x]` is **portal-aware**: it represents the nearest occluding depth along that screen column after recursing through any portal open spans. Fully open portal boundaries do not occlude sprites, so entities can render across sector boundaries when there is line-of-sight.
 
 Important rendering rules:
 - Sprites are sorted back-to-front by depth using a **stable** insertion sort.

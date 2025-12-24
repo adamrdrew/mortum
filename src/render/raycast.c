@@ -1115,12 +1115,11 @@ static void render_column_textured_recursive(
 	const Wall* w = &world->walls[hit_wall];
 	float corr_safe = corr > 0.001f ? corr : 0.001f;
 	float dist = hit_t * corr_safe;
-	if (out_depth) {
-		// Keep nearest depth for the column.
-		if (out_depth[x] > dist) {
-			out_depth[x] = dist;
-		}
-	}
+
+	// NOTE: out_depth is used for sprite occlusion (see entity_system_draw_sprites).
+	// We want portal boundaries to be transparent for occlusion when they have an
+	// open span, otherwise entities in adjacent sectors get incorrectly culled.
+	// So we only write depth for solid walls (and for "portals" with no open span).
 
 	// Compute hit u along segment (0..1) for lighting interpolation, plus world-space
 	// distance along the wall for texture tiling.
@@ -1176,6 +1175,12 @@ static void render_column_textured_recursive(
 
 	// Solid wall
 	if ((unsigned)other >= (unsigned)world->sector_count) {
+		if (out_depth) {
+			// Keep nearest depth for the column.
+			if (out_depth[x] > dist) {
+				out_depth[x] = dist;
+			}
+		}
 		double walls_t0 = 0.0;
 		if (perf) {
 			walls_t0 = platform_time_seconds();
@@ -1340,6 +1345,14 @@ static void render_column_textured_recursive(
 			y_open1 = fb->height;
 		}
 		has_open = (y_open0 < y_open1);
+	}
+	if (!has_open) {
+		// Treat as an occluder if the portal has no visible open span.
+		if (out_depth) {
+			if (out_depth[x] > dist) {
+				out_depth[x] = dist;
+			}
+		}
 	}
 
 	// Recurse through the open span first, then draw this sector's planes only outside
