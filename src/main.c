@@ -492,7 +492,7 @@ int main(int argc, char** argv) {
 					SDL_SetRelativeMouseMode(cfg->window.relative_mouse ? SDL_TRUE : SDL_FALSE);
 					raycast_set_point_lights_enabled(cfg->render.point_lights_enabled);
 					point_lights_enabled = cfg->render.point_lights_enabled;
-					log_warn("Some config changes are startup-only (window size, internal resolution, vsync, SFX device params)");
+					log_warn("Some config changes are startup-only (window size, internal resolution, vsync, SFX device params, UI font)");
 				}
 			}
 			free(reload_path);
