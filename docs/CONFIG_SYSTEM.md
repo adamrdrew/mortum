@@ -22,7 +22,7 @@ This document is written to be *LLM-agent friendly*: it focuses on concrete file
 
 - Schema / struct definitions: [include/core/config.h](../include/core/config.h)
 - Loader + validation logic: [src/core/config.c](../src/core/config.c)
-- Startup path resolution + reload hotkey: [src/main.c](../src/main.c)
+- Startup path resolution + runtime config reload wiring: [src/main.c](../src/main.c)
 
 ### Default file
 
@@ -62,8 +62,13 @@ Important: there is no overlay/merge; one file is selected.
 
 ### Reload trigger
 
-- Default reload key is `U`.
-- Reload key is itself configurable via `input.bindings.reload_config`.
+Runtime reload is done via the in-game console command `config_reload`.
+
+There is no dedicated reload hotkey; debug/developer keybinds were removed in favor of console commands.
+
+Related:
+- `config_reload` attempts to re-load the active config file from disk using `CONFIG_LOAD_RELOAD`.
+- `config_change` mutates a single config key in-memory (validated and type-checked) without re-reading the file.
 
 ## JSON parsing / tokenization
 

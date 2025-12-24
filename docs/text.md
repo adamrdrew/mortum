@@ -127,7 +127,7 @@ Practical implications:
 
 There is a small built-in smoke test to validate rendering:
 
-- Toggle keybind: `input.bindings.toggle_font_test` (default: `F7`).
+- Toggle via the in-game console command: `show_font_test true|false`.
 - When enabled, the engine calls `font_draw_test_page(font, fb, 16, 16)`.
 
 This page renders:

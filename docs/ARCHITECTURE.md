@@ -11,6 +11,7 @@ Notable cross-cutting helpers:
 
 - `src/game/episode_runner.c`: episode progression (map index + carry-forward state).
 - `src/game/debug_overlay.c`: optional debug text overlay.
+- `src/game/console.c` + `src/game/console_commands.c`: in-game Quake-style console and developer commands.
 - `src/game/debug_spawn.c`: dev-only spawn helpers.
 
 Public headers live in `include/` mirroring the module names.

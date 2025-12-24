@@ -637,8 +637,8 @@ In [src/game/weapons.c](../src/game/weapons.c), the handgun spawns a simple proj
 
 ## Debugging
 
-- Entity dump: press the configured `entity_dump` key (default `L`) to print a full entity dump, including sprite projection diagnostics. See [src/game/debug_dump.c](../src/game/debug_dump.c).
-- Debug dump: run with `--debug-dump` and press the configured `debug_dump` key to print world/raycast info.
+- Entity dump: use the in-game console command `dump_entities` to print a full entity dump, including sprite projection diagnostics. See [src/game/debug_dump.c](../src/game/debug_dump.c).
+- The old keybind-driven debug dump flow (`--debug-dump` + `debug_dump` key) has been removed.
 
 When debugging close-range sprite behavior:
 - The entity dump prints `depth`, `proj_depth`, and `scale` (px/world-unit) using the same clamping rules as the renderer.
