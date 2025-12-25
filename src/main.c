@@ -523,6 +523,7 @@ int main(int argc, char** argv) {
 	while (running) {
 		double frame_t0 = platform_time_seconds();
 		double now = frame_t0;
+		double prev_time = loop.last_time_s;
 		double update_t0 = 0.0, update_t1 = 0.0;
 		double render3d_t0 = 0.0, render3d_t1 = 0.0;
 		double ui_t0 = 0.0, ui_t1 = 0.0;
@@ -531,6 +532,16 @@ int main(int argc, char** argv) {
 		double p_tick_ms = 0.0;
 		double p_draw_ms = 0.0;
 		int steps = game_loop_begin_frame(&loop, now);
+		double frame_dt_s = 0.0;
+		if (prev_time != 0.0) {
+			frame_dt_s = now - prev_time;
+			if (frame_dt_s < 0.0) {
+				frame_dt_s = 0.0;
+			}
+			if (frame_dt_s > 0.25) {
+				frame_dt_s = 0.25;
+			}
+		}
 
 		input_begin_frame(&in);
 		input_poll(&in);
@@ -540,7 +551,10 @@ int main(int argc, char** argv) {
 		}
 		bool console_open = console_is_open(&console);
 		if (console_open) {
+			console_blink_update(&console, (float)frame_dt_s);
 			console_update(&console, &in, &console_ctx);
+			// console_update() may close the console (e.g. via --close)
+			console_open = console_is_open(&console);
 		}
 
 		if (in.quit_requested || (!console_open && input_key_down(&in, SDL_SCANCODE_ESCAPE))) {

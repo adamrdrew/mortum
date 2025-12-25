@@ -1,6 +1,5 @@
 #include "game/console.h"
 
-
 #include "render/draw.h"
 #include "core/config.h"
 
@@ -219,6 +218,8 @@ void console_set_open(Console* con, bool open) {
 		con->scroll = 0;
 		con->history_pos = -1;
 		con->history_has_saved_input = false;
+		con->blink_timer = 0.0f;
+		con->blink_on = true;
 		// Prevent the toggle key's SDL_TEXTINPUT (e.g. '~') from appearing in the console.
 		con->suppress_text_once = true;
 	}
@@ -477,9 +478,14 @@ void console_update(Console* con, const Input* in, void* user_ctx) {
 		}
 		new_argv[new_argc++] = argv[i];
 	}
+	if (flag_close) {
+		// Close first so the game loop resumes immediately; then run command logic.
+		console_set_open(con, false);
+	}
 	(void)cmd->fn(con, new_argc, new_argv, user_ctx);
 	if (flag_close) {
-		con->open = false;
+		// Closing clears output; ensure no post-close output lingers.
+		console_clear(con);
 	}
 
 	// Clear input after execution.
@@ -503,7 +509,8 @@ void console_draw(const Console* con, FontSystem* font, Framebuffer* fb) {
 	if (cfg && cfg->console_opacity >= 0.0f && cfg->console_opacity <= 1.0f) {
 		opacity = cfg->console_opacity;
 	}
-	uint32_t bg = 0xFF000000u | ((uint32_t)(opacity * 255.0f) << 24);
+	uint32_t a = (uint32_t)(opacity * 255.0f);
+	uint32_t bg = (a << 24);
 	draw_rect(fb, 0, 0, fb->width, h, bg);
 
 	ColorRGBA white = color_from_abgr(0xFFFFFFFFu);
@@ -548,6 +555,21 @@ void console_draw(const Console* con, FontSystem* font, Framebuffer* fb) {
 		if (y + line_h > input_y) {
 			break;
 		}
+	}
+}
+
+void console_blink_update(Console* con, float dt) {
+	if (!con || !con->open) {
+		return;
+	}
+	if (dt < 0.0f) {
+		dt = 0.0f;
+	}
+	con->blink_timer += dt;
+	// 2 Hz blink (0.5s period)
+	while (con->blink_timer >= 0.5f) {
+		con->blink_timer -= 0.5f;
+		con->blink_on = !con->blink_on;
 	}
 }
 
