@@ -117,5 +117,7 @@ Docs:
 - Architecture: `docs/ARCHITECTURE.md`
 - Console: `docs/console.md`
 - Contributing/build conventions: `docs/CONTRIBUTING.md`
+- Emitters (sound + lights + particles): `docs/emitters.md`
+- Entity system (including entity-attached lights/particles): `docs/entities.md`
 
 Spec artifacts live under `specs/`.

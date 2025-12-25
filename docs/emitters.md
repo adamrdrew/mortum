@@ -1,9 +1,10 @@
-# Emitters (Light + Sound)
+# Emitters (Sound + Light + Particles)
 
 This document covers *all* emitter systems currently in Mortum:
 
 - **Sound emitters**: the gameplay-facing SFX entry point (one-shots + looping ambient sources).
 - **Light emitters**: point lights used by the software renderer lighting model.
+- **Particle emitters**: a pooled emitter system that spawns world-owned particles (sprites or simple shapes).
 
 The **header files** are treated as the API source of truth, and the **.c implementations** are treated as the behavioral source of truth.
 
@@ -32,6 +33,27 @@ The **header files** are treated as the API source of truth, and the **.c implem
 
 Related:
 - Entity-attached lights: [include/game/entities.h](../include/game/entities.h), [src/game/entities.c](../src/game/entities.c)
+
+### Particle emitters
+
+Particle emitters are two linked systems:
+
+- **World-owned particle pool** (`Particles`)
+  - Public API: [include/game/particles.h](../include/game/particles.h)
+  - Implementation: [src/game/particles.c](../src/game/particles.c)
+  - World storage: [include/game/world.h](../include/game/world.h)
+- **Pooled particle emitters** (`ParticleEmitters`)
+  - Public API: [include/game/particle_emitters.h](../include/game/particle_emitters.h)
+  - Implementation: [src/game/particle_emitters.c](../src/game/particle_emitters.c)
+
+Integration points:
+
+- Map-authored definitions: [include/assets/map_loader.h](../include/assets/map_loader.h), [src/assets/map_loader.c](../src/assets/map_loader.c)
+- Runtime integration:
+  - Map load + per-tick update + draw: [src/main.c](../src/main.c)
+  - Map reload via console uses the same respawn path: [src/game/console_commands.c](../src/game/console_commands.c)
+- Entity-attached particle emitters: [include/game/entities.h](../include/game/entities.h), [src/game/entities.c](../src/game/entities.c)
+- Texture lookup behavior for particle images: [src/render/texture.c](../src/render/texture.c)
 
 ---
 
@@ -395,6 +417,263 @@ Typical pattern:
 
 ---
 
+## Particle Emitters (Emitters + World Particles)
+
+### Conceptual model
+
+Mortum’s particle effects are split into two responsibilities:
+
+- `ParticleEmitters` are **spawners** (pooled, handle-based). They decide when/where to emit and create `Particle` instances.
+- `Particles` is a **world-owned particle pool**. Particles always tick to completion even if:
+  - the emitter is destroyed, or
+  - the particle is culled/occluded and not rendered.
+
+This matches the “emitters create things, world owns things” pattern used elsewhere.
+
+### Data model (API surface)
+
+Public APIs:
+
+- Emitter system: [include/game/particle_emitters.h](../include/game/particle_emitters.h)
+- Particle pool + draw API: [include/game/particles.h](../include/game/particles.h)
+
+Key types (exhaustive):
+
+From `include/game/particle_emitters.h`:
+
+- `ParticleVec3 { float x, y, z; }`
+- `ParticleEmitterColor { float r, g, b; float opacity; }`
+  - `opacity` is **blend opacity for image particles** (shape particles ignore it).
+- `ParticleEmitterKeyframe { float opacity; ParticleEmitterColor color; float size; ParticleVec3 offset; }`
+- `ParticleEmitterRotateTick { float deg; int time_ms; }`
+- `ParticleEmitterRotate { bool enabled; ParticleEmitterRotateTick tick; }`
+- `ParticleEmitterDef`:
+  - `particle_life_ms` (int)
+  - `emit_interval_ms` (int)
+  - `offset_jitter` (float)
+  - `rotate` (`ParticleEmitterRotate`)
+  - `image[64]` (optional particle image filename; if non-empty, overrides `shape`)
+  - `shape` (`ParticleShape` used when `image` is empty)
+  - `start` and `end` keyframes (`ParticleEmitterKeyframe`)
+- `ParticleEmitterId { uint16_t index; uint16_t generation; }`
+- `ParticleEmitters` pool (`PARTICLE_EMITTER_MAX` is 256)
+
+From `include/game/particles.h`:
+
+- `ParticleShape { PARTICLE_SHAPE_SQUARE, PARTICLE_SHAPE_CIRCLE }`
+- `ParticleKeyframe` (render-facing keyframe):
+  - `opacity`, `size`, `r,g,b`
+  - `color_blend_opacity` (image-only)
+  - `off_x/off_y/off_z`
+- `Particle` (world-owned instance)
+- `Particles` (owned pool, fixed `capacity`, default `PARTICLE_MAX_DEFAULT` = 4096)
+
+### Pool semantics and handle safety (implementation truth)
+
+#### `ParticleEmitters` (emitters)
+
+From [src/game/particle_emitters.c](../src/game/particle_emitters.c):
+
+- Fixed-capacity pool: `PARTICLE_EMITTER_MAX` slots.
+- `ParticleEmitterId` is stale-handle resistant:
+  - `{0,0}` is a “null id”.
+  - A non-zero id is invalid if the slot is dead, out of range, or generation mismatches.
+- Destroying an emitter:
+  - marks slot dead
+  - increments the slot generation
+  - pushes the slot back to the free list
+  - **does not destroy existing particles** (particles are world-owned).
+
+#### `Particles` (world particles)
+
+From [src/game/particles.c](../src/game/particles.c):
+
+- World-owned array of `Particle` items, length=`capacity`.
+- `particles_spawn` behavior:
+  - If the pool is full (`alive_count >= capacity`), the new particle is dropped.
+  - Otherwise it finds the first dead slot and copies the particle into it.
+  - There is no per-particle allocation.
+- `particles_tick` always advances all alive particles; rendering can cull without affecting lifecycle.
+
+### Emission gating semantics (portal-aware)
+
+From [src/game/particle_emitters.c](../src/game/particle_emitters.c):
+
+An emitter will emit this frame if either:
+
+1. The emitter is in the **same sector as the player** (`emitter_sector == player_sector`), or
+2. Otherwise: there is solid-wall line-of-sight between emitter and player, using `collision_line_of_sight`.
+   - Portals are treated as transparent.
+   - Solid walls block.
+
+If the emitter is gated off (no LOS across sectors):
+
+- The emitter does **not** accrue a backlog; its internal `emit_accum_ms` is reset.
+- When it becomes visible again, it resumes emitting starting from that moment.
+
+Spawn cadence details:
+
+- `emit_accum_ms` accumulates `dt_ms`.
+- Spawns are generated at `emit_interval_ms` steps.
+- Hard cap: at most 16 particles are spawned per emitter per update (prevents spiral-of-death when `dt_ms` is large).
+
+### Rendering and occlusion semantics
+
+From [src/game/particles.c](../src/game/particles.c):
+
+- `particles_draw(...)` draws all alive particles as billboard-style sprites/shapes.
+- Occlusion matches the entity sprite path:
+  - `wall_depth[x]` prevents drawing behind solid walls in a screen column.
+  - `depth_pixels[y*width + x]` prevents drawing behind already-rendered world pixels (walls + floors + ceilings).
+- Culled/occluded particles are still alive and still tick.
+
+Image particle specifics:
+
+- `FF00FF` (magenta) in the source image is treated as fully transparent (color key).
+- If `color_blend_opacity > 0`, a tint blend is applied on top of the source pixel color.
+
+Shape particle specifics:
+
+- `square`: filled axis-aligned square in sprite space; supports optional rotation.
+- `circle`: filled circle test; rotation is ignored.
+
+### Rotation semantics
+
+Rotation is discrete/tick-based.
+
+From `ParticleEmitterRotate` and [src/game/particles.c](../src/game/particles.c):
+
+- If `rotate.enabled == true` and `rotate.tick.time_ms > 0` and `rotate.tick.deg != 0`:
+  - particles accumulate time and step their rotation by `deg` every `time_ms`.
+- Rotation applies to **image particles and squares**; circles ignore rotation.
+
+### Texture lookup behavior for particle images
+
+Particle emitter defs use `image` as a filename only (no path).
+
+At render time, particle images are resolved via `texture_registry_get`, which searches `Assets/Images/Particles/<filename>` before sprites/sky/fallback (see [src/render/texture.c](../src/render/texture.c)).
+
+### Integration points (runtime wiring)
+
+World ownership:
+
+- `World` contains `Particles particles` (see [include/game/world.h](../include/game/world.h)).
+- Map load initializes the pool (`particles_init(&world.particles, PARTICLE_MAX_DEFAULT)`) and world destroy shuts it down (see [src/assets/map_loader.c](../src/assets/map_loader.c), [src/game/world.c](../src/game/world.c)).
+
+Main loop:
+
+- Each fixed step updates emitters, then ticks particles (see [src/main.c](../src/main.c)).
+- Rendering calls `particles_draw(...)` using the raycaster depth buffers so particles are occluded by the already-rendered world.
+
+### Map authoring: `particles[]` schema
+
+Maps may include a root-level `"particles"` array.
+
+Parsed into `MapLoadResult.particles` / `particle_count` as `MapParticleEmitter` definitions (see [include/assets/map_loader.h](../include/assets/map_loader.h) and [src/assets/map_loader.c](../src/assets/map_loader.c)). The runtime then creates live emitters from these definitions in `main.c`.
+
+Each entry is an object with:
+
+- Required:
+  - `x` (number)
+  - `y` (number)
+  - `particle_life_ms` (int)
+  - `emit_interval_ms` (int)
+  - `start` (object, keyframe)
+  - `end` (object, keyframe)
+- Optional:
+  - `z` (number, default `0`)
+  - `offset_jitter` (number, default `0`)
+  - `rotate` (object; defaults shown below)
+  - `image` (string; filename under `Assets/Images/Particles/`)
+  - `shape` (string: `"circle" | "square"`; default `"circle"`)
+
+Keyframe object schema (`start` and `end`):
+
+- Required:
+  - `opacity` (number)
+  - `size` (number; world units)
+  - `color` (object)
+  - `offset` (object with `x,y,z`)
+
+Color object schema:
+
+- Required:
+  - `value` (string: `"RRGGBB"` or `"#RRGGBB"`)
+- Optional:
+  - `opacity` (number)
+    - This is the **tint blend opacity for image particles**.
+    - It is ignored for shape particles.
+
+Rotate object schema:
+
+- Optional fields:
+  - `enabled` (bool, default `false`)
+  - `tick` (object)
+    - `deg` (number, default `0`)
+    - `time_ms` (int, default `30`)
+
+Example (shape particle):
+
+```json
+{
+  "particles": [
+    {
+      "x": 12.0,
+      "y": 6.5,
+      "z": 0.2,
+      "particle_life_ms": 900,
+      "emit_interval_ms": 30,
+      "offset_jitter": 0.12,
+      "shape": "circle",
+      "rotate": {"enabled": false},
+      "start": {
+        "opacity": 0.75,
+        "size": 0.18,
+        "color": {"value": "FFB35C"},
+        "offset": {"x": 0.0, "y": 0.0, "z": 0.0}
+      },
+      "end": {
+        "opacity": 0.0,
+        "size": 0.38,
+        "color": {"value": "882200"},
+        "offset": {"x": 0.0, "y": 0.0, "z": 0.8}
+      }
+    }
+  ]
+}
+```
+
+Example (image particle with tint blend):
+
+```json
+{
+  "particles": [
+    {
+      "x": 12.0,
+      "y": 6.5,
+      "particle_life_ms": 500,
+      "emit_interval_ms": 40,
+      "image": "smoke.png",
+      "rotate": {"enabled": true, "tick": {"deg": 12.0, "time_ms": 30}},
+      "start": {
+        "opacity": 0.6,
+        "size": 0.35,
+        "color": {"value": "FFFFFF", "opacity": 0.25},
+        "offset": {"x": 0.0, "y": 0.0, "z": 0.0}
+      },
+      "end": {
+        "opacity": 0.0,
+        "size": 0.7,
+        "color": {"value": "FFFFFF", "opacity": 0.0},
+        "offset": {"x": 0.0, "y": 0.0, "z": 0.5}
+      }
+    }
+  ]
+}
+```
+
+---
+
 ## Debugging + Troubleshooting
 
 ### Sound
@@ -415,6 +694,18 @@ Typical pattern:
 - If lighting cost is high:
   - Use the perf trace overlay/capture; `RaycastPerf` tracks `lighting_apply_calls` and `lighting_apply_light_iters` (see [include/render/raycast.h](../include/render/raycast.h) and [src/render/raycast.c](../src/render/raycast.c)).
   - Reduce number of lights near the camera or radius sizes; the renderer caps active lights, but uncapped cull still iterates world lights.
+
+### Particles
+
+- If nothing shows up:
+  - Confirm `particles_draw(...)` is being called with at least one depth buffer (`wall_depth` and/or `depth_pixels`). The function intentionally early-outs if both are NULL.
+  - If using `image`, confirm the file exists under `Assets/Images/Particles/`.
+- If an emitter seems to “turn off” across sectors:
+  - This is usually LOS gating: emitters outside the player sector require solid-wall LOS.
+  - When gated off, the emitter does not build up a backlog; emission resumes from the moment LOS is restored.
+- If an image has a magenta fringe or disappears unexpectedly:
+  - `FF00FF` is treated as transparent.
+  - Ensure sprite pixels aren’t using magenta unless intended as transparency.
 
 ---
 

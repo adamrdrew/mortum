@@ -63,6 +63,7 @@ In practice:
 - `name` (string)
 - `sprite` (`EntitySprite`)
 - `light` (`EntityLightDef`) (optional entity-attached point light)
+- `particles` (`EntityParticleEmitterDef`) (optional entity-attached particle emitter)
 - `kind` (`EntityKind`)
 - `radius` (float)
 - `height` (float)
@@ -83,6 +84,8 @@ In practice:
 - Rendering: `sprite_frame`
 - Relationships: `target`, `owner`
 - Enemy attack bookkeeping: `attack_has_hit`
+- Optional world light: `light_index` (runtime world light slot index; `-1` means none)
+- Optional particle emitter: `particle_emitter` (runtime `ParticleEmitterId`; `{0,0}` means none)
 - Lifetime: `pending_despawn`
 
 ### EntitySystem
@@ -124,11 +127,12 @@ All declarations are in [include/game/entities.h](../include/game/entities.h).
 - `void entity_system_shutdown(EntitySystem* es)`
   - Frees all allocations.
 
-- `void entity_system_reset(EntitySystem* es, World* world, const EntityDefs* defs)`
+- `void entity_system_reset(EntitySystem* es, World* world, ParticleEmitters* particle_emitters, const EntityDefs* defs)`
   - Clears all entities for a new level.
   - Preserves capacity but invalidates existing `EntityId`s by incrementing generation for every slot.
-  - Sets `es->world` and `es->defs` pointers (not owned).
+  - Sets `es->world`, `es->particle_emitters`, and `es->defs` pointers (not owned).
   - Detaches any entity-attached lights from the previous world.
+  - Destroys any entity-attached particle emitters from the previous `ParticleEmitters` pool.
 
 ### Entity-Attached Light Emitters
 
@@ -182,6 +186,103 @@ Example:
     "color": "#66AAFF",
     "flicker": "malfunction",
     "seed": 12345
+  }
+}
+```
+
+### Entity-Attached Particle Emitters
+
+Entities can optionally own **one** particle emitter that:
+
+- Is **spawned from an entity def** (`Assets/Entities/entities.json`) or attached via code.
+- Is always centered on the entity (position in defs is ignored).
+- **Follows the entity** as it moves.
+- Is **destroyed** when the entity dies or is despawned/removed.
+- Does **not** destroy existing particles when removed (particles are world-owned and run to completion).
+
+Relevant API/data:
+
+- `EntityDef.particles` (`EntityParticleEmitterDef`)
+- `Entity.particle_emitter` (runtime handle into a `ParticleEmitters` pool; `{0,0}` means none)
+- `EntitySystem.particle_emitters` (non-owned pointer; must be set by `entity_system_reset`)
+- Particle attach/detach APIs:
+  - `bool entity_system_particles_attach(EntitySystem* es, EntityId id, const ParticleEmitterDef* emitter_def)`
+  - `void entity_system_particles_detach(EntitySystem* es, EntityId id)`
+
+Lifecycle rules (implementation truth):
+
+- Spawn: if `def.particles.enabled`, an emitter is attached during `entity_system_spawn()`.
+- Tick: attached emitters update to the entity center once per tick.
+- Death: enemy emitters are detached when the enemy transitions into `DYING`.
+- Despawn/removal/reset/shutdown: emitters are detached/destroyed immediately and also defensively during slot free/reset/shutdown.
+
+#### Entity Def JSON schema: `particles`
+
+Inside each entity def object, `particles` is optional.
+
+Schema mirrors map-authored particle emitters, but without the emitter position:
+
+- Required (inside `particles` object):
+  - `particle_life_ms` (int)
+  - `emit_interval_ms` (int)
+  - `start` (object, keyframe)
+  - `end` (object, keyframe)
+- Optional:
+  - `enabled` (bool, default `true` if present; `false` disables)
+  - `offset_jitter` (number, default `0`)
+  - `rotate` (object)
+  - `image` (string; filename under `Assets/Images/Particles/`)
+  - `shape` (string: `"circle" | "square"`; default `"circle"`)
+
+Keyframe schema (for `start`/`end`):
+
+- Required:
+  - `opacity` (number)
+  - `size` (number; world units)
+  - `color` (object)
+  - `offset` (object with `x,y,z`)
+
+Color schema:
+
+- Required:
+  - `value` (string: `"RRGGBB"` or `"#RRGGBB"`)
+- Optional:
+  - `opacity` (number; image tint blend opacity; ignored for shapes)
+
+Rotate schema:
+
+- Optional:
+  - `enabled` (bool, default `false`)
+  - `tick` (object)
+    - `deg` (number, default `0`)
+    - `time_ms` (int, default `30`)
+
+Example:
+
+```json
+{
+  "name": "void_lurker",
+  "kind": "enemy",
+  "radius": 0.35,
+  "height": 1.2,
+  "max_hp": 20,
+  "particles": {
+    "emit_interval_ms": 30,
+    "particle_life_ms": 900,
+    "offset_jitter": 0.12,
+    "shape": "circle",
+    "start": {
+      "opacity": 0.75,
+      "size": 0.18,
+      "color": {"value": "FFB35C"},
+      "offset": {"x": 0.0, "y": 0.0, "z": 0.0}
+    },
+    "end": {
+      "opacity": 0.0,
+      "size": 0.38,
+      "color": {"value": "882200"},
+      "offset": {"x": 0.0, "y": 0.0, "z": 0.8}
+    }
   }
 }
 ```
