@@ -367,7 +367,8 @@ static bool cmd_help(Console* con, int argc, const char** argv, void* user_ctx) 
 		console_print(con, "help <command>");
 		console_print(con, "");
 		console_print(con, "All commands accept flags:");
-		console_print(con, "  --close   Closes the console after running the command");
+		console_print(con, "  --close   Closes the console before running the command");
+		console_print(con, "  --        Stops flag parsing (treat remaining tokens as args)");
 		console_print(con, "");
 		console_print(con, "Console keys:");
 		console_print(con, "- Up/Down: command history");

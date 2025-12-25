@@ -10,7 +10,7 @@
 // Quake-style in-game console.
 //
 // - White text on black background.
-// - Output scrolls upward (no user scrolling). Lines that scroll off the top are lost.
+// - Output scrolls upward; Shift+Up/Down scrolls the view. Lines that scroll off the top are lost.
 // - Dedicated input line at the bottom of the console area.
 // - Contents are not preserved between open/close.
 //

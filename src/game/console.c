@@ -457,7 +457,46 @@ void console_update(Console* con, const Input* in, void* user_ctx) {
 		return;
 	}
 
-	const ConsoleCommand* cmd = find_command(con, argv[0]);
+	// Global flag system:
+	// - Flags can appear anywhere in the line (before or after the command).
+	// - Unknown flags produce a bespoke error.
+	// - "--" ends flag parsing; remaining tokens are treated as positional args.
+	bool flag_close = false;
+	bool stop_flag_parse = false;
+	const char* pos_argv[CONSOLE_MAX_TOKENS];
+	int pos_argc = 0;
+	for (int i = 0; i < argc; i++) {
+		const char* t = argv[i];
+		if (!t || !t[0]) {
+			continue;
+		}
+		if (!stop_flag_parse && strcmp(t, "--") == 0) {
+			stop_flag_parse = true;
+			continue;
+		}
+		if (!stop_flag_parse && t[0] == '-' && t[1] == '-') {
+			if (strcmp(t, "--close") == 0) {
+				flag_close = true;
+				continue;
+			}
+			console_printf(con, "Error: Unknown flag: %s", t);
+			con->input_len = 0;
+			con->input[0] = '\0';
+			return;
+		}
+		if (pos_argc < CONSOLE_MAX_TOKENS) {
+			pos_argv[pos_argc++] = t;
+		}
+	}
+
+	if (pos_argc <= 0) {
+		console_print(con, "Error: Missing command.");
+		con->input_len = 0;
+		con->input[0] = '\0';
+		return;
+	}
+
+	const ConsoleCommand* cmd = find_command(con, pos_argv[0]);
 	if (!cmd) {
 		console_print(con, "Error: Unknown command.");
 		con->input_len = 0;
@@ -467,22 +506,11 @@ void console_update(Console* con, const Input* in, void* user_ctx) {
 
 	console_history_push(con, line);
 
-	// Flag system: scan for flags in argv, remove them, and act after command.
-	bool flag_close = false;
-	int new_argc = 0;
-	const char* new_argv[CONSOLE_MAX_TOKENS];
-	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "--close") == 0) {
-			flag_close = true;
-			continue;
-		}
-		new_argv[new_argc++] = argv[i];
-	}
 	if (flag_close) {
 		// Close first so the game loop resumes immediately; then run command logic.
 		console_set_open(con, false);
 	}
-	(void)cmd->fn(con, new_argc, new_argv, user_ctx);
+	(void)cmd->fn(con, pos_argc - 1, &pos_argv[1], user_ctx);
 	if (flag_close) {
 		// Closing clears output; ensure no post-close output lingers.
 		console_clear(con);

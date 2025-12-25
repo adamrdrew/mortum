@@ -83,8 +83,9 @@ Commands are registered with:
 
 All commands accept flags, which are parsed before command logic. The following flag is supported:
 
-- `--close` — closes the console after the command runs (the command logic still executes)
 - `--close` — closes the console before the command runs (the command logic still executes)
+
+Flags can appear before or after the command name. Unknown flags produce `Error: Unknown flag: <flag>`.
 
 Flags are listed in the help output. The flag system is extensible for future flags.
 
