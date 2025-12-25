@@ -65,11 +65,21 @@ typedef struct Particles {
 	int capacity;
 	Particle* items; // owned, length=capacity
 	int alive_count;
+
+	// Per-frame stats (cleared by particles_begin_frame).
+	uint32_t stats_spawned;
+	uint32_t stats_dropped;
+	uint32_t stats_drawn_particles;
+	uint32_t stats_pixels_written;
 } Particles;
 
 bool particles_init(Particles* self, int capacity);
 void particles_shutdown(Particles* self);
 void particles_reset(Particles* self);
+
+// Clears per-frame stats used by perf dumps.
+// Call once per frame (typically at the start of the frame).
+void particles_begin_frame(Particles* self);
 
 // Advances all particles by dt_ms. Particles always advance even if later culled from rendering.
 void particles_tick(Particles* self, uint32_t dt_ms);
@@ -89,7 +99,7 @@ typedef struct AssetPaths AssetPaths;
 // - `wall_depth` prevents drawing particles behind solid walls in a column.
 // - `depth_pixels` prevents drawing particles behind already-rendered world pixels.
 void particles_draw(
-	const Particles* self,
+	Particles* self,
 	Framebuffer* fb,
 	const World* world,
 	const Camera* cam,

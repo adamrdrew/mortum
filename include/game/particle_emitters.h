@@ -59,6 +59,12 @@ typedef struct ParticleEmitters {
 	uint16_t free_next[PARTICLE_EMITTER_MAX];
 	uint16_t generation[PARTICLE_EMITTER_MAX];
 	bool alive[PARTICLE_EMITTER_MAX];
+	int alive_count;
+
+	// Per-frame stats (cleared by particle_emitters_begin_frame).
+	uint32_t stats_emitters_updated;
+	uint32_t stats_emitters_gated;
+	uint32_t stats_particles_spawn_attempted;
 
 	// Runtime state.
 	float x[PARTICLE_EMITTER_MAX];
@@ -77,6 +83,10 @@ typedef struct World World;
 void particle_emitters_init(ParticleEmitters* self);
 void particle_emitters_shutdown(ParticleEmitters* self);
 void particle_emitters_reset(ParticleEmitters* self);
+
+// Clears per-frame stats used by perf dumps.
+// Call once per frame (typically at the start of the frame).
+void particle_emitters_begin_frame(ParticleEmitters* self);
 
 ParticleEmitterId particle_emitter_create(
 	ParticleEmitters* self,

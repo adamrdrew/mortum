@@ -128,6 +128,20 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	double present_ms[PERF_TRACE_FRAME_COUNT];
 	double steps_d[PERF_TRACE_FRAME_COUNT];
 
+	double pe_update_ms[PERF_TRACE_FRAME_COUNT];
+	double p_tick_ms[PERF_TRACE_FRAME_COUNT];
+	double p_draw_ms[PERF_TRACE_FRAME_COUNT];
+	double pe_alive[PERF_TRACE_FRAME_COUNT];
+	double pe_emitters_updated[PERF_TRACE_FRAME_COUNT];
+	double pe_emitters_gated[PERF_TRACE_FRAME_COUNT];
+	double pe_spawn_attempted[PERF_TRACE_FRAME_COUNT];
+	double p_alive[PERF_TRACE_FRAME_COUNT];
+	double p_capacity[PERF_TRACE_FRAME_COUNT];
+	double p_spawned[PERF_TRACE_FRAME_COUNT];
+	double p_dropped[PERF_TRACE_FRAME_COUNT];
+	double p_drawn_particles[PERF_TRACE_FRAME_COUNT];
+	double p_pixels_written[PERF_TRACE_FRAME_COUNT];
+
 	double rc_planes_ms[PERF_TRACE_FRAME_COUNT];
 	double rc_hit_ms[PERF_TRACE_FRAME_COUNT];
 	double rc_walls_ms[PERF_TRACE_FRAME_COUNT];
@@ -163,6 +177,19 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 		ui_ms[i] = f->ui_ms;
 		present_ms[i] = f->present_ms;
 		steps_d[i] = (double)f->steps;
+		pe_update_ms[i] = f->pe_update_ms;
+		p_tick_ms[i] = f->p_tick_ms;
+		p_draw_ms[i] = f->p_draw_ms;
+		pe_alive[i] = (double)f->pe_alive;
+		pe_emitters_updated[i] = (double)f->pe_emitters_updated;
+		pe_emitters_gated[i] = (double)f->pe_emitters_gated;
+		pe_spawn_attempted[i] = (double)f->pe_spawn_attempted;
+		p_alive[i] = (double)f->p_alive;
+		p_capacity[i] = (double)f->p_capacity;
+		p_spawned[i] = (double)f->p_spawned;
+		p_dropped[i] = (double)f->p_dropped;
+		p_drawn_particles[i] = (double)f->p_drawn_particles;
+		p_pixels_written[i] = (double)f->p_pixels_written;
 		rc_planes_ms[i] = f->rc_planes_ms;
 		rc_hit_ms[i] = f->rc_hit_test_ms;
 		rc_walls_ms[i] = f->rc_walls_ms;
@@ -200,6 +227,19 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	PerfStats s_ui = compute_stats(ui_ms, n);
 	PerfStats s_present = compute_stats(present_ms, n);
 	PerfStats s_steps = compute_stats(steps_d, n);
+	PerfStats s_pe_update = compute_stats(pe_update_ms, n);
+	PerfStats s_p_tick = compute_stats(p_tick_ms, n);
+	PerfStats s_p_draw = compute_stats(p_draw_ms, n);
+	PerfStats s_pe_alive = compute_stats(pe_alive, n);
+	PerfStats s_pe_updated = compute_stats(pe_emitters_updated, n);
+	PerfStats s_pe_gated = compute_stats(pe_emitters_gated, n);
+	PerfStats s_pe_spawn_attempted = compute_stats(pe_spawn_attempted, n);
+	PerfStats s_p_alive = compute_stats(p_alive, n);
+	PerfStats s_p_capacity = compute_stats(p_capacity, n);
+	PerfStats s_p_spawned = compute_stats(p_spawned, n);
+	PerfStats s_p_dropped = compute_stats(p_dropped, n);
+	PerfStats s_p_drawn = compute_stats(p_drawn_particles, n);
+	PerfStats s_p_pix = compute_stats(p_pixels_written, n);
 	PerfStats s_rc_planes = compute_stats(rc_planes_ms, n);
 	PerfStats s_rc_hit = compute_stats(rc_hit_ms, n);
 	PerfStats s_rc_walls = compute_stats(rc_walls_ms, n);
@@ -250,6 +290,22 @@ static void perf_trace_dump(const PerfTrace* t, FILE* out) {
 	print_stats_line(out, "frame_ms", &s_frame);
 	print_stats_line(out, "update_ms", &s_update);
 	print_stats_line(out, "render3d", &s_r3d);
+	fprintf(out, "particles (timings):\n");
+	print_stats_line_ms_precise(out, "  emit", &s_pe_update);
+	print_stats_line_ms_precise(out, "  tick", &s_p_tick);
+	print_stats_line_ms_precise(out, "  draw", &s_p_draw);
+	fprintf(out, "particles (counts avg): emitters_alive=%.1f updated=%.1f gated=%.1f spawn_attempted=%.1f\n",
+		s_pe_alive.avg,
+		s_pe_updated.avg,
+		s_pe_gated.avg,
+		s_pe_spawn_attempted.avg);
+	fprintf(out, "particles (pool avg): alive=%.1f cap=%.1f spawned=%.1f dropped=%.1f drawn=%.1f pixels=%.1f\n",
+		s_p_alive.avg,
+		s_p_capacity.avg,
+		s_p_spawned.avg,
+		s_p_dropped.avg,
+		s_p_drawn.avg,
+		s_p_pix.avg);
 	fprintf(out, "render3d_breakdown (includes sampling+lighting):\n");
 	print_stats_line(out, "  planes", &s_rc_planes);
 	print_stats_line(out, "  hit", &s_rc_hit);

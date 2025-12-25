@@ -90,6 +90,10 @@ void particle_emitters_init(ParticleEmitters* self) {
 	}
 	memset(self, 0, sizeof(*self));
 	self->initialized = true;
+	self->alive_count = 0;
+	self->stats_emitters_updated = 0u;
+	self->stats_emitters_gated = 0u;
+	self->stats_particles_spawn_attempted = 0u;
 	self->free_head = 0;
 	for (uint16_t i = 0; i < PARTICLE_EMITTER_MAX; i++) {
 		self->free_next[i] = (uint16_t)(i + 1u);
@@ -99,6 +103,15 @@ void particle_emitters_init(ParticleEmitters* self) {
 		self->last_valid_sector[i] = -1;
 	}
 	self->free_next[PARTICLE_EMITTER_MAX - 1] = (uint16_t)PARTICLE_EMITTER_MAX;
+}
+
+void particle_emitters_begin_frame(ParticleEmitters* self) {
+	if (!self || !self->initialized) {
+		return;
+	}
+	self->stats_emitters_updated = 0u;
+	self->stats_emitters_gated = 0u;
+	self->stats_particles_spawn_attempted = 0u;
 }
 
 void particle_emitters_shutdown(ParticleEmitters* self) {
@@ -133,6 +146,7 @@ ParticleEmitterId particle_emitter_create(
 	self->free_head = self->free_next[idx];
 
 	self->alive[idx] = true;
+	self->alive_count++;
 	self->x[idx] = x;
 	self->y[idx] = y;
 	self->z[idx] = z;
@@ -161,6 +175,9 @@ void particle_emitter_destroy(ParticleEmitters* self, ParticleEmitterId id) {
 	}
 	uint16_t idx = id.index;
 	self->alive[idx] = false;
+	if (self->alive_count > 0) {
+		self->alive_count--;
+	}
 	self->generation[idx]++;
 	self->free_next[idx] = self->free_head;
 	self->free_head = idx;
@@ -282,8 +299,10 @@ void particle_emitters_update(
 		if (!self->alive[i]) {
 			continue;
 		}
+		self->stats_emitters_updated++;
 		bool ok = emitter_should_emit(self, world, i, player_x, player_y, player_sector);
 		if (!ok) {
+			self->stats_emitters_gated++;
 			// No backlog; when visibility returns, resume regular cadence.
 			self->emit_accum_ms[i] = 0u;
 			continue;
@@ -298,6 +317,7 @@ void particle_emitters_update(
 			spawn_particle_from_emitter(particles, self, i);
 			self->spawn_counter[i]++;
 			spawned++;
+			self->stats_particles_spawn_attempted++;
 			// Bound per-update work; tiny intervals relative to dt_ms could otherwise burst.
 			if (spawned >= 16u) {
 				break;

@@ -527,6 +527,9 @@ int main(int argc, char** argv) {
 		double render3d_t0 = 0.0, render3d_t1 = 0.0;
 		double ui_t0 = 0.0, ui_t1 = 0.0;
 		double present_t0 = 0.0, present_t1 = 0.0;
+		double pe_update_ms = 0.0;
+		double p_tick_ms = 0.0;
+		double p_draw_ms = 0.0;
 		int steps = game_loop_begin_frame(&loop, now);
 
 		input_begin_frame(&in);
@@ -581,6 +584,11 @@ int main(int argc, char** argv) {
 		}
 		if (e_pressed) {
 			weapon_wheel_delta += 1;
+		}
+
+		if (map_ok) {
+			particle_emitters_begin_frame(&particle_emitters);
+			particles_begin_frame(&map.world.particles);
 		}
 		if (perf_trace_is_active(&perf)) {
 			update_t0 = platform_time_seconds();
@@ -744,6 +752,10 @@ int main(int argc, char** argv) {
 					uint32_t dt_ms = (uint32_t)ms;
 					particle_ms_remainder = ms - (double)dt_ms;
 					if (dt_ms > 0u) {
+						double t0 = 0.0;
+						if (perf_trace_is_active(&perf)) {
+							t0 = platform_time_seconds();
+						}
 						particle_emitters_update(
 							&particle_emitters,
 							&map.world,
@@ -752,7 +764,16 @@ int main(int argc, char** argv) {
 							player.body.y,
 							player.body.sector,
 							dt_ms);
+						if (perf_trace_is_active(&perf)) {
+							double t1 = platform_time_seconds();
+							pe_update_ms += (t1 - t0) * 1000.0;
+							t0 = t1;
+						}
 						particles_tick(&map.world.particles, dt_ms);
+						if (perf_trace_is_active(&perf)) {
+							double t1 = platform_time_seconds();
+							p_tick_ms += (t1 - t0) * 1000.0;
+						}
 					}
 				}
 
@@ -917,7 +938,14 @@ int main(int argc, char** argv) {
 		);
 		if (map_ok) {
 			entity_system_draw_sprites(&entities, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
-			particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
+			if (perf_trace_is_active(&perf)) {
+				double t0 = platform_time_seconds();
+				particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
+				double t1 = platform_time_seconds();
+				p_draw_ms += (t1 - t0) * 1000.0;
+			} else {
+				particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
+			}
 		}
 		if (perf_trace_is_active(&perf)) {
 			render3d_t1 = platform_time_seconds();
@@ -953,13 +981,26 @@ int main(int argc, char** argv) {
 		if (perf_trace_is_active(&perf)) {
 			present_t1 = platform_time_seconds();
 			double frame_t1 = present_t1;
-			PerfTraceFrame pf;
+			PerfTraceFrame pf = (PerfTraceFrame){0};
 			pf.frame_ms = (frame_t1 - frame_t0) * 1000.0;
 			pf.update_ms = (update_t1 - update_t0) * 1000.0;
 			pf.render3d_ms = (render3d_t1 - render3d_t0) * 1000.0;
 			pf.ui_ms = (ui_t1 - ui_t0) * 1000.0;
 			pf.present_ms = (present_t1 - present_t0) * 1000.0;
 			pf.steps = steps;
+			pf.pe_update_ms = pe_update_ms;
+			pf.p_tick_ms = p_tick_ms;
+			pf.p_draw_ms = p_draw_ms;
+			pf.pe_alive = particle_emitters.alive_count;
+			pf.pe_emitters_updated = (int)particle_emitters.stats_emitters_updated;
+			pf.pe_emitters_gated = (int)particle_emitters.stats_emitters_gated;
+			pf.pe_spawn_attempted = (int)particle_emitters.stats_particles_spawn_attempted;
+			pf.p_alive = map_ok ? map.world.particles.alive_count : 0;
+			pf.p_capacity = map_ok ? map.world.particles.capacity : 0;
+			pf.p_spawned = map_ok ? (int)map.world.particles.stats_spawned : 0;
+			pf.p_dropped = map_ok ? (int)map.world.particles.stats_dropped : 0;
+			pf.p_drawn_particles = map_ok ? (int)map.world.particles.stats_drawn_particles : 0;
+			pf.p_pixels_written = map_ok ? (int)map.world.particles.stats_pixels_written : 0;
 			pf.rc_planes_ms = rc_perf.planes_ms;
 			pf.rc_hit_test_ms = rc_perf.hit_test_ms;
 			pf.rc_walls_ms = rc_perf.walls_ms;

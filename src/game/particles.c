@@ -84,6 +84,20 @@ void particles_reset(Particles* self) {
 	}
 	memset(self->items, 0, (size_t)self->capacity * sizeof(Particle));
 	self->alive_count = 0;
+	self->stats_spawned = 0u;
+	self->stats_dropped = 0u;
+	self->stats_drawn_particles = 0u;
+	self->stats_pixels_written = 0u;
+}
+
+void particles_begin_frame(Particles* self) {
+	if (!self || !self->initialized) {
+		return;
+	}
+	self->stats_spawned = 0u;
+	self->stats_dropped = 0u;
+	self->stats_drawn_particles = 0u;
+	self->stats_pixels_written = 0u;
 }
 
 void particles_tick(Particles* self, uint32_t dt_ms) {
@@ -126,6 +140,7 @@ void particles_spawn(Particles* self, const Particle* p) {
 	}
 	// Drop newest when full.
 	if (self->alive_count >= self->capacity) {
+		self->stats_dropped++;
 		return;
 	}
 	for (int i = 0; i < self->capacity; i++) {
@@ -133,6 +148,7 @@ void particles_spawn(Particles* self, const Particle* p) {
 			self->items[i] = *p;
 			self->items[i].alive = true;
 			self->alive_count++;
+			self->stats_spawned++;
 			return;
 		}
 	}
@@ -175,7 +191,7 @@ static float camera_world_z_for_sector_approx2(const World* world, int sector, f
 }
 
 void particles_draw(
-	const Particles* self,
+	Particles* self,
 	Framebuffer* fb,
 	const World* world,
 	const Camera* cam,
@@ -190,6 +206,9 @@ void particles_draw(
 	if (!wall_depth && !depth_pixels) {
 		return;
 	}
+
+	uint32_t drawn_particles = 0u;
+	uint32_t pixels_written = 0u;
 
 	float cam_rad = deg_to_rad2(cam->angle_deg);
 	float fx = cosf(cam_rad);
@@ -296,6 +315,8 @@ void particles_draw(
 		uint8_t tint_g = (uint8_t)lroundf(k.g * 255.0f);
 		uint8_t tint_b = (uint8_t)lroundf(k.b * 255.0f);
 
+		bool any_pixel = false;
+
 		for (int x = clip_x0; x < clip_x1; x++) {
 			if (wall_depth && depth >= wall_depth[x]) {
 				continue;
@@ -369,7 +390,14 @@ void particles_draw(
 
 				uint32_t dst_px = fb->pixels[y * fb->width + x];
 				fb->pixels[y * fb->width + x] = blend_abgr8888_over(src_px, dst_px);
+				any_pixel = true;
+				pixels_written++;
 			}
 		}
+		if (any_pixel) {
+			drawn_particles++;
+		}
 	}
+	self->stats_drawn_particles = drawn_particles;
+	self->stats_pixels_written = pixels_written;
 }
