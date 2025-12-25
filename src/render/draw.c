@@ -30,6 +30,32 @@ void draw_rect(Framebuffer* fb, int x, int y, int w, int h, uint32_t rgba) {
 	}
 }
 
+static inline uint32_t blend_abgr8888_over(uint32_t src, uint32_t dst);
+
+void draw_rect_abgr8888_alpha(Framebuffer* fb, int x, int y, int w, int h, uint32_t abgr) {
+	int x0 = clampi(x, 0, fb->width);
+	int y0 = clampi(y, 0, fb->height);
+	int x1 = clampi(x + w, 0, fb->width);
+	int y1 = clampi(y + h, 0, fb->height);
+
+	unsigned a = (unsigned)(abgr >> 24) & 0xFFu;
+	if (a == 0u) {
+		return;
+	}
+	if (a == 255u) {
+		draw_rect(fb, x, y, w, h, abgr);
+		return;
+	}
+
+	for (int yy = y0; yy < y1; yy++) {
+		uint32_t* row = &fb->pixels[yy * fb->width + x0];
+		int count = x1 - x0;
+		for (int xx = 0; xx < count; xx++) {
+			row[xx] = blend_abgr8888_over(abgr, row[xx]);
+		}
+	}
+}
+
 static void put_pixel(Framebuffer* fb, int x, int y, uint32_t rgba) {
 	if ((unsigned)x >= (unsigned)fb->width || (unsigned)y >= (unsigned)fb->height) {
 		return;

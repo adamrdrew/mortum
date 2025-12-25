@@ -10,6 +10,7 @@
 #include <string.h>
 
 static CoreConfig g_cfg = {
+	.console_opacity = 0.9f,
 	.window = {
 		.title = "Mortum",
 		.width = 1280,
@@ -403,8 +404,20 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 	}
 
 	if (ok) {
-		static const char* const allowed_root[] = {"window", "render", "audio", "content", "ui", "input", "player", "footsteps", "weapons"};
+		static const char* const allowed_root[] = {"console_opacity", "window", "render", "audio", "content", "ui", "input", "player", "footsteps", "weapons"};
 		warn_unknown_keys(&doc, 0, allowed_root, (int)(sizeof(allowed_root) / sizeof(allowed_root[0])), "");
+
+		// console_opacity
+		int t_console_opacity = -1;
+		if (json_object_get(&doc, 0, "console_opacity", &t_console_opacity)) {
+			float v = 0.0f;
+			if (!json_get_float_any(&doc, t_console_opacity, &v) || v < 0.0f || v > 1.0f) {
+				log_error("Config: %s: console_opacity must be number in [0..1]", path);
+				ok = false;
+			} else {
+				next.console_opacity = v;
+			}
+		}
 
 		// window
 		int t_window = -1;
@@ -1401,6 +1414,11 @@ CoreConfigSetStatus core_config_try_set_by_path(
 	if (provided_kind == CORE_CONFIG_VALUE_BOOL && value_str) {
 		// Expect already normalized to "true"/"false".
 		(void)bool_norm;
+	}
+
+	// console
+	if (key_eq(key_path, "console_opacity")) {
+		return set_float(&g_cfg.console_opacity, 0.0f, 1.0f, provided_kind, value_str, out_expected_kind);
 	}
 
 	// window

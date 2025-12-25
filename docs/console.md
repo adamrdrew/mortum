@@ -14,7 +14,7 @@ This document describes:
 - Input prompt at the bottom; output scrolls upward.
 - Input line shows a blinking underscore cursor at the current position to indicate activity.
 - Output is a fixed-size ring buffer; old lines drop off.
-- Console background opacity is tunable via `console_opacity` in config.json (default 0.9) and can be changed live with the `config_change` command.
+- Console opacity is tunable via `console_opacity` in config.json (default 0.9) and can be changed live with the `config_change` command.
 - Gameplay input is disabled while the console is open.
 - Escape does **not** close the console (Escape is reserved for quitting when the console is closed).
 - Close the console via the `exit` command, the `--close` flag, or the toggle key.
@@ -84,6 +84,7 @@ Commands are registered with:
 All commands accept flags, which are parsed before command logic. The following flag is supported:
 
 - `--close` — closes the console after the command runs (the command logic still executes)
+- `--close` — closes the console before the command runs (the command logic still executes)
 
 Flags are listed in the help output. The flag system is extensible for future flags.
 
@@ -143,7 +144,7 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 
 ## Console Opacity
 
-- The console's background opacity is controlled by the `console_opacity` value in `config.json` (default 0.9).
+- The console's opacity is controlled by the `console_opacity` value in `config.json` (default 0.9).
 - You can change the opacity live using the `config_change console_opacity <value>` command.
 
 ## Extending the console

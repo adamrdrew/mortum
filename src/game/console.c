@@ -509,11 +509,12 @@ void console_draw(const Console* con, FontSystem* font, Framebuffer* fb) {
 	if (cfg && cfg->console_opacity >= 0.0f && cfg->console_opacity <= 1.0f) {
 		opacity = cfg->console_opacity;
 	}
-	uint32_t a = (uint32_t)(opacity * 255.0f);
+	uint32_t a = (uint32_t)(opacity * 255.0f + 0.5f);
 	uint32_t bg = (a << 24);
-	draw_rect(fb, 0, 0, fb->width, h, bg);
+	draw_rect_abgr8888_alpha(fb, 0, 0, fb->width, h, bg);
 
 	ColorRGBA white = color_from_abgr(0xFFFFFFFFu);
+	white.a = (uint8_t)a;
 	int line_h = font_line_height(font, 1.0f);
 	if (line_h <= 0) {
 		line_h = 16;
