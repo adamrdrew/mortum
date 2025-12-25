@@ -175,7 +175,8 @@ static void maybe_start_music_for_map(ConsoleCommandContext* ctx) {
 		return;
 	}
 	if (ctx->prev_bgmusic && strncmp(ctx->prev_bgmusic, midi_name, ctx->prev_bgmusic_cap) == 0 &&
-		ctx->prev_soundfont && strncmp(ctx->prev_soundfont, sf_name, ctx->prev_soundfont_cap) == 0) {
+		ctx->prev_soundfont && strncmp(ctx->prev_soundfont, sf_name, ctx->prev_soundfont_cap) == 0 &&
+		midi_is_playing()) {
 		return;
 	}
 

@@ -82,6 +82,69 @@ static bool file_exists(const char* path) {
 	return true;
 }
 
+static void maybe_start_map_music(
+	const AssetPaths* paths,
+	const MapLoadResult* map,
+	bool map_ok,
+	bool audio_enabled,
+	bool music_enabled,
+	char* prev_bgmusic,
+	size_t prev_bgmusic_cap,
+	char* prev_soundfont,
+	size_t prev_soundfont_cap
+) {
+	if (!paths || !map || !map_ok || !audio_enabled || !music_enabled || !prev_bgmusic || !prev_soundfont) {
+		return;
+	}
+	bool midi_exists = map->bgmusic[0] != '\0';
+	bool sf_exists = map->soundfont[0] != '\0';
+	if (!midi_exists || !sf_exists) {
+		return;
+	}
+
+	bool same = (strcmp(map->bgmusic, prev_bgmusic) == 0) && (strcmp(map->soundfont, prev_soundfont) == 0);
+	if (same && midi_is_playing()) {
+		return;
+	}
+
+	midi_stop();
+	char* midi_path = asset_path_join(paths, "Sounds/MIDI", map->bgmusic);
+	char* sf_path = asset_path_join(paths, "Sounds/SoundFonts", map->soundfont);
+	if (!midi_path || !sf_path) {
+		log_warn("MIDI path allocation failed");
+		free(midi_path);
+		free(sf_path);
+		return;
+	}
+	if (!file_exists(midi_path)) {
+		log_warn("MIDI file not found: %s", midi_path);
+		free(midi_path);
+		free(sf_path);
+		return;
+	}
+	if (!file_exists(sf_path)) {
+		log_warn("SoundFont file not found: %s", sf_path);
+		free(midi_path);
+		free(sf_path);
+		return;
+	}
+	if (midi_init(sf_path) == 0) {
+		midi_play(midi_path);
+		if (prev_bgmusic_cap > 0) {
+			strncpy(prev_bgmusic, map->bgmusic, prev_bgmusic_cap);
+			prev_bgmusic[prev_bgmusic_cap - 1] = '\0';
+		}
+		if (prev_soundfont_cap > 0) {
+			strncpy(prev_soundfont, map->soundfont, prev_soundfont_cap);
+			prev_soundfont[prev_soundfont_cap - 1] = '\0';
+		}
+	} else {
+		log_warn("Could not initialize MIDI playback");
+	}
+	free(midi_path);
+	free(sf_path);
+}
+
 static char* dup_cstr(const char* s) {
 	if (!s) {
 		return NULL;
@@ -388,32 +451,7 @@ int main(int argc, char** argv) {
 			}
 		}
 		// Validate MIDI and SoundFont existence for background music
-		if (map_ok && audio_enabled && music_enabled) {
-			bool midi_exists = map.bgmusic[0] != '\0';
-			bool sf_exists = map.soundfont[0] != '\0';
-			if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
-				midi_stop();
-				char* midi_path = asset_path_join(&paths, "Sounds/MIDI", map.bgmusic);
-				char* sf_path = asset_path_join(&paths, "Sounds/SoundFonts", map.soundfont);
-				if (!midi_path || !sf_path) {
-					log_warn("MIDI path allocation failed");
-				} else if (!file_exists(midi_path)) {
-					log_warn("MIDI file not found: %s", midi_path);
-				} else if (!file_exists(sf_path)) {
-					log_warn("SoundFont file not found: %s", sf_path);
-				} else {
-					if (midi_init(sf_path) == 0) {
-						midi_play(midi_path);
-						strncpy(prev_bgmusic, map.bgmusic, sizeof(prev_bgmusic));
-						strncpy(prev_soundfont, map.soundfont, sizeof(prev_soundfont));
-					} else {
-						log_warn("Could not initialize MIDI playback");
-					}
-				}
-				free(midi_path);
-				free(sf_path);
-			}
-		}
+		maybe_start_map_music(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
 	}
 
 	LevelMesh mesh;
@@ -703,6 +741,10 @@ int main(int argc, char** argv) {
 			if (completed && exit_after_scene) {
 				running = false;
 			}
+			// If a scene overrode map music, restore the current map's MIDI when returning to gameplay.
+			if (completed && !exit_after_scene) {
+				maybe_start_map_music(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
+			}
 		} else {
 
 		if (map_ok) {
@@ -978,32 +1020,7 @@ int main(int argc, char** argv) {
 						}
 						gs.mode = GAME_MODE_PLAYING;
 						// --- MUSIC CHANGE LOGIC ---
-						if (audio_enabled && music_enabled) {
-							bool midi_exists = map.bgmusic[0] != '\0';
-							bool sf_exists = map.soundfont[0] != '\0';
-							if (midi_exists && sf_exists && (strcmp(map.bgmusic, prev_bgmusic) != 0 || strcmp(map.soundfont, prev_soundfont) != 0)) {
-								midi_stop();
-								char* midi_path = asset_path_join(&paths, "Sounds/MIDI", map.bgmusic);
-								char* sf_path = asset_path_join(&paths, "Sounds/SoundFonts", map.soundfont);
-								if (!midi_path || !sf_path) {
-									log_warn("MIDI path allocation failed");
-								} else if (!file_exists(midi_path)) {
-									log_warn("MIDI file not found: %s", midi_path);
-								} else if (!file_exists(sf_path)) {
-									log_warn("SoundFont file not found: %s", sf_path);
-								} else {
-									if (midi_init(sf_path) == 0) {
-										midi_play(midi_path);
-										strncpy(prev_bgmusic, map.bgmusic, sizeof(prev_bgmusic));
-										strncpy(prev_soundfont, map.soundfont, sizeof(prev_soundfont));
-									} else {
-										log_warn("Could not initialize MIDI playback");
-									}
-								}
-								free(midi_path);
-								free(sf_path);
-							}
-						}
+						maybe_start_map_music(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
 					}
 				}
 			}

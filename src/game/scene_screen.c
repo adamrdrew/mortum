@@ -139,7 +139,7 @@ static void scene_screen_on_exit(Screen* s, const ScreenContext* ctx) {
 	if (!self || !ctx) {
 		return;
 	}
-	if (ctx->audio_enabled && self->music_started) {
+	if (self->music_started) {
 		midi_stop();
 	}
 	if (ctx->audio_enabled && self->scene.sfx.exit_wav && self->scene.sfx.exit_wav[0] != '\0') {
