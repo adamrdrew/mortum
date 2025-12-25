@@ -346,12 +346,28 @@ static bool cmd_help(Console* con, int argc, const char** argv, void* user_ctx) 
 	}
 	if (argc <= 0) {
 		console_print(con, "Available Commands:");
-		for (int i = 0; i < con->command_count; i++) {
-			console_print(con, con->commands[i].name);
+		// Alphabetize commands for help output
+		const ConsoleCommand* sorted[64];
+		int n = con->command_count;
+		for (int i = 0; i < n; i++) sorted[i] = &con->commands[i];
+		for (int i = 0; i < n - 1; i++) {
+			for (int j = i + 1; j < n; j++) {
+				if (strcasecmp(sorted[i]->name, sorted[j]->name) > 0) {
+					const ConsoleCommand* tmp = sorted[i];
+					sorted[i] = sorted[j];
+					sorted[j] = tmp;
+				}
+			}
+		}
+		for (int i = 0; i < n; i++) {
+			console_print(con, sorted[i]->name);
 		}
 		console_print(con, "");
 		console_print(con, "Get detailed help for any command:");
 		console_print(con, "help <command>");
+		console_print(con, "");
+		console_print(con, "All commands accept flags:");
+		console_print(con, "  --close   Closes the console after running the command");
 		console_print(con, "");
 		console_print(con, "Console keys:");
 		console_print(con, "- Up/Down: command history");
@@ -609,10 +625,10 @@ void console_commands_register_all(Console* con) {
 	}
 	// Keep this list in the exact order requested.
 	(void)console_register_command(con, (ConsoleCommand){
-		.name = "Clear",
+		.name = "clear",
 		.description = "Clears the console output.",
-		.example = "Clear",
-		.syntax = "Clear",
+		.example = "clear",
+		.syntax = "clear",
 		.fn = cmd_clear,
 	});
 	(void)console_register_command(con, (ConsoleCommand){

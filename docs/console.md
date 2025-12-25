@@ -12,10 +12,12 @@ This document describes:
 - Toggle with the grave/tilde key (`` ` ``).
 - Black background with white text.
 - Input prompt at the bottom; output scrolls upward.
+- Input line shows a blinking underscore cursor at the current position to indicate activity.
 - Output is a fixed-size ring buffer; old lines drop off.
+- Console background opacity is tunable via `console_opacity` in config.json (default 0.9) and can be changed live with the `config_change` command.
 - Gameplay input is disabled while the console is open.
 - Escape does **not** close the console (Escape is reserved for quitting when the console is closed).
-- Close the console via the `exit` command (or toggle key).
+- Close the console via the `exit` command, the `--close` flag, or the toggle key.
 
 Keyboard behavior (when console is open):
 - Up/Down: command history
@@ -69,11 +71,21 @@ At runtime, `src/main.c`:
 
 ## Command system
 
-### Command registration
+
+### Command registration and flags
+
 
 Commands are registered with:
 
 - `console_register_command(Console* con, ConsoleCommand cmd)`
+
+#### Command flags
+
+All commands accept flags, which are parsed before command logic. The following flag is supported:
+
+- `--close` — closes the console after the command runs (the command logic still executes)
+
+Flags are listed in the help output. The flag system is extensible for future flags.
 
 The game’s built-in commands are registered by:
 
@@ -112,10 +124,9 @@ If a command name does not match any registered command, the console prints an e
 ## Built-in commands
 
 Defined in [src/game/console_commands.c](../src/game/console_commands.c).
-
-- `Clear` — clears console output
+- `clear` — clears console output
 - `exit` — closes console
-- `help` / `help <command>` — lists commands or shows details
+- `help` / `help <command>` — lists commands (alphabetically) or shows details
 - `config_reload` — reloads config from disk (non-fatal on invalid config)
 - `config_change <key_path> <value>` — updates a single config key in memory (validated)
 - `load_map <map.json>` — loads a map from `Assets/Levels/`
@@ -129,6 +140,11 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - `enable_light_emitters <boolean>` — toggles point light emitters
 - `enable_sound_emitters <boolean>` — toggles SFX emitters
 - `enable_music <boolean>` — toggles background music
+
+## Console Opacity
+
+- The console's background opacity is controlled by the `console_opacity` value in `config.json` (default 0.9).
+- You can change the opacity live using the `config_change console_opacity <value>` command.
 
 ## Extending the console
 
@@ -152,3 +168,4 @@ If you need different behavior (more scrollback, more tokens, etc.), adjust cons
 
 - The console suppresses the first text-input frame after opening so the toggle key doesn’t insert a character into the input line.
 - Submitting a command resets scroll to `0` so the console follows the latest output again.
+- The input line always shows a blinking underscore cursor at the current input position.

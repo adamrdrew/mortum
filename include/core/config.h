@@ -151,6 +151,7 @@ typedef struct CoreConfig {
 	PlayerTuningConfig player;
 	FootstepsConfig footsteps;
 	WeaponsConfig weapons;
+	float console_opacity;
 } CoreConfig;
 
 const CoreConfig* core_config_get(void);

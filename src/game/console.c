@@ -1,6 +1,8 @@
 #include "game/console.h"
 
+
 #include "render/draw.h"
+#include "core/config.h"
 
 #include <SDL.h>
 
@@ -464,7 +466,21 @@ void console_update(Console* con, const Input* in, void* user_ctx) {
 
 	console_history_push(con, line);
 
-	(void)cmd->fn(con, argc - 1, argv + 1, user_ctx);
+	// Flag system: scan for flags in argv, remove them, and act after command.
+	bool flag_close = false;
+	int new_argc = 0;
+	const char* new_argv[CONSOLE_MAX_TOKENS];
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--close") == 0) {
+			flag_close = true;
+			continue;
+		}
+		new_argv[new_argc++] = argv[i];
+	}
+	(void)cmd->fn(con, new_argc, new_argv, user_ctx);
+	if (flag_close) {
+		con->open = false;
+	}
 
 	// Clear input after execution.
 	con->input_len = 0;
@@ -481,7 +497,14 @@ void console_draw(const Console* con, FontSystem* font, Framebuffer* fb) {
 	if (h < 32) {
 		h = fb->height;
 	}
-	draw_rect(fb, 0, 0, fb->width, h, 0xFF000000u);
+	// Get opacity from config, fallback to 0.9 if not available
+	float opacity = 0.9f;
+	const CoreConfig* cfg = core_config_get();
+	if (cfg && cfg->console_opacity >= 0.0f && cfg->console_opacity <= 1.0f) {
+		opacity = cfg->console_opacity;
+	}
+	uint32_t bg = 0xFF000000u | ((uint32_t)(opacity * 255.0f) << 24);
+	draw_rect(fb, 0, 0, fb->width, h, bg);
 
 	ColorRGBA white = color_from_abgr(0xFFFFFFFFu);
 	int line_h = font_line_height(font, 1.0f);
@@ -495,10 +518,11 @@ void console_draw(const Console* con, FontSystem* font, Framebuffer* fb) {
 		input_y = 0;
 	}
 
-	// Input line at bottom.
+	// Input line at bottom with blinking cursor.
 	{
-		char buf[CONSOLE_LINE_MAX];
-		snprintf(buf, sizeof(buf), "> %s", con->input);
+		char buf[CONSOLE_LINE_MAX + 4];
+		const char* cursor = (con->blink_on ? "_" : " ");
+		snprintf(buf, sizeof(buf), "> %s%s", con->input, cursor);
 		font_draw_text(font, fb, padding, input_y, buf, white, 1.0f);
 	}
 
@@ -526,3 +550,5 @@ void console_draw(const Console* con, FontSystem* font, Framebuffer* fb) {
 		}
 	}
 }
+
+

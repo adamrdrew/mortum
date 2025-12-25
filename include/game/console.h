@@ -45,6 +45,10 @@ struct Console {
 	char input[CONSOLE_MAX_INPUT];
 	int input_len;
 
+	// For blinking cursor
+	float blink_timer;
+	bool blink_on;
+
 	// Command history (most recent at history[history_count-1]).
 	char history[CONSOLE_HISTORY_MAX][CONSOLE_MAX_INPUT];
 	int history_count;
@@ -84,3 +88,5 @@ void console_update(Console* con, const Input* in, void* user_ctx);
 
 // Renders the console overlay if open.
 void console_draw(const Console* con, FontSystem* font, Framebuffer* fb);
+// Call this once per frame to update the blink timer (dt in seconds)
+void console_blink_update(Console* con, float dt);
