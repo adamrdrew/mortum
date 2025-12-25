@@ -27,7 +27,7 @@ All paths are resolved relative to the asset root using `AssetPaths`.
 
 For Scene JSON and all referenced asset paths/filenames:
 
-- Must be **relative** (cannot start with `/`)
+- Must be **relative** (cannot start with `/` or `\\`)
 - Must not contain `..`
 - Must not contain `\\`
 - Allowed characters: `[A-Za-z0-9_./-]`
@@ -117,6 +117,8 @@ If multiple end conditions are set, the first one satisfied triggers exit.
   - `midi_play(midi)`
 - On exit: if Scene started music, it calls `midi_stop()`.
 
+If a map is currently loaded and has background music configured, the engine will attempt to resume the map's MIDI when returning to gameplay after the Scene completes.
+
 ### SFX
 
 - `enter_wav` plays once on enter.
@@ -135,8 +137,7 @@ Fades are applied as a full-screen alpha-blended overlay **after** drawing the s
 - Console:
   - `load_scene <scene_file>`
   - `<scene_file>` is resolved under `Assets/Scenes/`.
-  - `load_scene` does **not** unload the currently loaded map; it just runs the Scene as the active screen (gameplay update/render is suspended while the screen is active).
-  - To explicitly unload the current map/world state, use `unload_map` (console command).
+  - `load_scene` does **not** unload the currently loaded map; it runs the Scene as the active screen while gameplay update/render is suspended.
 
 - CLI:
   - `./build/mortum --scene <scene_file>`
