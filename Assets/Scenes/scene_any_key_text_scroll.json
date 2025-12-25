@@ -1,0 +1,14 @@
+{
+  "background_png": "Sky/purple.png",
+  "text": {
+    "value": "Mortum Scene Test\n(any key to exit)\n\nScrolling...",
+    "align": "center",
+    "font": "ProggyClean.ttf",
+    "size_px": 16,
+    "color_rgba": [255, 255, 255, 255],
+    "opacity": 1.0,
+    "scroll": true,
+    "scroll_speed_px_s": 20.0
+  },
+  "end": { "any_key": true }
+}

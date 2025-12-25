@@ -1,0 +1,6 @@
+{
+  "background_png": "Scenes/test_bg.png",
+  "fade_in": { "duration_ms": 300, "from_rgba": [0, 0, 0, 255] },
+  "fade_out": { "duration_ms": 300, "from_rgba": [0, 0, 0, 255] },
+  "end": { "timeout_ms": 1500 }
+}

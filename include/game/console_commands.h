@@ -17,6 +17,8 @@
 #include "game/player.h"
 #include "game/sound_emitters.h"
 
+#include "game/screen_runtime.h"
+
 #include "platform/window.h"
 
 #include "render/framebuffer.h"
@@ -71,6 +73,9 @@ typedef struct ConsoleCommandContext {
 	size_t prev_bgmusic_cap;
 	char* prev_soundfont;
 	size_t prev_soundfont_cap;
+
+	// Standalone screen runtime (used by developer-only screens such as Scenes).
+	ScreenRuntime* screens;
 } ConsoleCommandContext;
 
 // Registers the built-in Mortum console commands onto `con`.

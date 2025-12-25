@@ -1,5 +1,7 @@
 #include "game/console_commands.h"
 
+#include "assets/scene_loader.h"
+
 #include "assets/midi_player.h"
 
 #include "core/log.h"
@@ -8,6 +10,8 @@
 
 #include "render/camera.h"
 #include "render/raycast.h"
+
+#include "game/scene_screen.h"
 
 #include <SDL.h>
 
@@ -245,6 +249,54 @@ static void respawn_map_emitters_and_entities(ConsoleCommandContext* ctx) {
 	refresh_runtime_audio(ctx);
 }
 
+static void unload_map_and_world(ConsoleCommandContext* ctx) {
+	if (!ctx) {
+		return;
+	}
+
+	// Stop any map-driven music and looping audio before switching modes.
+	midi_stop();
+	if (ctx->prev_bgmusic && ctx->prev_bgmusic_cap > 0) {
+		ctx->prev_bgmusic[0] = '\0';
+	}
+	if (ctx->prev_soundfont && ctx->prev_soundfont_cap > 0) {
+		ctx->prev_soundfont[0] = '\0';
+	}
+
+	// Unload map assets.
+	if (ctx->map_ok && ctx->map && *ctx->map_ok) {
+		map_load_result_destroy(ctx->map);
+		*ctx->map_ok = false;
+	}
+	if (ctx->map_name_buf && ctx->map_name_cap > 0) {
+		ctx->map_name_buf[0] = '\0';
+	}
+	if (ctx->using_episode) {
+		*ctx->using_episode = false;
+	}
+
+	// Reset runtime systems that may still be producing audio/particles/entities.
+	if (ctx->sfx_emitters) {
+		sound_emitters_reset(ctx->sfx_emitters);
+		refresh_runtime_audio(ctx);
+	}
+	if (ctx->particle_emitters) {
+		particle_emitters_reset(ctx->particle_emitters);
+	}
+	if (ctx->entities && ctx->entity_defs) {
+		entity_system_reset(ctx->entities, NULL, ctx->particle_emitters, ctx->entity_defs);
+	}
+	if (ctx->mesh) {
+		level_mesh_destroy(ctx->mesh);
+		level_mesh_init(ctx->mesh);
+	}
+
+	// Ensure gameplay update logic doesn't continue running without a loaded map.
+	if (ctx->gs) {
+		ctx->gs->mode = GAME_MODE_LOSE;
+	}
+}
+
 static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, bool stop_episode) {
 	if (!ctx || !ctx->map || !ctx->paths || !ctx->map_ok || !ctx->mesh || !ctx->player || !ctx->gs) {
 		return false;
@@ -312,6 +364,7 @@ static bool cmd_config_change(Console* con, int argc, const char** argv, void* u
 static bool cmd_config_reload(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_map(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_episode(Console* con, int argc, const char** argv, void* user_ctx);
+static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_dump_perf(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_dump_entities(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_show_fps(Console* con, int argc, const char** argv, void* user_ctx);
@@ -487,13 +540,26 @@ static bool cmd_config_change(Console* con, int argc, const char** argv, void* u
 static bool cmd_load_map(Console* con, int argc, const char** argv, void* user_ctx) {
 	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
 	if (!ctx || argc < 1) {
-		console_print(con, "Error: Expected <map.json>");
+		console_print(con, "Error: Expected <map_file>");
 		return false;
 	}
 	if (!load_map_by_name(ctx, argv[0], true)) {
 		console_print(con, "Error: Failed to load map.");
 		return false;
 	}
+	console_print(con, "OK");
+	return true;
+}
+
+static bool cmd_unload_map(Console* con, int argc, const char** argv, void* user_ctx) {
+	(void)argc;
+	(void)argv;
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!ctx || !ctx->map_ok || !ctx->map) {
+		console_print(con, "Error: Unload unavailable.");
+		return false;
+	}
+	unload_map_and_world(ctx);
 	console_print(con, "OK");
 	return true;
 }
@@ -508,6 +574,40 @@ static bool cmd_load_episode(Console* con, int argc, const char** argv, void* us
 		console_print(con, "Error: Failed to load episode.");
 		return false;
 	}
+	console_print(con, "OK");
+	return true;
+}
+
+static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user_ctx) {
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!ctx || !ctx->paths || !ctx->fb || !ctx->screens || argc < 1) {
+		console_print(con, "Error: Expected <scene.json>");
+		return false;
+	}
+
+	Scene scene;
+	if (!scene_load(&scene, ctx->paths, argv[0])) {
+		console_print(con, "Error: Failed to load scene (see log).");
+		return false;
+	}
+
+	Screen* scr = scene_screen_create(scene);
+	if (!scr) {
+		console_print(con, "Error: Failed to create scene screen.");
+		scene_destroy(&scene);
+		return false;
+	}
+
+	ScreenContext sctx;
+	memset(&sctx, 0, sizeof(sctx));
+	sctx.fb = ctx->fb;
+	sctx.in = NULL;
+	sctx.paths = ctx->paths;
+	sctx.allow_input = false;
+	sctx.audio_enabled = (ctx->audio_enabled && *ctx->audio_enabled);
+	sctx.music_enabled = (ctx->music_enabled && *ctx->music_enabled);
+
+	screen_runtime_set(ctx->screens, scr, &sctx);
 	console_print(con, "OK");
 	return true;
 }
@@ -657,8 +757,15 @@ void console_commands_register_all(Console* con) {
 		.name = "load_map",
 		.description = "Loads a map from Assets/Levels/.",
 		.example = "load_map big.json",
-		.syntax = "load_map string",
+		.syntax = "load_map <map_file>",
 		.fn = cmd_load_map,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "unload_map",
+		.description = "Unloads the current map and clears world state.",
+		.example = "unload_map",
+		.syntax = "unload_map",
+		.fn = cmd_unload_map,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "load_episode",
@@ -666,6 +773,13 @@ void console_commands_register_all(Console* con) {
 		.example = "load_episode episode1.json",
 		.syntax = "load_episode string",
 		.fn = cmd_load_episode,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "load_scene",
+		.description = "Loads a scene from Assets/Scenes/ and runs it as the active screen.",
+		.example = "load_scene intro.json",
+		.syntax = "load_scene string",
+		.fn = cmd_load_scene,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "dump_perf",

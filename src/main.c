@@ -50,6 +50,10 @@
 #include "game/console.h"
 #include "game/console_commands.h"
 
+#include "game/screen_runtime.h"
+#include "assets/scene_loader.h"
+#include "game/scene_screen.h"
+
 #include <SDL.h>
 #include <stdbool.h>
 #include <math.h>
@@ -197,6 +201,8 @@ int main(int argc, char** argv) {
 
 	const char* config_path_arg = NULL;
 	const char* map_name_arg = NULL;
+	const char* scene_name_arg = NULL;
+	bool exit_after_scene = false;
 	for (int i = 1; i < argc; i++) {
 		const char* a = argv[i];
 		if (!a || a[0] == '\0') {
@@ -205,6 +211,14 @@ int main(int argc, char** argv) {
 		if (strcmp(a, "--config") == 0) {
 			if (i + 1 < argc) {
 				config_path_arg = argv[i + 1];
+				i++; // consume value
+			}
+			continue;
+		}
+		if (strcmp(a, "--scene") == 0) {
+			if (i + 1 < argc) {
+				scene_name_arg = argv[i + 1];
+				exit_after_scene = true;
 				i++; // consume value
 			}
 			continue;
@@ -330,7 +344,7 @@ int main(int argc, char** argv) {
 	}
 
 	Episode ep;
-	bool ep_ok = episode_load(&ep, &paths, cfg->content.default_episode);
+	bool ep_ok = false;
 	MapLoadResult map;
 	memset(&map, 0, sizeof(map));
 	bool map_ok = false;
@@ -338,11 +352,19 @@ int main(int argc, char** argv) {
 	EpisodeRunner runner;
 	episode_runner_init(&runner);
 	bool using_episode = false;
-	if (map_name_arg) {
+	if (scene_name_arg) {
+		// Standalone scene mode: do not load episodes or maps.
+		using_episode = false;
+		map_ok = false;
+		map_name_buf[0] = '\0';
+	} else {
+		ep_ok = episode_load(&ep, &paths, cfg->content.default_episode);
+	}
+	if (!scene_name_arg && map_name_arg) {
 		// A filename relative to Assets/Levels/ (e.g. "mortum_test.json").
 		strncpy(map_name_buf, map_name_arg, sizeof(map_name_buf));
 		map_name_buf[sizeof(map_name_buf) - 1] = '\0';
-	} else if (ep_ok && episode_runner_start(&runner, &ep)) {
+	} else if (!scene_name_arg && ep_ok && episode_runner_start(&runner, &ep)) {
 		using_episode = true;
 		const char* ep_map = episode_runner_current_map(&runner, &ep);
 		if (ep_map) {
@@ -514,6 +536,36 @@ int main(int argc, char** argv) {
 	console_ctx.prev_bgmusic_cap = sizeof(prev_bgmusic);
 	console_ctx.prev_soundfont = prev_soundfont;
 	console_ctx.prev_soundfont_cap = sizeof(prev_soundfont);
+
+	ScreenRuntime screens;
+	screen_runtime_init(&screens);
+	console_ctx.screens = &screens;
+
+	// If launched with --scene, load and activate the scene now.
+	if (scene_name_arg && scene_name_arg[0] != '\0') {
+		Scene scene;
+		if (!scene_load(&scene, &paths, scene_name_arg)) {
+			log_error("Failed to load scene: %s", scene_name_arg);
+			running = false;
+		} else {
+			Screen* scr = scene_screen_create(scene);
+			if (!scr) {
+				log_error("Failed to create scene screen");
+				scene_destroy(&scene);
+				running = false;
+			} else {
+				ScreenContext sctx;
+				memset(&sctx, 0, sizeof(sctx));
+				sctx.fb = &fb;
+				sctx.in = &in;
+				sctx.paths = &paths;
+				sctx.allow_input = true;
+				sctx.audio_enabled = audio_enabled;
+				sctx.music_enabled = music_enabled;
+				screen_runtime_set(&screens, scr, &sctx);
+			}
+		}
+	}
 	bool q_prev_down = false;
 	bool e_prev_down = false;
 	bool win_prev = false;
@@ -557,7 +609,8 @@ int main(int argc, char** argv) {
 			console_open = console_is_open(&console);
 		}
 
-		if (in.quit_requested || (!console_open && input_key_down(&in, SDL_SCANCODE_ESCAPE))) {
+		bool screen_active = screen_runtime_is_active(&screens);
+		if (in.quit_requested || (!console_open && !screen_active && input_key_down(&in, SDL_SCANCODE_ESCAPE))) {
 			running = false;
 			if (audio_enabled) {
 				midi_stop();
@@ -599,6 +652,58 @@ int main(int argc, char** argv) {
 		if (e_pressed) {
 			weapon_wheel_delta += 1;
 		}
+
+		if (screen_active) {
+			if (perf_trace_is_active(&perf)) {
+				update_t0 = platform_time_seconds();
+			}
+			ScreenContext sctx;
+			memset(&sctx, 0, sizeof(sctx));
+			sctx.fb = &fb;
+			sctx.in = &in;
+			sctx.paths = &paths;
+			sctx.allow_input = !console_open;
+			sctx.audio_enabled = audio_enabled;
+			sctx.music_enabled = music_enabled;
+			bool completed = screen_runtime_update(&screens, &sctx, frame_dt_s);
+			if (perf_trace_is_active(&perf)) {
+				update_t1 = platform_time_seconds();
+				ui_t0 = update_t1;
+			}
+			screen_runtime_draw(&screens, &sctx);
+			if (show_fps) {
+				char fps_text[32];
+				snprintf(fps_text, sizeof(fps_text), "FPS: %d", fps);
+				int w = font_measure_text_width(&ui_font, fps_text, 1.0f);
+				int x = fb.width - 8 - w;
+				int y = 8;
+				if (x < 0) {
+					x = 0;
+				}
+				font_draw_text(&ui_font, &fb, x, y, fps_text, color_from_abgr(0xFFFFFFFFu), 1.0f);
+			}
+			console_draw(&console, &ui_font, &fb);
+			if (perf_trace_is_active(&perf)) {
+				ui_t1 = platform_time_seconds();
+				present_t0 = ui_t1;
+			}
+			present_frame(&presenter, &win, &fb);
+			if (perf_trace_is_active(&perf)) {
+				present_t1 = platform_time_seconds();
+				double frame_t1 = present_t1;
+				PerfTraceFrame pf = (PerfTraceFrame){0};
+				pf.frame_ms = (frame_t1 - frame_t0) * 1000.0;
+				pf.update_ms = (update_t1 - update_t0) * 1000.0;
+				pf.render3d_ms = 0.0;
+				pf.ui_ms = (ui_t1 - ui_t0) * 1000.0;
+				pf.present_ms = (present_t1 - present_t0) * 1000.0;
+				pf.steps = steps;
+				perf_trace_record_frame(&perf, &pf, stdout);
+			}
+			if (completed && exit_after_scene) {
+				running = false;
+			}
+		} else {
 
 		if (map_ok) {
 			particle_emitters_begin_frame(&particle_emitters);
@@ -1038,6 +1143,7 @@ int main(int argc, char** argv) {
 			pf.rc_lighting_mul_light_iters = (int)rc_perf.lighting_mul_light_iters;
 			perf_trace_record_frame(&perf, &pf, stdout);
 		}
+	}
 
 		frames++;
 		if (now - fps_t0 >= 1.0) {
@@ -1045,6 +1151,18 @@ int main(int argc, char** argv) {
 			frames = 0;
 			fps_t0 = now;
 		}
+	}
+
+	{
+		ScreenContext sctx;
+		memset(&sctx, 0, sizeof(sctx));
+		sctx.fb = &fb;
+		sctx.in = &in;
+		sctx.paths = &paths;
+		sctx.allow_input = true;
+		sctx.audio_enabled = audio_enabled;
+		sctx.music_enabled = music_enabled;
+		screen_runtime_shutdown(&screens, &sctx);
 	}
 
 	if (map_ok) {

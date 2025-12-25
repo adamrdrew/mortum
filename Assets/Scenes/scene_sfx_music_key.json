@@ -1,0 +1,16 @@
+{
+  "background_png": "Sky/purple.png",
+  "music": { "midi": "DESOLATE.MID" },
+  "sfx": { "enter_wav": "Enemy_Robot_Death-001.wav", "exit_wav": "Enemy_Robot_Death-002.wav" },
+  "text": {
+    "value": "Press Space to exit (music + sfx)",
+    "align": "center",
+    "font": "ProggyClean.ttf",
+    "size_px": 16,
+    "color_rgba": [255, 255, 255, 255],
+    "opacity": 1.0
+  },
+  "fade_in": { "duration_ms": 200, "from_rgba": [0, 0, 0, 255] },
+  "fade_out": { "duration_ms": 400, "from_rgba": [0, 0, 0, 255] },
+  "end": { "key": "Space" }
+}

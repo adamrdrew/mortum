@@ -63,6 +63,7 @@ SRC := \
   src/assets/image_bmp.c \
 	src/assets/image_png.c \
   src/assets/sound_wav.c \
+  src/assets/scene_loader.c \
   src/assets/midi_player.c \
   src/game/world.c \
   src/game/physics_body.c \
@@ -89,7 +90,9 @@ SRC := \
   src/game/particle_emitters.c \
   src/game/particles.c \
   src/game/console.c \
-  src/game/console_commands.c
+  src/game/console_commands.c \
+  src/game/screen_runtime.c \
+  src/game/scene_screen.c
 
 SRC := $(SRC) \
 	src/game/entities.c
