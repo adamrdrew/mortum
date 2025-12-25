@@ -66,19 +66,6 @@ static bool looks_like_number(const char* s) {
 	return end && end != s && *end == '\0';
 }
 
-static CoreConfigValueKind infer_value_kind(const char* s) {
-	if (!s) {
-		return CORE_CONFIG_VALUE_STRING;
-	}
-	if (strcmp(s, "true") == 0 || strcmp(s, "false") == 0) {
-		return CORE_CONFIG_VALUE_BOOL;
-	}
-	if (looks_like_number(s)) {
-		return CORE_CONFIG_VALUE_NUMBER;
-	}
-	return CORE_CONFIG_VALUE_STRING;
-}
-
 static const char* kind_to_string(CoreConfigValueKind k) {
 	switch (k) {
 		case CORE_CONFIG_VALUE_STRING: return "string";
