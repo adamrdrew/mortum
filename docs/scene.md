@@ -135,6 +135,8 @@ Fades are applied as a full-screen alpha-blended overlay **after** drawing the s
 - Console:
   - `load_scene <scene_file>`
   - `<scene_file>` is resolved under `Assets/Scenes/`.
+  - `load_scene` does **not** unload the currently loaded map; it just runs the Scene as the active screen (gameplay update/render is suspended while the screen is active).
+  - To explicitly unload the current map/world state, use `unload_map` (console command).
 
 - CLI:
   - `./build/mortum --scene <scene_file>`
