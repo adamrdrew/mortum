@@ -85,6 +85,24 @@
         "color": "#FFD24A",
         "flicker": "none"
       },
+      "particles": {
+        "particle_life_ms": 300,
+        "emit_interval_ms": 25,
+        "offset_jitter": 0.09,
+        "shape": "circle",
+        "start": {
+          "opacity": 0.8,
+          "size": 0.06,
+          "color": {"value": "#FFD24A"},
+          "offset": {"x": 0.0, "y": 0.0, "z": 0.0}
+        },
+        "end": {
+          "opacity": 0.0,
+          "size": 0.22,
+          "color": {"value": "#777777"},
+          "offset": {"x": 0.0, "y": 0.0, "z": 0.18}
+        }
+      },
       "projectile": {
         "speed": 12.0,
         "lifetime_s": 2.0,
