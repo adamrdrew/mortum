@@ -327,7 +327,7 @@ void entity_system_draw_sprites(
 	TextureRegistry* texreg,
 	const AssetPaths* paths,
 	const float* wall_depth,
-	const float* depth_pixels
+	float* depth_pixels
 );
 
 uint32_t entity_system_alive_count(const EntitySystem* es);

@@ -916,8 +916,8 @@ int main(int argc, char** argv) {
 			rc_perf_ptr
 		);
 		if (map_ok) {
-			particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
 			entity_system_draw_sprites(&entities, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
+			particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
 		}
 		if (perf_trace_is_active(&perf)) {
 			render3d_t1 = platform_time_seconds();

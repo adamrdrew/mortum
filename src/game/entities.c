@@ -2537,7 +2537,7 @@ void entity_system_draw_sprites(
 	TextureRegistry* texreg,
 	const AssetPaths* paths,
 	const float* wall_depth,
-	const float* depth_pixels
+	float* depth_pixels
 ) {
 	if (!es || !fb || !fb->pixels || !world || !cam || !texreg || !paths || !es->defs) {
 		return;
@@ -2760,7 +2760,16 @@ void entity_system_draw_sprites(
 				if ((c & 0xFF000000u) == 0u) {
 					continue;
 				}
-				fb->pixels[y * fb->width + x] = apply_lighting_mul_u8_2(c, r_mul_i, g_mul_i, b_mul_i);
+				int idx = y * fb->width + x;
+				fb->pixels[idx] = apply_lighting_mul_u8_2(c, r_mul_i, g_mul_i, b_mul_i);
+				// Write sprite depth into the shared per-pixel depth buffer so later billboard draws
+				// (e.g. particles) can depth-test against entity sprites.
+				if (depth_pixels) {
+					float prev = depth_pixels[idx];
+					if (depth < prev) {
+						depth_pixels[idx] = depth;
+					}
+				}
 			}
 		}
 	}
