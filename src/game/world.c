@@ -9,6 +9,7 @@ void world_init_empty(World* self) {
 }
 
 void world_destroy(World* self) {
+	particles_shutdown(&self->particles);
 	free(self->vertices);
 	free(self->sectors);
 	free(self->walls);

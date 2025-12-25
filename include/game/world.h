@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "core/base.h"
+#include "game/particles.h"
 #include "render/lighting.h"
 
 typedef struct Vertex {
@@ -69,6 +70,10 @@ typedef struct World {
 	int light_free_cap;
 	int light_count; // total slots in use in lights[] (may include free slots)
 	int light_capacity;
+
+	// World-owned particle pool. Particles always run their lifecycle to completion
+	// even if their originating emitter is destroyed.
+	Particles particles;
 } World;
 
 void world_init_empty(World* self);

@@ -8,6 +8,7 @@
 #include "core/base.h"
 #include "game/ammo.h"
 #include "game/physics_body.h"
+#include "game/particle_emitters.h"
 
 #include "render/camera.h"
 #include "render/framebuffer.h"
@@ -151,10 +152,18 @@ typedef struct EntityLightDef {
 	PointLight light;
 } EntityLightDef;
 
+// Optional per-entity particle emitter.
+// Note: emitter position is ignored in defs and overwritten at runtime to track the owning entity.
+typedef struct EntityParticleEmitterDef {
+	bool enabled;
+	ParticleEmitterDef emitter;
+} EntityParticleEmitterDef;
+
 typedef struct EntityDef {
 	char name[64];
 	EntitySprite sprite;
 	EntityLightDef light;
+	EntityParticleEmitterDef particles;
 	EntityKind kind;
 	float radius;
 	float height;
@@ -202,6 +211,9 @@ typedef struct Entity {
 	// Optional runtime-attached point light index in World. -1 means none.
 	int light_index;
 
+	// Optional runtime-attached particle emitter handle. {0,0} means none.
+	ParticleEmitterId particle_emitter;
+
 	bool pending_despawn;
 } Entity;
 
@@ -234,6 +246,7 @@ typedef struct EntitySystem {
 	bool spatial_valid;
 
 	World* world; // not owned
+	ParticleEmitters* particle_emitters; // not owned
 	const EntityDefs* defs; // not owned
 } EntitySystem;
 
@@ -241,7 +254,7 @@ void entity_system_init(EntitySystem* es, uint32_t max_entities);
 void entity_system_shutdown(EntitySystem* es);
 
 // Resets for a new level (clears all entities).
-void entity_system_reset(EntitySystem* es, World* world, const EntityDefs* defs);
+void entity_system_reset(EntitySystem* es, World* world, ParticleEmitters* particle_emitters, const EntityDefs* defs);
 
 bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y, float yaw_deg, int sector, EntityId* out_id);
 
@@ -263,6 +276,12 @@ void entity_system_request_despawn(EntitySystem* es, EntityId id);
 bool entity_system_light_attach(EntitySystem* es, EntityId id, PointLight light_template);
 void entity_system_light_detach(EntitySystem* es, EntityId id);
 bool entity_system_light_set_radius(EntitySystem* es, EntityId id, float radius);
+
+// Entity-attached particle emitter (one per entity).
+// These emitters are owned by a ParticleEmitters pool and automatically track the entity center.
+// Attaching replaces any existing entity particle emitter.
+bool entity_system_particles_attach(EntitySystem* es, EntityId id, const ParticleEmitterDef* emitter_def);
+void entity_system_particles_detach(EntitySystem* es, EntityId id);
 
 bool entity_system_resolve(EntitySystem* es, EntityId id, Entity** out);
 

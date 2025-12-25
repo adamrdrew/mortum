@@ -223,9 +223,20 @@ static void respawn_map_emitters_and_entities(ConsoleCommandContext* ctx) {
 		}
 	}
 
+	// Map-authored particle emitters.
+	if (ctx->particle_emitters) {
+		particle_emitters_reset(ctx->particle_emitters);
+		if (ctx->map->particles && ctx->map->particle_count > 0) {
+			for (int i = 0; i < ctx->map->particle_count; i++) {
+				MapParticleEmitter* mp = &ctx->map->particles[i];
+				(void)particle_emitter_create(ctx->particle_emitters, &ctx->map->world, mp->x, mp->y, mp->z, &mp->def);
+			}
+		}
+	}
+
 	// Entities.
 	if (ctx->entities && ctx->entity_defs) {
-		entity_system_reset(ctx->entities, &ctx->map->world, ctx->entity_defs);
+		entity_system_reset(ctx->entities, &ctx->map->world, ctx->particle_emitters, ctx->entity_defs);
 		if (ctx->map->entities && ctx->map->entity_count > 0) {
 			entity_system_spawn_map(ctx->entities, ctx->map->entities, ctx->map->entity_count);
 		}

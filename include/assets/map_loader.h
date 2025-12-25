@@ -5,6 +5,8 @@
 #include "assets/asset_paths.h"
 #include "game/world.h"
 
+#include "game/particle_emitters.h"
+
 // Map-authored entity placements.
 // These are authored spawn points; the runtime entity system is responsible for creating
 // live entities from them.
@@ -31,6 +33,12 @@ typedef struct MapLoadResult {
 	struct MapSoundEmitter* sounds; // owned
 	int sound_count;
 
+	// Optional: map-authored particle emitters.
+	// These are definitions; the runtime ParticleEmitter system is responsible for creating
+	// live emitters from them. Particles themselves are world-owned.
+	struct MapParticleEmitter* particles; // owned
+	int particle_count;
+
 	// Optional: map-authored entities.
 	MapEntityPlacement* entities; // owned
 	int entity_count;
@@ -44,6 +52,13 @@ typedef struct MapSoundEmitter {
 	float gain;
 	char sound[64]; // WAV filename under Assets/Sounds/Effects/
 } MapSoundEmitter;
+
+typedef struct MapParticleEmitter {
+	float x;
+	float y;
+	float z;
+	ParticleEmitterDef def;
+} MapParticleEmitter;
 
 void map_load_result_destroy(MapLoadResult* self);
 

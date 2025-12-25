@@ -43,6 +43,8 @@
 
 #include "game/entities.h"
 
+#include "game/particle_emitters.h"
+
 #include "game/sound_emitters.h"
 
 #include "game/console.h"
@@ -280,6 +282,8 @@ int main(int argc, char** argv) {
 	sfx_set_master_volume(cfg->audio.sfx_master_volume);
 	SoundEmitters sfx_emitters;
 	sound_emitters_init(&sfx_emitters);
+	ParticleEmitters particle_emitters;
+	particle_emitters_init(&particle_emitters);
 
 	EntityDefs entity_defs;
 	entity_defs_init(&entity_defs);
@@ -417,7 +421,18 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	entity_system_reset(&entities, map_ok ? &map.world : NULL, &entity_defs);
+	// Spawn map-authored particle emitters.
+	if (map_ok) {
+		particle_emitters_reset(&particle_emitters);
+		if (map.particles && map.particle_count > 0) {
+			for (int i = 0; i < map.particle_count; i++) {
+				MapParticleEmitter* mp = &map.particles[i];
+				(void)particle_emitter_create(&particle_emitters, &map.world, mp->x, mp->y, mp->z, &mp->def);
+			}
+		}
+	}
+
+	entity_system_reset(&entities, map_ok ? &map.world : NULL, map_ok ? &particle_emitters : NULL, &entity_defs);
 	if (map_ok && map.entities && map.entity_count > 0) {
 		entity_system_spawn_map(&entities, map.entities, map.entity_count);
 	}
@@ -491,6 +506,7 @@ int main(int argc, char** argv) {
 	console_ctx.entities = &entities;
 	console_ctx.entity_defs = &entity_defs;
 	console_ctx.sfx_emitters = &sfx_emitters;
+	console_ctx.particle_emitters = &particle_emitters;
 	console_ctx.perf = &perf;
 	console_ctx.fb = &fb;
 	console_ctx.wall_depth = wall_depth;
@@ -501,6 +517,7 @@ int main(int argc, char** argv) {
 	bool q_prev_down = false;
 	bool e_prev_down = false;
 	bool win_prev = false;
+	double particle_ms_remainder = 0.0;
 
 
 	while (running) {
@@ -721,6 +738,24 @@ int main(int argc, char** argv) {
 				}
 				entity_system_flush(&entities);
 
+				// Particle emitters + particles (world-owned particles; emitters can be map- or entity-owned).
+				if (map_ok) {
+					double ms = loop.fixed_dt_s * 1000.0 + particle_ms_remainder;
+					uint32_t dt_ms = (uint32_t)ms;
+					particle_ms_remainder = ms - (double)dt_ms;
+					if (dt_ms > 0u) {
+						particle_emitters_update(
+							&particle_emitters,
+							&map.world,
+							&map.world.particles,
+							player.body.x,
+							player.body.y,
+							player.body.sector,
+							dt_ms);
+						particles_tick(&map.world.particles, dt_ms);
+					}
+				}
+
 				// Basic footsteps: emitted from player/camera position (non-spatial).
 				{
 					float vx = player.body.vx;
@@ -781,7 +816,8 @@ int main(int argc, char** argv) {
 						player.footstep_timer_s = 0.0f;
 						sound_emitters_reset(&sfx_emitters);
 						sound_emitters_set_enabled(&sfx_emitters, audio_enabled && sound_emitters_enabled);
-						entity_system_reset(&entities, &map.world, &entity_defs);
+						entity_system_reset(&entities, &map.world, &particle_emitters, &entity_defs);
+						particle_emitters_reset(&particle_emitters);
 						if (map.sounds && map.sound_count > 0) {
 							for (int i = 0; i < map.sound_count; i++) {
 								MapSoundEmitter* ms = &map.sounds[i];
@@ -789,6 +825,12 @@ int main(int argc, char** argv) {
 								if (ms->loop) {
 									sound_emitter_start_loop(&sfx_emitters, id, ms->sound, player.body.x, player.body.y);
 								}
+							}
+						}
+						if (map.particles && map.particle_count > 0) {
+							for (int i = 0; i < map.particle_count; i++) {
+								MapParticleEmitter* mp = &map.particles[i];
+								(void)particle_emitter_create(&particle_emitters, &map.world, mp->x, mp->y, mp->z, &mp->def);
 							}
 						}
 						if (map.entities && map.entity_count > 0) {
@@ -874,6 +916,7 @@ int main(int argc, char** argv) {
 			rc_perf_ptr
 		);
 		if (map_ok) {
+			particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
 			entity_system_draw_sprites(&entities, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
 		}
 		if (perf_trace_is_active(&perf)) {
@@ -971,6 +1014,7 @@ int main(int argc, char** argv) {
 	fs_paths_destroy(&fs);
 	font_system_shutdown(&ui_font);
 	sound_emitters_shutdown(&sfx_emitters);
+	particle_emitters_shutdown(&particle_emitters);
 	sfx_shutdown();
 	midi_shutdown(); // Clean up music resources
 	free(config_path);

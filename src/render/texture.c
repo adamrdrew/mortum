@@ -128,10 +128,12 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 	bool enforce_64 = false;
 
 	char* preferred = asset_path_join(paths, "Images/Textures", filename);
+	char* particles = asset_path_join(paths, "Images/Particles", filename);
 	char* sprites = asset_path_join(paths, "Images/Sprites", filename);
 	char* sky = asset_path_join(paths, "Images/Sky", filename);
 	char* fallback = asset_path_join(paths, "Images", filename);
 	const char* preferred_s = preferred ? preferred : "(alloc failed)";
+	const char* particles_s = particles ? particles : "(alloc failed)";
 	const char* sprites_s = sprites ? sprites : "(alloc failed)";
 	const char* sky_s = sky ? sky : "(alloc failed)";
 	const char* fallback_s = fallback ? fallback : "(alloc failed)";
@@ -145,6 +147,11 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 		log_error("Texture %s must be 64x64, got %dx%d", filename, img.width, img.height);
 		image_destroy(&img);
 		ok = false;
+	}
+
+	// Sprite directory (no size enforcement).
+	if (!ok && particles && file_exists(particles)) {
+		ok = image_load_auto(&img, particles);
 	}
 
 	// Sprite directory (no size enforcement).
@@ -163,13 +170,21 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 	}
 
 	if (!ok) {
-		log_error("Failed to load texture %s (tried %s; sprites %s; sky %s; fallback %s)", filename, preferred_s, sprites_s, sky_s, fallback_s);
+		log_error(
+			"Failed to load texture %s (tried %s; particles %s; sprites %s; sky %s; fallback %s)",
+			filename,
+			preferred_s,
+			particles_s,
+			sprites_s,
+			sky_s,
+			fallback_s);
 		// Cache miss to avoid repeated disk I/O and log spam every frame.
 		Texture* miss = registry_push(self);
 		if (miss) {
 			strncpy(miss->name, filename, sizeof(miss->name) - 1);
 		}
 		free(preferred);
+		free(particles);
 		free(sprites);
 		free(sky);
 		free(fallback);
@@ -180,6 +195,7 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 	}
 
 	free(preferred);
+	free(particles);
 	free(sprites);
 	free(sky);
 	free(fallback);

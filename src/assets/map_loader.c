@@ -4,6 +4,8 @@
 #include "assets/map_validate.h"
 #include "core/log.h"
 
+#include "game/particles.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -143,10 +145,174 @@ static bool json_get_bool(const JsonDoc* doc, int tok, bool* out) {
 	return false;
 }
 
+static bool parse_hex_rgb(StringView sv, float* out_r, float* out_g, float* out_b) {
+	if (!out_r || !out_g || !out_b) {
+		return false;
+	}
+	// Accept "RRGGBB" or "#RRGGBB".
+	if (sv.len == 7 && sv.data[0] == '#') {
+		sv.data++;
+		sv.len--;
+	}
+	if (sv.len != 6) {
+		return false;
+	}
+	unsigned v = 0;
+	for (size_t i = 0; i < 6; i++) {
+		char c = sv.data[i];
+		unsigned d = 0;
+		if (c >= '0' && c <= '9') {
+			d = (unsigned)(c - '0');
+		} else if (c >= 'a' && c <= 'f') {
+			d = 10u + (unsigned)(c - 'a');
+		} else if (c >= 'A' && c <= 'F') {
+			d = 10u + (unsigned)(c - 'A');
+		} else {
+			return false;
+		}
+		v = (v << 4u) | d;
+	}
+	unsigned r = (v >> 16u) & 0xFFu;
+	unsigned g = (v >> 8u) & 0xFFu;
+	unsigned b = v & 0xFFu;
+	*out_r = (float)r / 255.0f;
+	*out_g = (float)g / 255.0f;
+	*out_b = (float)b / 255.0f;
+	return true;
+}
+
+static bool json_get_particle_shape(const JsonDoc* doc, int tok, ParticleShape* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out) {
+		return false;
+	}
+	StringView svv;
+	if (!json_get_string(doc, tok, &svv)) {
+		return false;
+	}
+	if (svv.len == 6 && strncmp(svv.data, "circle", 6) == 0) {
+		*out = PARTICLE_SHAPE_CIRCLE;
+		return true;
+	}
+	if (svv.len == 6 && strncmp(svv.data, "square", 6) == 0) {
+		*out = PARTICLE_SHAPE_SQUARE;
+		return true;
+	}
+	return false;
+}
+
+static bool json_get_particle_color(const JsonDoc* doc, int tok, ParticleEmitterColor* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out || !json_token_is_object(doc, tok)) {
+		return false;
+	}
+	int t_value = -1;
+	int t_opacity = -1;
+	if (!json_object_get(doc, tok, "value", &t_value)) {
+		return false;
+	}
+	(void)json_object_get(doc, tok, "opacity", &t_opacity);
+	StringView svv;
+	if (!json_get_string(doc, t_value, &svv)) {
+		return false;
+	}
+	float r = 1.0f, g = 1.0f, b = 1.0f;
+	if (!parse_hex_rgb(svv, &r, &g, &b)) {
+		return false;
+	}
+	float opacity = 0.0f;
+	if (t_opacity != -1) {
+		if (!json_get_float(doc, t_opacity, &opacity)) {
+			return false;
+		}
+	}
+	out->r = r;
+	out->g = g;
+	out->b = b;
+	out->opacity = opacity;
+	return true;
+}
+
+static bool json_get_particle_keyframe(const JsonDoc* doc, int tok, ParticleEmitterKeyframe* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out || !json_token_is_object(doc, tok)) {
+		return false;
+	}
+	int t_opacity = -1;
+	int t_color = -1;
+	int t_size = -1;
+	int t_offset = -1;
+	if (!json_object_get(doc, tok, "opacity", &t_opacity) || !json_object_get(doc, tok, "color", &t_color) ||
+		!json_object_get(doc, tok, "size", &t_size) || !json_object_get(doc, tok, "offset", &t_offset)) {
+		return false;
+	}
+	float opacity = 1.0f;
+	float size = 1.0f;
+	if (!json_get_float(doc, t_opacity, &opacity) || !json_get_float(doc, t_size, &size)) {
+		return false;
+	}
+	ParticleEmitterColor c;
+	if (!json_get_particle_color(doc, t_color, &c)) {
+		return false;
+	}
+	if (!json_token_is_object(doc, t_offset)) {
+		return false;
+	}
+	int tx = -1, ty = -1, tz = -1;
+	if (!json_object_get(doc, t_offset, "x", &tx) || !json_object_get(doc, t_offset, "y", &ty) || !json_object_get(doc, t_offset, "z", &tz)) {
+		return false;
+	}
+	float ox = 0.0f, oy = 0.0f, oz = 0.0f;
+	if (!json_get_float(doc, tx, &ox) || !json_get_float(doc, ty, &oy) || !json_get_float(doc, tz, &oz)) {
+		return false;
+	}
+	out->opacity = opacity;
+	out->color = c;
+	out->size = size;
+	out->offset.x = ox;
+	out->offset.y = oy;
+	out->offset.z = oz;
+	return true;
+}
+
+static bool json_get_particle_rotate(const JsonDoc* doc, int tok, ParticleEmitterRotate* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out || !json_token_is_object(doc, tok)) {
+		return false;
+	}
+	out->enabled = false;
+	out->tick.deg = 0.0f;
+	out->tick.time_ms = 30;
+	int t_enabled = -1;
+	int t_tick = -1;
+	(void)json_object_get(doc, tok, "enabled", &t_enabled);
+	(void)json_object_get(doc, tok, "tick", &t_tick);
+	if (t_enabled != -1) {
+		if (!json_get_bool(doc, t_enabled, &out->enabled)) {
+			return false;
+		}
+	}
+	if (t_tick != -1) {
+		if (!json_token_is_object(doc, t_tick)) {
+			return false;
+		}
+		int t_deg = -1;
+		int t_time = -1;
+		(void)json_object_get(doc, t_tick, "deg", &t_deg);
+		(void)json_object_get(doc, t_tick, "time_ms", &t_time);
+		if (t_deg != -1 && !json_get_float(doc, t_deg, &out->tick.deg)) {
+			return false;
+		}
+		if (t_time != -1 && !json_get_int(doc, t_time, &out->tick.time_ms)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 void map_load_result_destroy(MapLoadResult* self) {
 	free(self->sounds);
 	self->sounds = NULL;
 	self->sound_count = 0;
+	free(self->particles);
+	self->particles = NULL;
+	self->particle_count = 0;
 	free(self->entities);
 	self->entities = NULL;
 	self->entity_count = 0;
@@ -157,6 +323,9 @@ void map_load_result_destroy(MapLoadResult* self) {
 bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filename) {
 	memset(out, 0, sizeof(*out));
 	world_init_empty(&out->world);
+	if (!particles_init(&out->world.particles, PARTICLE_MAX_DEFAULT)) {
+		return false;
+	}
 
 	char* full = asset_path_join(paths, "Levels", map_filename);
 	if (!full) {
@@ -210,6 +379,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	int t_walls = -1;
 	int t_lights = -1;
 	int t_sounds = -1;
+	int t_particles = -1;
 	int t_entities = -1;
 	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls)) {
 		log_error("Map JSON missing required fields");
@@ -218,6 +388,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	}
 	(void)json_object_get(&doc, 0, "lights", &t_lights);
 	(void)json_object_get(&doc, 0, "sounds", &t_sounds);
+	(void)json_object_get(&doc, 0, "particles", &t_particles);
 	(void)json_object_get(&doc, 0, "entities", &t_entities);
 
 	// player_start
@@ -565,6 +736,153 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 				size_t n = sv_sound.len < 63 ? sv_sound.len : 63;
 				memcpy(out->sounds[i].sound, sv_sound.data, n);
 				out->sounds[i].sound[n] = '\0';
+			}
+		}
+	}
+
+	// optional particle emitters
+	if (t_particles != -1) {
+		if (!json_token_is_array(&doc, t_particles)) {
+			log_error("particles must be an array");
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		int pcount = json_array_size(&doc, t_particles);
+		if (pcount > 0) {
+			out->particles = (MapParticleEmitter*)calloc((size_t)pcount, sizeof(MapParticleEmitter));
+			if (!out->particles) {
+				log_error("failed to allocate particles");
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			out->particle_count = pcount;
+			for (int i = 0; i < pcount; i++) {
+				int tp = json_array_nth(&doc, t_particles, i);
+				if (!json_token_is_object(&doc, tp)) {
+					log_error("particle emitter %d must be an object", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				int tx=-1, ty=-1;
+				int tz=-1;
+				int t_life=-1;
+				int t_interval=-1;
+				int t_jitter=-1;
+				int t_rotate=-1;
+				int t_image=-1;
+				int t_shape=-1;
+				int t_start=-1;
+				int t_end=-1;
+				if (!json_object_get(&doc, tp, "x", &tx) || !json_object_get(&doc, tp, "y", &ty) ||
+					!json_object_get(&doc, tp, "particle_life_ms", &t_life) || !json_object_get(&doc, tp, "emit_interval_ms", &t_interval) ||
+					!json_object_get(&doc, tp, "start", &t_start) || !json_object_get(&doc, tp, "end", &t_end)) {
+					log_error("particle emitter %d missing required fields", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				(void)json_object_get(&doc, tp, "z", &tz);
+				(void)json_object_get(&doc, tp, "offset_jitter", &t_jitter);
+				(void)json_object_get(&doc, tp, "rotate", &t_rotate);
+				(void)json_object_get(&doc, tp, "image", &t_image);
+				(void)json_object_get(&doc, tp, "shape", &t_shape);
+
+				float x = 0.0f, y = 0.0f, z = 0.0f;
+				if (!json_get_float(&doc, tx, &x) || !json_get_float(&doc, ty, &y)) {
+					log_error("particle emitter %d x/y invalid", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				if (tz != -1) {
+					if (!json_get_float(&doc, tz, &z)) {
+						log_error("particle emitter %d z invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				}
+
+				int life_ms = 0;
+				int interval_ms = 0;
+				if (!json_get_int(&doc, t_life, &life_ms) || !json_get_int(&doc, t_interval, &interval_ms)) {
+					log_error("particle emitter %d particle_life_ms/emit_interval_ms invalid", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				float jitter = 0.0f;
+				if (t_jitter != -1) {
+					if (!json_get_float(&doc, t_jitter, &jitter)) {
+						log_error("particle emitter %d offset_jitter invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				}
+
+				ParticleEmitterRotate rot;
+				rot.enabled = false;
+				rot.tick.deg = 0.0f;
+				rot.tick.time_ms = 30;
+				if (t_rotate != -1) {
+					if (!json_get_particle_rotate(&doc, t_rotate, &rot)) {
+						log_error("particle emitter %d rotate invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				}
+
+				char image[64];
+				image[0] = '\0';
+				if (t_image != -1) {
+					StringView sv_img;
+					if (!json_get_string(&doc, t_image, &sv_img)) {
+						log_error("particle emitter %d image invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					size_t n = sv_img.len < sizeof(image) - 1 ? sv_img.len : sizeof(image) - 1;
+					memcpy(image, sv_img.data, n);
+					image[n] = '\0';
+				}
+
+				ParticleShape shape = PARTICLE_SHAPE_CIRCLE;
+				if (t_shape != -1) {
+					if (!json_get_particle_shape(&doc, t_shape, &shape)) {
+						log_error("particle emitter %d shape invalid (circle|square)", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+				}
+
+				ParticleEmitterKeyframe start;
+				ParticleEmitterKeyframe end;
+				if (!json_get_particle_keyframe(&doc, t_start, &start) || !json_get_particle_keyframe(&doc, t_end, &end)) {
+					log_error("particle emitter %d start/end invalid", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+
+				out->particles[i].x = x;
+				out->particles[i].y = y;
+				out->particles[i].z = z;
+				out->particles[i].def.particle_life_ms = life_ms;
+				out->particles[i].def.emit_interval_ms = interval_ms;
+				out->particles[i].def.offset_jitter = jitter;
+				out->particles[i].def.rotate = rot;
+				out->particles[i].def.shape = shape;
+				out->particles[i].def.start = start;
+				out->particles[i].def.end = end;
+				strncpy(out->particles[i].def.image, image, sizeof(out->particles[i].def.image) - 1);
+				out->particles[i].def.image[sizeof(out->particles[i].def.image) - 1] = '\0';
 			}
 		}
 	}

@@ -61,6 +61,7 @@ typedef struct ConsoleCommandContext {
 	EntitySystem* entities;
 	EntityDefs* entity_defs;
 	SoundEmitters* sfx_emitters;
+	ParticleEmitters* particle_emitters;
 	PerfTrace* perf;
 	Framebuffer* fb;
 	float* wall_depth;

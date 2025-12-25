@@ -24,6 +24,29 @@
     {"v0": 2, "v1": 3, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]},
     {"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "flags": ["solid"]}
   ],
+  "particles": [
+    {
+      "x": 6.0,
+      "y": 6.0,
+      "z": 0.2,
+      "particle_life_ms": 900,
+      "emit_interval_ms": 45,
+      "offset_jitter": 0.12,
+      "shape": "circle",
+      "start": {
+        "opacity": 0.75,
+        "color": {"value": "FFAA33", "opacity": 0.0},
+        "size": 0.18,
+        "offset": {"x": 0.0, "y": 0.0, "z": 0.0}
+      },
+      "end": {
+        "opacity": 0.0,
+        "color": {"value": "FF2200", "opacity": 0.0},
+        "size": 0.55,
+        "offset": {"x": 0.0, "y": 0.0, "z": 0.9}
+      }
+    }
+  ],
   "entities": [
     {"def": "shambler", "x": 9, "y": 6, "yaw_deg": 180}
   ]

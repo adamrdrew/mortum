@@ -129,6 +129,136 @@ static bool json_get_light_flicker2(const JsonDoc* doc, int tok, LightFlicker* o
 	return false;
 }
 
+static bool json_get_particle_shape2(const JsonDoc* doc, int tok, ParticleShape* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out) {
+		return false;
+	}
+	StringView svv;
+	if (!json_get_string(doc, tok, &svv)) {
+		return false;
+	}
+	if (svv.len == 6 && strncmp(svv.data, "circle", 6) == 0) {
+		*out = PARTICLE_SHAPE_CIRCLE;
+		return true;
+	}
+	if (svv.len == 6 && strncmp(svv.data, "square", 6) == 0) {
+		*out = PARTICLE_SHAPE_SQUARE;
+		return true;
+	}
+	return false;
+}
+
+static bool json_get_particle_color2(const JsonDoc* doc, int tok, ParticleEmitterColor* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out || !json_token_is_object(doc, tok)) {
+		return false;
+	}
+	int t_value = -1;
+	int t_opacity = -1;
+	if (!json_object_get(doc, tok, "value", &t_value) || t_value < 0) {
+		return false;
+	}
+	(void)json_object_get(doc, tok, "opacity", &t_opacity);
+	StringView svv;
+	if (!json_get_string(doc, t_value, &svv)) {
+		return false;
+	}
+	LightColor lc;
+	lc.r = 1.0f;
+	lc.g = 1.0f;
+	lc.b = 1.0f;
+	if (!parse_hex_color_sv2(svv, &lc)) {
+		return false;
+	}
+	float opacity = 0.0f;
+	if (t_opacity != -1) {
+		if (!json_get_float2(doc, t_opacity, &opacity)) {
+			return false;
+		}
+	}
+	out->r = lc.r;
+	out->g = lc.g;
+	out->b = lc.b;
+	out->opacity = opacity;
+	return true;
+}
+
+static bool json_get_particle_keyframe2(const JsonDoc* doc, int tok, ParticleEmitterKeyframe* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out || !json_token_is_object(doc, tok)) {
+		return false;
+	}
+	int t_opacity = -1;
+	int t_color = -1;
+	int t_size = -1;
+	int t_offset = -1;
+	if (!json_object_get(doc, tok, "opacity", &t_opacity) || !json_object_get(doc, tok, "color", &t_color) ||
+		!json_object_get(doc, tok, "size", &t_size) || !json_object_get(doc, tok, "offset", &t_offset)) {
+		return false;
+	}
+	float opacity = 1.0f;
+	float size = 1.0f;
+	if (!json_get_float2(doc, t_opacity, &opacity) || !json_get_float2(doc, t_size, &size)) {
+		return false;
+	}
+	ParticleEmitterColor c;
+	if (!json_get_particle_color2(doc, t_color, &c)) {
+		return false;
+	}
+	if (!json_token_is_object(doc, t_offset)) {
+		return false;
+	}
+	int tx = -1, ty = -1, tz = -1;
+	if (!json_object_get(doc, t_offset, "x", &tx) || !json_object_get(doc, t_offset, "y", &ty) || !json_object_get(doc, t_offset, "z", &tz)) {
+		return false;
+	}
+	float ox = 0.0f, oy = 0.0f, oz = 0.0f;
+	if (!json_get_float2(doc, tx, &ox) || !json_get_float2(doc, ty, &oy) || !json_get_float2(doc, tz, &oz)) {
+		return false;
+	}
+	out->opacity = opacity;
+	out->color = c;
+	out->size = size;
+	out->offset.x = ox;
+	out->offset.y = oy;
+	out->offset.z = oz;
+	return true;
+}
+
+static bool json_get_particle_rotate2(const JsonDoc* doc, int tok, ParticleEmitterRotate* out) {
+	if (!doc || tok < 0 || tok >= doc->token_count || !out || !json_token_is_object(doc, tok)) {
+		return false;
+	}
+	out->enabled = false;
+	out->tick.deg = 0.0f;
+	out->tick.time_ms = 30;
+	int t_enabled = -1;
+	int t_tick = -1;
+	(void)json_object_get(doc, tok, "enabled", &t_enabled);
+	(void)json_object_get(doc, tok, "tick", &t_tick);
+	if (t_enabled != -1) {
+		bool b = false;
+		if (!json_get_bool2(doc, t_enabled, &b)) {
+			return false;
+		}
+		out->enabled = b;
+	}
+	if (t_tick != -1) {
+		if (!json_token_is_object(doc, t_tick)) {
+			return false;
+		}
+		int t_deg = -1;
+		int t_time = -1;
+		(void)json_object_get(doc, t_tick, "deg", &t_deg);
+		(void)json_object_get(doc, t_tick, "time_ms", &t_time);
+		if (t_deg != -1 && !json_get_float2(doc, t_deg, &out->tick.deg)) {
+			return false;
+		}
+		if (t_time != -1 && !json_get_int2(doc, t_time, &out->tick.time_ms)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static bool json_get_bool2(const JsonDoc* doc, int tok, bool* out) {
 	if (!doc || tok < 0 || !out) {
 		return false;
@@ -159,6 +289,20 @@ static void entity_light_detach_ptr(EntitySystem* es, Entity* e) {
 	e->light_index = -1;
 }
 
+static void entity_particles_detach_ptr(EntitySystem* es, Entity* e) {
+	if (!es || !e) {
+		return;
+	}
+	if (e->particle_emitter.generation == 0u) {
+		return;
+	}
+	if (es->particle_emitters) {
+		particle_emitter_destroy(es->particle_emitters, e->particle_emitter);
+	}
+	e->particle_emitter.index = 0u;
+	e->particle_emitter.generation = 0u;
+}
+
 static void entity_light_update_pos(EntitySystem* es, const Entity* e) {
 	if (!es || !es->world || !e) {
 		return;
@@ -168,6 +312,17 @@ static void entity_light_update_pos(EntitySystem* es, const Entity* e) {
 	}
 	float zc = e->body.z + 0.5f * e->body.height;
 	(void)world_light_set_pos(es->world, e->light_index, e->body.x, e->body.y, zc);
+}
+
+static void entity_particles_update_pos(EntitySystem* es, const Entity* e) {
+	if (!es || !es->world || !es->particle_emitters || !e) {
+		return;
+	}
+	if (e->particle_emitter.generation == 0u) {
+		return;
+	}
+	float zc = e->body.z + 0.5f * e->body.height;
+	particle_emitter_set_pos(es->particle_emitters, es->world, e->particle_emitter, e->body.x, e->body.y, zc);
 }
 
 static void physics_body_move_delta_block_portals(PhysicsBody* b, const World* world, float dx, float dy, const PhysicsBodyParams* params) {
@@ -556,6 +711,20 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 		def.light.light.color = light_color_white();
 		def.light.light.flicker = LIGHT_FLICKER_NONE;
 		def.light.light.seed = 0u;
+		def.particles.enabled = false;
+		memset(&def.particles.emitter, 0, sizeof(def.particles.emitter));
+		def.particles.emitter.shape = PARTICLE_SHAPE_CIRCLE;
+		def.particles.emitter.start.opacity = 1.0f;
+		def.particles.emitter.end.opacity = 0.0f;
+		def.particles.emitter.start.size = 1.0f;
+		def.particles.emitter.end.size = 1.0f;
+		def.particles.emitter.start.color.r = 1.0f;
+		def.particles.emitter.start.color.g = 1.0f;
+		def.particles.emitter.start.color.b = 1.0f;
+		def.particles.emitter.end.color = def.particles.emitter.start.color;
+		def.particles.emitter.rotate.enabled = false;
+		def.particles.emitter.rotate.tick.deg = 0.0f;
+		def.particles.emitter.rotate.tick.time_ms = 30;
 
 		int t_name = -1;
 		int t_kind = -1;
@@ -833,6 +1002,110 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 			def.light.light.color = lc;
 			def.light.light.flicker = flicker;
 			def.light.light.seed = seed;
+		}
+
+		// Optional entity-attached particle emitter.
+		int t_particles = -1;
+		if (json_object_get(&doc, t_def, "particles", &t_particles) && t_particles >= 0) {
+			if (!json_token_is_object(&doc, t_particles)) {
+				log_error("entity def '%s' particles must be an object", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+			int t_life = -1;
+			int t_interval = -1;
+			int t_start = -1;
+			int t_end = -1;
+			if (!json_object_get(&doc, t_particles, "particle_life_ms", &t_life) || !json_object_get(&doc, t_particles, "emit_interval_ms", &t_interval) ||
+				!json_object_get(&doc, t_particles, "start", &t_start) || !json_object_get(&doc, t_particles, "end", &t_end)) {
+				log_error("entity def '%s' particles missing required fields (particle_life_ms, emit_interval_ms, start, end)", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+			int life_ms = 0;
+			int interval_ms = 0;
+			if (!json_get_int2(&doc, t_life, &life_ms) || !json_get_int2(&doc, t_interval, &interval_ms)) {
+				log_error("entity def '%s' particles life/interval invalid", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+			float jitter = 0.0f;
+			int t_jitter = -1;
+			if (json_object_get(&doc, t_particles, "offset_jitter", &t_jitter) && t_jitter >= 0) {
+				if (!json_get_float2(&doc, t_jitter, &jitter)) {
+					log_error("entity def '%s' particles.offset_jitter invalid", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+			}
+
+			ParticleEmitterRotate rot;
+			rot.enabled = false;
+			rot.tick.deg = 0.0f;
+			rot.tick.time_ms = 30;
+			int t_rotate = -1;
+			if (json_object_get(&doc, t_particles, "rotate", &t_rotate) && t_rotate >= 0) {
+				if (!json_get_particle_rotate2(&doc, t_rotate, &rot)) {
+					log_error("entity def '%s' particles.rotate invalid", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+			}
+
+			char image[64] = "";
+			int t_image = -1;
+			if (json_object_get(&doc, t_particles, "image", &t_image) && t_image >= 0) {
+				if (!json_token_is_string(&doc, t_image)) {
+					log_error("entity def '%s' particles.image must be string", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+				StringView sv;
+				if (!json_get_string(&doc, t_image, &sv) || sv.len <= 0 || sv.len >= (int)sizeof(image)) {
+					log_error("entity def '%s' particles.image invalid", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+				snprintf(image, sizeof(image), "%.*s", (int)sv.len, sv.data);
+			}
+
+			ParticleShape shape = PARTICLE_SHAPE_CIRCLE;
+			int t_shape = -1;
+			if (json_object_get(&doc, t_particles, "shape", &t_shape) && t_shape >= 0) {
+				if (!json_get_particle_shape2(&doc, t_shape, &shape)) {
+					log_error("entity def '%s' particles.shape invalid (circle|square)", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+			}
+
+			ParticleEmitterKeyframe start;
+			ParticleEmitterKeyframe end;
+			if (!json_get_particle_keyframe2(&doc, t_start, &start) || !json_get_particle_keyframe2(&doc, t_end, &end)) {
+				log_error("entity def '%s' particles.start/end invalid", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+
+			def.particles.enabled = true;
+			def.particles.emitter.particle_life_ms = life_ms;
+			def.particles.emitter.emit_interval_ms = interval_ms;
+			def.particles.emitter.offset_jitter = jitter;
+			def.particles.emitter.rotate = rot;
+			def.particles.emitter.shape = shape;
+			def.particles.emitter.start = start;
+			def.particles.emitter.end = end;
+			strncpy(def.particles.emitter.image, image, sizeof(def.particles.emitter.image) - 1);
+			def.particles.emitter.image[sizeof(def.particles.emitter.image) - 1] = '\0';
 		}
 
 		// Kind-specific payloads
@@ -1139,6 +1412,8 @@ static void entity_slot_clear(EntitySystem* es, uint32_t idx) {
 	e->sprite_frame = 0u;
 	e->attack_has_hit = false;
 	e->light_index = -1;
+	e->particle_emitter.index = 0u;
+	e->particle_emitter.generation = 0u;
 }
 
 static void entity_events_clear(EntitySystem* es) {
@@ -1214,13 +1489,14 @@ void entity_system_shutdown(EntitySystem* es) {
 	if (!es) {
 		return;
 	}
-	// Best-effort cleanup: detach any entity-owned world lights.
+	// Best-effort cleanup: detach any entity-owned world lights and particle emitters.
 	if (es->world && es->entities && es->alive) {
 		for (uint32_t i = 0; i < es->capacity; i++) {
 			if (!es->alive[i]) {
 				continue;
 			}
 			entity_light_detach_ptr(es, &es->entities[i]);
+			entity_particles_detach_ptr(es, &es->entities[i]);
 		}
 	}
 	free(es->entities);
@@ -1235,20 +1511,22 @@ void entity_system_shutdown(EntitySystem* es) {
 	memset(es, 0, sizeof(*es));
 }
 
-void entity_system_reset(EntitySystem* es, World* world, const EntityDefs* defs) {
+void entity_system_reset(EntitySystem* es, World* world, ParticleEmitters* particle_emitters, const EntityDefs* defs) {
 	if (!es) {
 		return;
 	}
-	// Detach any existing entity lights from the previous world before switching.
-	if (es->world && es->entities && es->alive) {
+	// Detach any existing entity-owned emitters from the previous world before switching.
+	if (es->entities && es->alive) {
 		for (uint32_t i = 0; i < es->capacity; i++) {
 			if (!es->alive[i]) {
 				continue;
 			}
 			entity_light_detach_ptr(es, &es->entities[i]);
+			entity_particles_detach_ptr(es, &es->entities[i]);
 		}
 	}
 	es->world = world;
+	es->particle_emitters = particle_emitters;
 	es->defs = defs;
 	// Clear all alive slots; preserve generation counters.
 	for (uint32_t i = 0; i < es->capacity; i++) {
@@ -1291,6 +1569,7 @@ static void free_slot(EntitySystem* es, uint32_t idx) {
 		return;
 	}
 	entity_light_detach_ptr(es, &es->entities[idx]);
+	entity_particles_detach_ptr(es, &es->entities[idx]);
 	es->alive[idx] = 0;
 	es->alive_count--;
 	es->generation[idx] += 1u;
@@ -1340,6 +1619,10 @@ bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y,
 	// Optional per-entity light.
 	if (def->light.enabled) {
 		(void)entity_system_light_attach(es, e->id, def->light.light);
+	}
+	// Optional per-entity particle emitter.
+	if (def->particles.enabled) {
+		(void)entity_system_particles_attach(es, e->id, &def->particles.emitter);
 	}
 
 
@@ -1430,6 +1713,7 @@ void entity_system_request_despawn(EntitySystem* es, EntityId id) {
 	e->pending_despawn = true;
 	// Requirement: entity-attached lights are destroyed on despawn/removal.
 	entity_light_detach_ptr(es, e);
+	entity_particles_detach_ptr(es, e);
 	if (es->despawn_count == es->despawn_cap) {
 		uint32_t new_cap = es->despawn_cap ? es->despawn_cap * 2u : 256u;
 		EntityId* nq = (EntityId*)xrealloc(es->despawn_queue, (size_t)new_cap * sizeof(EntityId));
@@ -1441,6 +1725,37 @@ void entity_system_request_despawn(EntitySystem* es, EntityId id) {
 	}
 	es->despawn_queue[es->despawn_count++] = id;
 	spatial_invalidate(es);
+}
+
+bool entity_system_particles_attach(EntitySystem* es, EntityId id, const ParticleEmitterDef* emitter_def) {
+	if (!es || !es->world || !es->particle_emitters || entity_id_is_none(id) || !emitter_def) {
+		return false;
+	}
+	Entity* e = NULL;
+	if (!entity_system_resolve(es, id, &e)) {
+		return false;
+	}
+	// Replace any existing emitter.
+	entity_particles_detach_ptr(es, e);
+
+	float zc = e->body.z + 0.5f * e->body.height;
+	ParticleEmitterId pid = particle_emitter_create(es->particle_emitters, es->world, e->body.x, e->body.y, zc, emitter_def);
+	if (pid.generation == 0u) {
+		return false;
+	}
+	e->particle_emitter = pid;
+	return true;
+}
+
+void entity_system_particles_detach(EntitySystem* es, EntityId id) {
+	if (!es || entity_id_is_none(id)) {
+		return;
+	}
+	Entity* e = NULL;
+	if (!entity_system_resolve(es, id, &e)) {
+		return;
+	}
+	entity_particles_detach_ptr(es, e);
 }
 
 bool entity_system_resolve(EntitySystem* es, EntityId id, Entity** out) {
@@ -1625,8 +1940,9 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			// Death pipeline is state-driven (lets dying/dead frames show).
 			if (e->hp <= 0) {
 				if (e->state != ENTITY_STATE_DYING && e->state != ENTITY_STATE_DEAD) {
-					// Requirement: destroy entity light on death.
+					// Requirement: destroy entity emitters on death.
 					entity_light_detach_ptr(es, e);
+					entity_particles_detach_ptr(es, e);
 					e->state = ENTITY_STATE_DYING;
 					e->state_time = 0.0f;
 					e->attack_has_hit = false;
@@ -1952,6 +2268,7 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			continue;
 		}
 		entity_light_update_pos(es, &es->entities[i]);
+		entity_particles_update_pos(es, &es->entities[i]);
 	}
 }
 
