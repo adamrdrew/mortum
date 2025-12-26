@@ -12,6 +12,8 @@
 #include "game/console.h"
 #include "game/entities.h"
 #include "game/episode_runner.h"
+
+#include "game/episode_flow.h"
 #include "game/game_state.h"
 #include "game/perf_trace.h"
 #include "game/player.h"
@@ -55,6 +57,7 @@ typedef struct ConsoleCommandContext {
 	bool* using_episode;
 	Episode* ep;
 	EpisodeRunner* runner;
+	EpisodeFlow* flow;
 	LevelMesh* mesh;
 
 	// World state.

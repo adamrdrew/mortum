@@ -2,6 +2,8 @@
 
 #include "assets/json.h"
 
+#include "core/path_safety.h"
+
 #include "core/log.h"
 
 #include <SDL.h>
@@ -56,29 +58,6 @@ static bool ends_with_ci(const char* s, const char* suffix) {
 		char a = (char)tolower((unsigned char)tail[i]);
 		char b = (char)tolower((unsigned char)suffix[i]);
 		if (a != b) {
-			return false;
-		}
-	}
-	return true;
-}
-
-static bool name_is_safe_relpath(const char* name) {
-	if (!name || !name[0]) {
-		return false;
-	}
-	if (strstr(name, "..") != NULL) {
-		return false;
-	}
-	// Allow '/' for subfolders, but disallow absolute paths and backslashes.
-	if (name[0] == '/' || name[0] == '\\') {
-		return false;
-	}
-	for (const char* p = name; *p; p++) {
-		unsigned char c = (unsigned char)*p;
-		if (c == '\\') {
-			return false;
-		}
-		if (!(isalnum(c) || c == '_' || c == '-' || c == '.' || c == '/')) {
 			return false;
 		}
 	}

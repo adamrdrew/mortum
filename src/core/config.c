@@ -3,6 +3,8 @@
 #include "assets/json.h"
 #include "core/log.h"
 
+#include "core/path_safety.h"
+
 #include <SDL.h>
 
 #include <ctype.h>
@@ -44,6 +46,7 @@ static CoreConfig g_cfg = {
 	},
 	.content = {
 		.default_episode = "episode1.json",
+		.boot_episode = "",
 	},
 	.ui = {
 		.font = {
@@ -722,8 +725,9 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 				log_error("Config: %s: content must be an object", path);
 				ok = false;
 			} else {
-				static const char* const allowed_content[] = {"default_episode"};
-				warn_unknown_keys(&doc, t_content, allowed_content, (int)(sizeof(allowed_content) / sizeof(allowed_content[0])), "content");
+				// NOTE: boot_episode is intentionally optional; failures fall back to default_episode at runtime.
+				static const char* const allowed_content2[] = {"default_episode", "boot_episode"};
+				warn_unknown_keys(&doc, t_content, allowed_content2, (int)(sizeof(allowed_content2) / sizeof(allowed_content2[0])), "content");
 				int t_ep = -1;
 				if (json_object_get(&doc, t_content, "default_episode", &t_ep)) {
 					StringView sv;
@@ -732,6 +736,20 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 						ok = false;
 					} else {
 						copy_sv_to_buf(next.content.default_episode, sizeof(next.content.default_episode), sv);
+					}
+				}
+				int t_boot = -1;
+				if (json_object_get(&doc, t_content, "boot_episode", &t_boot)) {
+					StringView sv;
+					if (!json_get_string(&doc, t_boot, &sv)) {
+						log_error("Config: %s: content.boot_episode must be a string", path);
+						ok = false;
+					} else {
+						copy_sv_to_buf(next.content.boot_episode, sizeof(next.content.boot_episode), sv);
+						if (next.content.boot_episode[0] != '\0' && !name_is_safe_relpath(next.content.boot_episode)) {
+							log_warn("Config: %s: content.boot_episode is not a safe relative path; ignoring: %s", path, next.content.boot_episode);
+							next.content.boot_episode[0] = '\0';
+						}
 					}
 				}
 			}
@@ -1188,8 +1206,20 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 		}
 
 		// Asset validation (required assets must exist for the config to be accepted).
-		// Validate the episode file we will attempt to load at startup.
+		// Validate the default episode file we will attempt to load at startup.
 		(void)validate_asset_file(assets, "Episodes", next.content.default_episode, path, "content.default_episode", &ok);
+		// boot_episode is optional and must not make startup fatal; warn if it does not exist.
+		if (next.content.boot_episode[0] != '\0') {
+			char* full = asset_path_join(assets, "Episodes", next.content.boot_episode);
+			if (!full) {
+				log_warn("Config: %s: boot_episode path alloc failed", path);
+			} else {
+				if (!file_exists(full)) {
+					log_warn("Config: %s: content.boot_episode file not found (will fall back at runtime): %s", path, full);
+				}
+				free(full);
+			}
+		}
 
 		if (next.audio.enabled) {
 			// Validate weapon shot SFX files.
@@ -1507,6 +1537,21 @@ CoreConfigSetStatus core_config_try_set_by_path(
 		}
 		strncpy(g_cfg.content.default_episode, value_str, sizeof(g_cfg.content.default_episode) - 1);
 		g_cfg.content.default_episode[sizeof(g_cfg.content.default_episode) - 1] = '\0';
+		return CORE_CONFIG_SET_OK;
+	}
+	if (key_eq(key_path, "content.boot_episode")) {
+		if (provided_kind != CORE_CONFIG_VALUE_STRING) {
+			return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected_kind);
+		}
+		// Allow empty to disable.
+		if (!value_str) {
+			return CORE_CONFIG_SET_INVALID_VALUE;
+		}
+		if (value_str[0] != '\0' && !name_is_safe_relpath(value_str)) {
+			return CORE_CONFIG_SET_INVALID_VALUE;
+		}
+		strncpy(g_cfg.content.boot_episode, value_str, sizeof(g_cfg.content.boot_episode) - 1);
+		g_cfg.content.boot_episode[sizeof(g_cfg.content.boot_episode) - 1] = '\0';
 		return CORE_CONFIG_SET_OK;
 	}
 

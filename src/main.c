@@ -37,9 +37,11 @@
 #include "game/debug_dump.h"
 #include "game/perf_trace.h"
 #include "game/episode_runner.h"
+#include "game/episode_flow.h"
 #include "game/purge_item.h"
 #include "game/rules.h"
 #include "game/sector_height.h"
+#include "game/map_music.h"
 
 #include "game/entities.h"
 
@@ -77,69 +79,6 @@ static bool file_exists(const char* path) {
 	FILE* f = fopen(path, "rb");
 	if (!f) {
 		return false;
-	}
-	fclose(f);
-	return true;
-}
-
-static void maybe_start_map_music(
-	const AssetPaths* paths,
-	const MapLoadResult* map,
-	bool map_ok,
-	bool audio_enabled,
-	bool music_enabled,
-	char* prev_bgmusic,
-	size_t prev_bgmusic_cap,
-	char* prev_soundfont,
-	size_t prev_soundfont_cap
-) {
-	if (!paths || !map || !map_ok || !audio_enabled || !music_enabled || !prev_bgmusic || !prev_soundfont) {
-		return;
-	}
-	bool midi_exists = map->bgmusic[0] != '\0';
-	bool sf_exists = map->soundfont[0] != '\0';
-	if (!midi_exists || !sf_exists) {
-		return;
-	}
-
-	bool same = (strcmp(map->bgmusic, prev_bgmusic) == 0) && (strcmp(map->soundfont, prev_soundfont) == 0);
-	if (same && midi_is_playing()) {
-		return;
-	}
-
-	midi_stop();
-	char* midi_path = asset_path_join(paths, "Sounds/MIDI", map->bgmusic);
-	char* sf_path = asset_path_join(paths, "Sounds/SoundFonts", map->soundfont);
-	if (!midi_path || !sf_path) {
-		log_warn("MIDI path allocation failed");
-		free(midi_path);
-		free(sf_path);
-		return;
-	}
-	if (!file_exists(midi_path)) {
-		log_warn("MIDI file not found: %s", midi_path);
-		free(midi_path);
-		free(sf_path);
-		return;
-	}
-	if (!file_exists(sf_path)) {
-		log_warn("SoundFont file not found: %s", sf_path);
-		free(midi_path);
-		free(sf_path);
-		return;
-	}
-	if (midi_init(sf_path) == 0) {
-		midi_play(midi_path);
-		if (prev_bgmusic_cap > 0) {
-			strncpy(prev_bgmusic, map->bgmusic, prev_bgmusic_cap);
-			prev_bgmusic[prev_bgmusic_cap - 1] = '\0';
-		}
-		if (prev_soundfont_cap > 0) {
-			strncpy(prev_soundfont, map->soundfont, prev_soundfont_cap);
-			prev_soundfont[prev_soundfont_cap - 1] = '\0';
-		}
-	} else {
-		log_warn("Could not initialize MIDI playback");
 	}
 	free(midi_path);
 	free(sf_path);
@@ -408,6 +347,8 @@ int main(int argc, char** argv) {
 
 	Episode ep;
 	bool ep_ok = false;
+	EpisodeFlow ep_flow;
+	episode_flow_init(&ep_flow);
 	MapLoadResult map;
 	memset(&map, 0, sizeof(map));
 	bool map_ok = false;
@@ -421,19 +362,21 @@ int main(int argc, char** argv) {
 		map_ok = false;
 		map_name_buf[0] = '\0';
 	} else {
-		ep_ok = episode_load(&ep, &paths, cfg->content.default_episode);
+		// Episode mode: load an episode asset now; EpisodeFlow decides whether to run scenes first.
+		const char* episode_to_try = (cfg->content.boot_episode[0] != '\0') ? cfg->content.boot_episode : cfg->content.default_episode;
+		ep_ok = episode_load(&ep, &paths, episode_to_try);
+		if (!ep_ok && cfg->content.boot_episode[0] != '\0') {
+			log_warn("boot_episode failed to load; falling back to default_episode: %s", cfg->content.default_episode);
+			ep_ok = episode_load(&ep, &paths, cfg->content.default_episode);
+		}
 	}
 	if (!scene_name_arg && map_name_arg) {
 		// A filename relative to Assets/Levels/ (e.g. "mortum_test.json").
 		strncpy(map_name_buf, map_name_arg, sizeof(map_name_buf));
 		map_name_buf[sizeof(map_name_buf) - 1] = '\0';
-	} else if (!scene_name_arg && ep_ok && episode_runner_start(&runner, &ep)) {
-		using_episode = true;
-		const char* ep_map = episode_runner_current_map(&runner, &ep);
-		if (ep_map) {
-			strncpy(map_name_buf, ep_map, sizeof(map_name_buf));
-			map_name_buf[sizeof(map_name_buf) - 1] = '\0';
-		}
+		// Explicit map arg overrides boot_episode/default_episode.
+		using_episode = false;
+		ep_flow.active = false;
 	}
 	if (map_name_buf[0] != '\0') {
 		map_ok = map_load(&map, &paths, map_name_buf);
@@ -451,7 +394,7 @@ int main(int argc, char** argv) {
 			}
 		}
 		// Validate MIDI and SoundFont existence for background music
-		maybe_start_map_music(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
+		game_map_music_maybe_start(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
 	}
 
 	LevelMesh mesh;
@@ -560,6 +503,7 @@ int main(int argc, char** argv) {
 	console_ctx.using_episode = &using_episode;
 	console_ctx.ep = &ep;
 	console_ctx.runner = &runner;
+	console_ctx.flow = &ep_flow;
 	console_ctx.mesh = &mesh;
 	console_ctx.player = &player;
 	console_ctx.gs = &gs;
@@ -578,6 +522,39 @@ int main(int argc, char** argv) {
 	ScreenRuntime screens;
 	screen_runtime_init(&screens);
 	console_ctx.screens = &screens;
+
+	// Start episode-driven flow (enter scenes -> maps -> exit scenes) unless overridden by --scene or an explicit map arg.
+	if (!scene_name_arg && !map_name_arg && ep_ok) {
+		EpisodeFlowRuntime rt;
+		memset(&rt, 0, sizeof(rt));
+		rt.paths = &paths;
+		rt.ep = &ep;
+		rt.runner = &runner;
+		rt.using_episode = &using_episode;
+		rt.map = &map;
+		rt.map_ok = &map_ok;
+		rt.map_name_buf = map_name_buf;
+		rt.map_name_cap = sizeof(map_name_buf);
+		rt.mesh = &mesh;
+		rt.player = &player;
+		rt.gs = &gs;
+		rt.entities = &entities;
+		rt.entity_defs = &entity_defs;
+		rt.sfx_emitters = &sfx_emitters;
+		rt.particle_emitters = &particle_emitters;
+		rt.screens = &screens;
+		rt.fb = &fb;
+		rt.in = NULL;
+		rt.allow_scene_input = true;
+		rt.audio_enabled = audio_enabled;
+		rt.music_enabled = music_enabled;
+		rt.sound_emitters_enabled = sound_emitters_enabled;
+		rt.prev_bgmusic = prev_bgmusic;
+		rt.prev_bgmusic_cap = sizeof(prev_bgmusic);
+		rt.prev_soundfont = prev_soundfont;
+		rt.prev_soundfont_cap = sizeof(prev_soundfont);
+		(void)episode_flow_start(&ep_flow, &rt);
+	}
 
 	// If launched with --scene, load and activate the scene now.
 	if (scene_name_arg && scene_name_arg[0] != '\0') {
@@ -743,7 +720,39 @@ int main(int argc, char** argv) {
 			}
 			// If a scene overrode map music, restore the current map's MIDI when returning to gameplay.
 			if (completed && !exit_after_scene) {
-				maybe_start_map_music(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
+				game_map_music_maybe_start(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
+			}
+			// Episode-driven scenes advance only when the active screen completes.
+			if (completed && ep_flow.active && !exit_after_scene) {
+				EpisodeFlowRuntime rt;
+				memset(&rt, 0, sizeof(rt));
+				rt.paths = &paths;
+				rt.ep = &ep;
+				rt.runner = &runner;
+				rt.using_episode = &using_episode;
+				rt.map = &map;
+				rt.map_ok = &map_ok;
+				rt.map_name_buf = map_name_buf;
+				rt.map_name_cap = sizeof(map_name_buf);
+				rt.mesh = &mesh;
+				rt.player = &player;
+				rt.gs = &gs;
+				rt.entities = &entities;
+				rt.entity_defs = &entity_defs;
+				rt.sfx_emitters = &sfx_emitters;
+				rt.particle_emitters = &particle_emitters;
+				rt.screens = &screens;
+				rt.fb = &fb;
+				rt.in = &in;
+				rt.allow_scene_input = !console_open;
+				rt.audio_enabled = audio_enabled;
+				rt.music_enabled = music_enabled;
+				rt.sound_emitters_enabled = sound_emitters_enabled;
+				rt.prev_bgmusic = prev_bgmusic;
+				rt.prev_bgmusic_cap = sizeof(prev_bgmusic);
+				rt.prev_soundfont = prev_soundfont;
+				rt.prev_soundfont_cap = sizeof(prev_soundfont);
+				episode_flow_on_scene_completed(&ep_flow, &rt);
 			}
 		} else {
 
@@ -978,52 +987,38 @@ int main(int argc, char** argv) {
 			update_t1 = platform_time_seconds();
 		}
 
-		// Episode progression on win edge.
+		// Episode progression on win edge (maps -> exit scenes -> done).
 		bool win_now = (gs.mode == GAME_MODE_WIN);
-		if (win_now && !win_prev && using_episode) {
-			if (episode_runner_advance(&runner, &ep)) {
-				const char* next_map = episode_runner_current_map(&runner, &ep);
-				if (next_map) {
-					if (map_ok) {
-						map_load_result_destroy(&map);
-						level_mesh_destroy(&mesh);
-						level_mesh_init(&mesh);
-					}
-					map_ok = map_load(&map, &paths, next_map);
-					if (map_ok) {
-						strncpy(map_name_buf, next_map, sizeof(map_name_buf));
-						map_name_buf[sizeof(map_name_buf) - 1] = '\0';
-						level_mesh_build(&mesh, &map.world);
-						episode_runner_apply_level_start(&player, &map);
-						player.footstep_timer_s = 0.0f;
-						sound_emitters_reset(&sfx_emitters);
-						sound_emitters_set_enabled(&sfx_emitters, audio_enabled && sound_emitters_enabled);
-						entity_system_reset(&entities, &map.world, &particle_emitters, &entity_defs);
-						particle_emitters_reset(&particle_emitters);
-						if (map.sounds && map.sound_count > 0) {
-							for (int i = 0; i < map.sound_count; i++) {
-								MapSoundEmitter* ms = &map.sounds[i];
-								SoundEmitterId id = sound_emitter_create(&sfx_emitters, ms->x, ms->y, ms->spatial, ms->gain);
-								if (ms->loop) {
-									sound_emitter_start_loop(&sfx_emitters, id, ms->sound, player.body.x, player.body.y);
-								}
-							}
-						}
-						if (map.particles && map.particle_count > 0) {
-							for (int i = 0; i < map.particle_count; i++) {
-								MapParticleEmitter* mp = &map.particles[i];
-								(void)particle_emitter_create(&particle_emitters, &map.world, mp->x, mp->y, mp->z, &mp->def);
-							}
-						}
-						if (map.entities && map.entity_count > 0) {
-							entity_system_spawn_map(&entities, map.entities, map.entity_count);
-						}
-						gs.mode = GAME_MODE_PLAYING;
-						// --- MUSIC CHANGE LOGIC ---
-						maybe_start_map_music(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
-					}
-				}
-			}
+		if (win_now && !win_prev && ep_flow.active && using_episode) {
+			EpisodeFlowRuntime rt;
+			memset(&rt, 0, sizeof(rt));
+			rt.paths = &paths;
+			rt.ep = &ep;
+			rt.runner = &runner;
+			rt.using_episode = &using_episode;
+			rt.map = &map;
+			rt.map_ok = &map_ok;
+			rt.map_name_buf = map_name_buf;
+			rt.map_name_cap = sizeof(map_name_buf);
+			rt.mesh = &mesh;
+			rt.player = &player;
+			rt.gs = &gs;
+			rt.entities = &entities;
+			rt.entity_defs = &entity_defs;
+			rt.sfx_emitters = &sfx_emitters;
+			rt.particle_emitters = &particle_emitters;
+			rt.screens = &screens;
+			rt.fb = &fb;
+			rt.in = &in;
+			rt.allow_scene_input = true;
+			rt.audio_enabled = audio_enabled;
+			rt.music_enabled = music_enabled;
+			rt.sound_emitters_enabled = sound_emitters_enabled;
+			rt.prev_bgmusic = prev_bgmusic;
+			rt.prev_bgmusic_cap = sizeof(prev_bgmusic);
+			rt.prev_soundfont = prev_soundfont;
+			rt.prev_soundfont_cap = sizeof(prev_soundfont);
+			episode_flow_on_map_win(&ep_flow, &rt);
 		}
 		win_prev = win_now;
 

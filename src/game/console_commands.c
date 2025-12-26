@@ -13,6 +13,8 @@
 
 #include "game/scene_screen.h"
 
+#include "core/path_safety.h"
+
 #include <SDL.h>
 
 #include <ctype.h>
@@ -333,26 +335,60 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 }
 
 static bool load_episode_by_name(ConsoleCommandContext* ctx, const char* episode_name) {
-	if (!ctx || !ctx->ep || !ctx->runner || !name_is_safe_filename(episode_name)) {
+	if (!ctx || !ctx->ep || !ctx->runner || !ctx->flow || !name_is_safe_relpath(episode_name)) {
 		return false;
 	}
+	// Stop any currently running scene.
+	if (ctx->screens && screen_runtime_is_active(ctx->screens)) {
+		ScreenContext sctx;
+		memset(&sctx, 0, sizeof(sctx));
+		sctx.fb = ctx->fb;
+		sctx.in = NULL;
+		sctx.paths = ctx->paths;
+		sctx.allow_input = false;
+		sctx.audio_enabled = (ctx->audio_enabled && *ctx->audio_enabled);
+		sctx.music_enabled = (ctx->music_enabled && *ctx->music_enabled);
+		screen_runtime_shutdown(ctx->screens, &sctx);
+	}
+
+	// Unload any currently loaded map/world before switching episodes.
+	unload_map_and_world(ctx);
+
 	// episode_load() overwrites the Episode struct; destroy prior owned allocations first.
 	episode_destroy(ctx->ep);
 	if (!episode_load(ctx->ep, ctx->paths, episode_name)) {
 		return false;
 	}
-	episode_runner_init(ctx->runner);
-	if (!episode_runner_start(ctx->runner, ctx->ep)) {
-		return false;
-	}
-	if (ctx->using_episode) {
-		*ctx->using_episode = true;
-	}
-	const char* map_name = episode_runner_current_map(ctx->runner, ctx->ep);
-	if (!map_name) {
-		return false;
-	}
-	return load_map_by_name(ctx, map_name, false);
+	EpisodeFlowRuntime rt;
+	memset(&rt, 0, sizeof(rt));
+	rt.paths = ctx->paths;
+	rt.ep = ctx->ep;
+	rt.runner = ctx->runner;
+	rt.using_episode = ctx->using_episode;
+	rt.map = ctx->map;
+	rt.map_ok = ctx->map_ok;
+	rt.map_name_buf = ctx->map_name_buf;
+	rt.map_name_cap = ctx->map_name_cap;
+	rt.mesh = ctx->mesh;
+	rt.player = ctx->player;
+	rt.gs = ctx->gs;
+	rt.entities = ctx->entities;
+	rt.entity_defs = ctx->entity_defs;
+	rt.sfx_emitters = ctx->sfx_emitters;
+	rt.particle_emitters = ctx->particle_emitters;
+	rt.screens = ctx->screens;
+	rt.fb = ctx->fb;
+	rt.in = NULL;
+	rt.allow_scene_input = false;
+	rt.audio_enabled = (ctx->audio_enabled && *ctx->audio_enabled);
+	rt.music_enabled = (ctx->music_enabled && *ctx->music_enabled);
+	rt.sound_emitters_enabled = (ctx->sound_emitters_enabled ? *ctx->sound_emitters_enabled : true);
+	rt.prev_bgmusic = ctx->prev_bgmusic;
+	rt.prev_bgmusic_cap = ctx->prev_bgmusic_cap;
+	rt.prev_soundfont = ctx->prev_soundfont;
+	rt.prev_soundfont_cap = ctx->prev_soundfont_cap;
+
+	return episode_flow_start(ctx->flow, &rt);
 }
 
 // -----------------------------
@@ -569,6 +605,10 @@ static bool cmd_load_episode(Console* con, int argc, const char** argv, void* us
 	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
 	if (!ctx || argc < 1) {
 		console_print(con, "Error: Expected <episode.json>");
+		return false;
+	}
+	if (!name_is_safe_relpath(argv[0])) {
+		console_print(con, "Error: Unsafe episode path (must be relative; no '..' or backslashes)");
 		return false;
 	}
 	if (!load_episode_by_name(ctx, argv[0])) {
