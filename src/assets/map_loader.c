@@ -4,12 +4,35 @@
 #include "assets/map_validate.h"
 #include "core/log.h"
 
+#include "core/path_safety.h"
+
 #include "game/particles.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+
+static bool ends_with_ci(const char* s, const char* suffix) {
+	if (!s || !suffix) {
+		return false;
+	}
+	size_t ns = strlen(s);
+	size_t nf = strlen(suffix);
+	if (nf > ns) {
+		return false;
+	}
+	const char* tail = s + (ns - nf);
+	for (size_t i = 0; i < nf; i++) {
+		char a = (char)tolower((unsigned char)tail[i]);
+		char b = (char)tolower((unsigned char)suffix[i]);
+		if (a != b) {
+			return false;
+		}
+	}
+	return true;
+}
 
 static uint32_t hash_u32(uint32_t x) {
 	// SplitMix32
@@ -321,6 +344,13 @@ void map_load_result_destroy(MapLoadResult* self) {
 }
 
 bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filename) {
+	if (!out || !paths || !map_filename || map_filename[0] == '\0') {
+		return false;
+	}
+	if (!name_is_safe_relpath(map_filename) || !ends_with_ci(map_filename, ".json")) {
+		log_error("Map filename must be a safe relative .json path under Assets/Levels: %s", map_filename);
+		return false;
+	}
 	memset(out, 0, sizeof(*out));
 	world_init_empty(&out->world);
 	if (!particles_init(&out->world.particles, PARTICLE_MAX_DEFAULT)) {

@@ -1,6 +1,7 @@
 #include "assets/asset_paths.h"
 #include "assets/episode_loader.h"
 #include "assets/map_loader.h"
+#include "assets/scene_loader.h"
 #include "core/log.h"
 #include "platform/fs.h"
 #include "platform/platform.h"
@@ -8,7 +9,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-static bool validate_episode_maps(const AssetPaths* paths, const char* episode_filename) {
+static bool validate_episode_content(const AssetPaths* paths, const char* episode_filename) {
 	Episode ep;
 	if (!episode_load(&ep, paths, episode_filename)) {
 		log_error("Failed to load episode: %s", episode_filename);
@@ -16,6 +17,27 @@ static bool validate_episode_maps(const AssetPaths* paths, const char* episode_f
 	}
 
 	bool ok = true;
+	for (int i = 0; i < ep.enter_scene_count; i++) {
+		log_info("Validating enter scene: %s", ep.enter_scenes[i]);
+		Scene s;
+		if (!scene_load(&s, paths, ep.enter_scenes[i])) {
+			log_error("Failed to load scene: %s", ep.enter_scenes[i]);
+			ok = false;
+			break;
+		}
+		scene_destroy(&s);
+	}
+	for (int i = 0; ok && i < ep.exit_scene_count; i++) {
+		log_info("Validating exit scene: %s", ep.exit_scenes[i]);
+		Scene s;
+		if (!scene_load(&s, paths, ep.exit_scenes[i])) {
+			log_error("Failed to load scene: %s", ep.exit_scenes[i]);
+			ok = false;
+			break;
+		}
+		scene_destroy(&s);
+	}
+
 	for (int i = 0; i < ep.map_count; i++) {
 		MapLoadResult map;
 		log_info("Validating map: %s", ep.maps[i]);
@@ -77,8 +99,8 @@ int main(int argc, char** argv) {
 			}
 		}
 	} else {
-		// Default: validate boot.json and its maps.
-		ok = validate_episode_maps(&paths, "boot.json");
+		// Default: validate boot.json (enter/exit scenes + maps).
+		ok = validate_episode_content(&paths, "boot.json");
 	}
 
 	asset_paths_destroy(&paths);

@@ -66,6 +66,10 @@ static bool try_load_current_map(EpisodeFlowRuntime* rt) {
 	if (!rt || !rt->paths || !rt->ep || !rt->runner || !rt->map || !rt->map_ok || !rt->mesh || !rt->player || !rt->gs) {
 		return false;
 	}
+	// These are required by the respawn/reset section below.
+	if (!rt->sfx_emitters || !rt->particle_emitters || !rt->entities || !rt->entity_defs) {
+		return false;
+	}
 	const char* map_name = episode_runner_current_map(rt->runner, rt->ep);
 	if (!map_name || map_name[0] == '\0') {
 		return false;

@@ -4,8 +4,29 @@
 #include "core/path_safety.h"
 #include "core/log.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+
+static bool ends_with_ci(const char* s, const char* suffix) {
+	if (!s || !suffix) {
+		return false;
+	}
+	size_t ns = strlen(s);
+	size_t nf = strlen(suffix);
+	if (nf > ns) {
+		return false;
+	}
+	const char* tail = s + (ns - nf);
+	for (size_t i = 0; i < nf; i++) {
+		char a = (char)tolower((unsigned char)tail[i]);
+		char b = (char)tolower((unsigned char)suffix[i]);
+		if (a != b) {
+			return false;
+		}
+	}
+	return true;
+}
 
 static char* sv_dup(StringView s) {
 	char* out = (char*)malloc(s.len + 1);
@@ -170,6 +191,12 @@ bool episode_load(Episode* out, const AssetPaths* paths, const char* episode_fil
 				}
 				out->maps[i] = sv_dup(s);
 				if (!out->maps[i]) {
+					episode_destroy(out);
+					json_doc_destroy(&doc);
+					return false;
+				}
+				if (!name_is_safe_relpath(out->maps[i]) || !ends_with_ci(out->maps[i], ".json")) {
+					log_error("Episode maps[%d] must be a safe relative .json path under Assets/Levels: %s", i, out->maps[i]);
 					episode_destroy(out);
 					json_doc_destroy(&doc);
 					return false;

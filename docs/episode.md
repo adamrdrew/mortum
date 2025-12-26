@@ -238,7 +238,7 @@ There is a small asset validation tool in `tools/validate_assets.c` (wired into 
 
 Behavior:
 
-- With no args: validates `boot.json` and then attempts to load every map listed in that episode.
+- With no args: validates `boot.json` and attempts to load every enter/exit Scene and every map listed in that episode.
 - With args: treats each argument as a map filename and validates it directly.
 
 Examples:
