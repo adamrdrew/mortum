@@ -97,7 +97,7 @@ Validation happens inside `core_config_load_from_file()` and includes:
 
 3. **Asset existence checks (on-disk)**
    - Episode file:
-     - `content.default_episode` must exist under `Assets/Episodes/`.
+   - `content.boot_episode` (if non-empty) must exist under `Assets/Episodes/`.
    - WAV assets (only when `audio.enabled` is `true`):
      - Weapon shot WAV files must exist under `Assets/Sounds/Effects/`.
      - A representative footstep WAV is validated using `footsteps.filename_pattern` with variant `1`.

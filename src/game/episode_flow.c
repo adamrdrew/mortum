@@ -19,7 +19,24 @@ static void make_screen_ctx(const EpisodeFlowRuntime* rt, ScreenContext* out) {
 	out->music_enabled = rt ? rt->music_enabled : false;
 }
 
-static bool try_start_scene(EpisodeFlowRuntime* rt, const char* scene_file) {
+bool episode_flow_preserve_midi_on_scene_exit(const EpisodeFlow* self) {
+	return self && self->active && self->preserve_midi_on_scene_exit;
+}
+
+static bool scene_wants_no_stop_preserve(const EpisodeFlowRuntime* rt, const char* scene_file) {
+	if (!rt || !rt->paths || !scene_file || scene_file[0] == '\0') {
+		return false;
+	}
+	Scene s;
+	if (!scene_load(&s, rt->paths, scene_file)) {
+		return false;
+	}
+	bool preserve = s.music.no_stop && (!s.music.midi_file || s.music.midi_file[0] == '\0');
+	scene_destroy(&s);
+	return preserve;
+}
+
+static bool try_start_scene(EpisodeFlow* self, EpisodeFlowRuntime* rt, const char* scene_file, bool preserve_midi_on_exit_for_current) {
 	if (!rt || !rt->paths || !rt->fb || !rt->screens || !scene_file || scene_file[0] == '\0') {
 		return false;
 	}
@@ -28,6 +45,7 @@ static bool try_start_scene(EpisodeFlowRuntime* rt, const char* scene_file) {
 		log_warn("Episode scene failed to load (skipping): %s", scene_file);
 		return false;
 	}
+	bool preserve_midi = scene.music.no_stop && (!scene.music.midi_file || scene.music.midi_file[0] == '\0');
 	Screen* scr = scene_screen_create(scene);
 	if (!scr) {
 		log_warn("Episode scene failed to create screen (skipping): %s", scene_file);
@@ -36,7 +54,11 @@ static bool try_start_scene(EpisodeFlowRuntime* rt, const char* scene_file) {
 	}
 	ScreenContext sctx;
 	make_screen_ctx(rt, &sctx);
+	sctx.preserve_midi_on_exit = preserve_midi;
 	screen_runtime_set(rt->screens, scr, &sctx);
+	if (self) {
+		self->preserve_midi_on_scene_exit = preserve_midi_on_exit_for_current;
+	}
 	return true;
 }
 
@@ -118,11 +140,17 @@ static void flow_step(EpisodeFlow* self, EpisodeFlowRuntime* rt) {
 				while (self->enter_index < n) {
 					const char* s = rt->ep->enter_scenes ? rt->ep->enter_scenes[self->enter_index] : NULL;
 					self->enter_index++;
-					if (try_start_scene(rt, s)) {
+					bool preserve_on_exit = false;
+					if (self->enter_index < n) {
+						const char* next = rt->ep->enter_scenes ? rt->ep->enter_scenes[self->enter_index] : NULL;
+						preserve_on_exit = scene_wants_no_stop_preserve(rt, next);
+					}
+					if (try_start_scene(self, rt, s, preserve_on_exit)) {
 						return;
 					}
 				}
 				self->phase = EPISODE_FLOW_PHASE_MAPS;
+				self->preserve_midi_on_scene_exit = false;
 			} break;
 
 			case EPISODE_FLOW_PHASE_MAPS: {
@@ -143,15 +171,22 @@ static void flow_step(EpisodeFlow* self, EpisodeFlowRuntime* rt) {
 				while (self->exit_index < n) {
 					const char* s = rt->ep->exit_scenes ? rt->ep->exit_scenes[self->exit_index] : NULL;
 					self->exit_index++;
-					if (try_start_scene(rt, s)) {
+					bool preserve_on_exit = false;
+					if (self->exit_index < n) {
+						const char* next = rt->ep->exit_scenes ? rt->ep->exit_scenes[self->exit_index] : NULL;
+						preserve_on_exit = scene_wants_no_stop_preserve(rt, next);
+					}
+					if (try_start_scene(self, rt, s, preserve_on_exit)) {
 						return;
 					}
 				}
 				self->phase = EPISODE_FLOW_PHASE_DONE;
+				self->preserve_midi_on_scene_exit = false;
 			} break;
 
 			case EPISODE_FLOW_PHASE_DONE: {
 				self->active = false;
+				self->preserve_midi_on_scene_exit = false;
 				if (rt->using_episode) {
 					*rt->using_episode = false;
 				}
@@ -180,6 +215,7 @@ void episode_flow_init(EpisodeFlow* self) {
 	self->phase = EPISODE_FLOW_PHASE_DONE;
 	self->enter_index = 0;
 	self->exit_index = 0;
+	self->preserve_midi_on_scene_exit = false;
 }
 
 bool episode_flow_start(EpisodeFlow* self, EpisodeFlowRuntime* rt) {
@@ -189,6 +225,7 @@ bool episode_flow_start(EpisodeFlow* self, EpisodeFlowRuntime* rt) {
 	self->active = true;
 	self->enter_index = 0;
 	self->exit_index = 0;
+	self->preserve_midi_on_scene_exit = false;
 
 	if (rt->using_episode) {
 		*rt->using_episode = true;
@@ -252,4 +289,5 @@ void episode_flow_cancel(EpisodeFlow* self) {
 	self->phase = EPISODE_FLOW_PHASE_DONE;
 	self->enter_index = 0;
 	self->exit_index = 0;
+	self->preserve_midi_on_scene_exit = false;
 }

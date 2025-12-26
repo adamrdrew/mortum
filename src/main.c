@@ -567,7 +567,8 @@ int main(int argc, char** argv) {
 				running = false;
 			} else {
 				ScreenContext sctx;
-				memset(&sctx, 0, sizeof(sctx));
+				memset(&sctx, 0, sizeof(sctx)); 
+				sctx.preserve_midi_on_exit = false;
 				sctx.fb = &fb;
 				sctx.in = &in;
 				sctx.paths = &paths;
@@ -670,7 +671,8 @@ int main(int argc, char** argv) {
 				update_t0 = platform_time_seconds();
 			}
 			ScreenContext sctx;
-			memset(&sctx, 0, sizeof(sctx));
+			memset(&sctx, 0, sizeof(sctx)); 
+			sctx.preserve_midi_on_exit = episode_flow_preserve_midi_on_scene_exit(&ep_flow);
 			sctx.fb = &fb;
 			sctx.in = &in;
 			sctx.paths = &paths;
@@ -1164,7 +1166,8 @@ int main(int argc, char** argv) {
 
 	{
 		ScreenContext sctx;
-		memset(&sctx, 0, sizeof(sctx));
+		memset(&sctx, 0, sizeof(sctx)); 
+		sctx.preserve_midi_on_exit = false;
 		sctx.fb = &fb;
 		sctx.in = &in;
 		sctx.paths = &paths;

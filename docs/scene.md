@@ -1,8 +1,8 @@
 # Scene System (Standalone Screen)
 
-This document is the source of truth for Mortum’s standalone **Scene** feature and the minimal internal **Screen** runtime that powers it.
+This document is the source of truth for Mortum’s **Scene** feature and the minimal internal **Screen** runtime that powers it.
 
-Scenes are **developer-facing** content used for debugging/testing and future UI flows. This implementation is intentionally standalone and does not integrate with Episodes, Maps, Menus, or gameplay flow.
+Scenes are **developer-facing** content used for debugging/testing and future UI flows. Scenes can run standalone (console / `--scene`) and can also be run by Episodes via `EpisodeFlow` (`scenes.enter` / `scenes.exit`). While a Scene is active, normal gameplay update/render is suspended.
 
 ## Overview
 
@@ -53,6 +53,9 @@ Root object fields:
   - `midi` (string): filename relative to `Assets/Sounds/MIDI/` (must end with `.mid` or `.midi`)
   - `soundfont` (string): filename relative to `Assets/Sounds/SoundFonts/` (must end with `.sf2`)
   - If `midi` is present and `soundfont` is omitted, it defaults to `hl4mgm.sf2`.
+  - `no_stop` (bool): if true (and `midi` is not provided), the Scene will **not** stop any currently playing MIDI background music.
+
+    Note: if both `midi` and `no_stop` are set, the engine logs a warning and ignores `no_stop`.
 
 - `sfx` (object)
   - `enter_wav` (string): filename relative to `Assets/Sounds/Effects/` (must end with `.wav`)
@@ -116,6 +119,11 @@ If multiple end conditions are set, the first one satisfied triggers exit.
   - `midi_init(soundfont)`
   - `midi_play(midi)`
 - On exit: if Scene started music, it calls `midi_stop()`.
+
+If no Scene MIDI is configured:
+
+- Default: the Scene stops any currently playing MIDI on enter.
+- If `music.no_stop` is true: the Scene does **not** stop currently playing MIDI.
 
 If a map is currently loaded and has background music configured, the engine will attempt to resume the map's MIDI when returning to gameplay after the Scene completes.
 

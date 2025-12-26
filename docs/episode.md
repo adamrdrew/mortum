@@ -16,11 +16,13 @@ It is written to be **LLM/developer-agent friendly**: explicit schemas, lifetime
 The authoritative implementations for episodes are:
 
 - Loading/parsing: `episode_load()` in `include/assets/episode_loader.h` implemented by `src/assets/episode_loader.c`
-- Runtime progression: `EpisodeRunner` helpers in `include/game/episode_runner.h` implemented by `src/game/episode_runner.c`
+- Runtime progression:
+  - `EpisodeFlow` in `include/game/episode_flow.h` implemented by `src/game/episode_flow.c` (enter scenes -> maps -> exit scenes)
+  - `EpisodeRunner` in `include/game/episode_runner.h` implemented by `src/game/episode_runner.c` (map index helper used by `EpisodeFlow`)
 
 Primary integration points:
 
-- Startup selection of the initial map (default episode vs explicit map arg): `src/main.c`
+- Startup selection of the initial map (boot episode vs explicit map arg): `src/main.c`
 - Episode advancement on win edge: `src/main.c`
 - Developer console commands (`load_episode`, `load_map`): `src/game/console_commands.c`
 
@@ -33,8 +35,10 @@ There are also spec artifacts you may see referenced:
 ## Quick concepts / glossary
 
 - **Episode file**: a JSON file under `Assets/Episodes/` (example: `Assets/Episodes/episode1.json`).
-- **Episode**: metadata + an **ordered list of map filenames**.
+- **Episode**: metadata + optional **enter/exit scene lists** + optional **map list**.
+- **Scene filename**: a string like `"title.json"` that is treated as **relative to `Assets/Scenes/`** when the engine loads it.
 - **Map filename**: a string like `"e1m1.json"` that is treated as **relative to `Assets/Levels/`** when the engine loads it.
+- **EpisodeFlow**: coordinates episode execution across scenes and maps.
 - **EpisodeRunner**: holds a single integer index (`map_index`) into `Episode.maps[]`.
 
 The current engine behavior is intentionally minimal: episodes are linear and have no branching logic.
@@ -54,15 +58,26 @@ The loader requires exactly these top-level keys:
 
 - `name` (string)
 - `splash` (string)
-- `maps` (non-empty array of strings)
 
-If any are missing or have the wrong type, `episode_load()` returns `false`.
+If either is missing or has the wrong type, `episode_load()` returns `false`.
 
 **Important:**
 
 - The loader does **not** validate that `splash` refers to a real image file.
 - The loader does **not** validate that the map filenames exist; they are validated/loaded later (during map loading).
 - The loader does **not** enforce `additionalProperties: false` at runtime; any extra keys in the JSON object are simply ignored.
+
+### Optional fields
+
+- `maps` (array of strings, optional)
+  - May be omitted.
+  - If present, may be empty.
+  - Each entry is treated as a filename under `Assets/Levels/`.
+
+- `scenes` (object, optional)
+  - `enter` (array of strings, optional): scene JSON relative to `Assets/Scenes/`.
+  - `exit` (array of strings, optional): scene JSON relative to `Assets/Scenes/`.
+  - Scene entries must be **safe relative paths** (see “Filename safety rules”).
 
 ### Example
 
@@ -72,6 +87,10 @@ If any are missing or have the wrong type, `episode_load()` returns `false`.
 {
   "name": "Episode 1: The Spill",
   "splash": "episode1_splash.bmp",
+  "scenes": {
+    "enter": ["title.json"],
+    "exit": ["developer.json"]
+  },
   "maps": ["e1m1.json", "arena.json"]
 }
 ```
@@ -80,13 +99,18 @@ If any are missing or have the wrong type, `episode_load()` returns `false`.
 
 The loader itself will accept any string as an episode filename or map filename; it simply concatenates paths under `Assets/`.
 
-However, the **developer console** deliberately restricts `load_episode`/`load_map` arguments via `name_is_safe_filename()` in `src/game/console_commands.c`:
+In practice, user-provided filenames are validated in a few places:
 
-- Disallows `".."` anywhere (prevents traversal)
-- Disallows `/` and `\\` (prevents subdirectories)
-- Allows only `[A-Za-z0-9_.-]`
+- `content.boot_episode` is validated as a **safe relative path** and must exist under `Assets/Episodes/`.
+- Console `load_episode` validates its argument with `name_is_safe_relpath()` (subfolders allowed).
+- Console `load_map` validates its argument with a stricter “safe filename” rule (no slashes/backslashes).
 
-If you are adding UI/content selection that takes user-typed names, you should apply the same constraints.
+`name_is_safe_relpath()` (see `include/core/path_safety.h`) enforces:
+
+- Must be relative (cannot start with `/` or `\\`)
+- Must not contain `..`
+- Must not contain `\\`
+- Allowed characters: `[A-Za-z0-9_./-]`
 
 ---
 
@@ -100,8 +124,12 @@ Defined in `include/assets/episode_loader.h`:
 typedef struct Episode {
     char* name;   // owned
     char* splash; // owned
-    char** maps;  // owned array of owned strings
-    int map_count;
+  char** enter_scenes; // owned array of owned strings
+  int enter_scene_count;
+  char** exit_scenes;  // owned array of owned strings
+  int exit_scene_count;
+  char** maps;         // owned array of owned strings
+  int map_count;
 } Episode;
 ```
 
@@ -138,8 +166,9 @@ Behavior (from `src/assets/episode_loader.c`):
 - **Overwrites** the output struct: it begins with `memset(out, 0, sizeof(*out))`.
 - Loads JSON from `asset_path_join(paths, "Episodes", episode_filename)`.
 - Requires the JSON root to be an object.
-- Requires `name`, `splash`, `maps` keys; validates types.
-- Requires `maps` to be a non-empty array.
+- Requires `name` and `splash`; validates types.
+- `maps` is optional (may be omitted or empty).
+- `scenes.enter` / `scenes.exit` are optional; when present, they must be arrays of safe relative paths.
 - Duplicates strings into owned allocations.
 
 Important lifecycle note:
@@ -159,51 +188,37 @@ Frees all owned memory and resets the struct to a clean state (`NULL` pointers, 
 
 At startup (`src/main.c`):
 
-- If `--scene <scene.json>` is used, the game runs in **standalone scene mode**:
-  - Episodes and maps are not loaded.
-- Otherwise, the engine attempts to load the default episode:
-  - `episode_load(&ep, &paths, cfg->content.default_episode)`
-- If a map filename argument is provided (e.g. `mortum_test.json`), it takes precedence:
-  - `map_name_buf = map_name_arg`
-- Else if the episode loaded successfully and `episode_runner_start()` succeeds:
-  - `using_episode = true`
-  - `map_name_buf = episode_runner_current_map()` (first map)
-
-Then, if `map_name_buf` is non-empty, the engine loads the map via `map_load()`.
+- If `--scene <scene.json>` is used, the game runs in **standalone scene mode** (no episode/map startup).
+- Otherwise, the engine attempts to load `cfg->content.boot_episode`.
+- If a map filename argument is provided (e.g. `mortum_test.json`), it takes precedence and disables episode flow.
+- If an episode was loaded successfully and no explicit map/scene override is present, the engine starts `EpisodeFlow`.
+  - `EpisodeFlow` may run enter scenes first, then load maps, then run exit scenes.
 
 ### Console: loading episodes and maps
 
 The console command handler (`src/game/console_commands.c`) includes:
 
 - `load_episode <episode_filename>`:
-  - Validates the name with `name_is_safe_filename()`.
+  - Validates the argument with `name_is_safe_relpath()`.
+  - Stops any currently running Scene.
+  - Unloads any currently loaded map/world.
   - Calls `episode_destroy()` then `episode_load()`.
-  - Resets and starts the runner.
-  - Sets `using_episode = true`.
-  - Loads the first map of the episode.
+  - Starts `EpisodeFlow` (which runs enter scenes, maps, then exit scenes).
 
 - `load_map <map_filename>`:
-  - Validates the name with `name_is_safe_filename()`.
+  - Validates the name with a strict “safe filename” rule (no slashes/backslashes).
   - Calls `map_load()`.
   - Resets mesh/player/entities/emitters appropriately.
-  - Stops episode progression if invoked in “stop episode” mode (the map-loading helper can clear `using_episode`).
+  - Cancels episode progression (loads a standalone map).
 
 ### Episode progression on win
 
 During the main loop (`src/main.c`), episode progression occurs on the **win edge**:
 
 - Detects transition into win mode: `win_now = (gs.mode == GAME_MODE_WIN)` and `win_now && !win_prev`.
-- If `using_episode` is true:
-  - Calls `episode_runner_advance(&runner, &ep)`.
-  - If a next map exists:
-    - Destroys the previous `MapLoadResult` and rebuilds the `LevelMesh`.
-    - Loads the next map via `map_load()`.
-    - Applies per-level start resets via `episode_runner_apply_level_start(&player, &map)`.
-    - Respawns map-authored emitters and entities.
-    - Switches back into gameplay: `gs.mode = GAME_MODE_PLAYING`.
-    - Updates background music via `maybe_start_map_music(...)`.
-
-**End of episode:** if `episode_runner_advance()` returns `false` (no next map), the game does not automatically change state; it remains in win mode unless other logic changes it.
+- If `EpisodeFlow` is active:
+  - The win edge is forwarded to `episode_flow_on_map_win(...)`.
+  - `EpisodeFlow` advances to the next map when available, or transitions into exit scenes (if configured), or completes the episode flow.
 
 ### Per-level reset semantics
 
@@ -228,7 +243,7 @@ Behavior:
 
 Examples:
 
-- Validate default episode and its maps:
+- Validate `episode1.json` and its maps (tool default):
   - `make validate`
 - Validate a specific map:
   - `make validate MAP=arena.json`

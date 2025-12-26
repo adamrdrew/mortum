@@ -257,8 +257,20 @@ bool scene_load(Scene* out, const AssetPaths* paths, const char* scene_file) {
 		}
 		int t_midi = -1;
 		int t_sf = -1;
+		int t_no_stop = -1;
 		(void)json_object_get(&doc, t_music, "midi", &t_midi);
 		(void)json_object_get(&doc, t_music, "soundfont", &t_sf);
+		(void)json_object_get(&doc, t_music, "no_stop", &t_no_stop);
+		if (t_no_stop != -1) {
+			bool b = false;
+			if (!json_get_bool_local(&doc, t_no_stop, &b)) {
+				log_error("Scene music.no_stop must be a boolean");
+				scene_destroy(out);
+				json_doc_destroy(&doc);
+				return false;
+			}
+			out->music.no_stop = b;
+		}
 		if (t_midi != -1) {
 			StringView sv;
 			if (!json_get_string(&doc, t_midi, &sv)) {
@@ -320,6 +332,13 @@ bool scene_load(Scene* out, const AssetPaths* paths, const char* scene_file) {
 			free(sf_full);
 		} else if (out->music.midi_file) {
 			out->music.soundfont_file = strdup("hl4mgm.sf2");
+		}
+
+		if (out->music.no_stop && out->music.midi_file && out->music.midi_file[0] != '\0') {
+			log_warn(
+				"Warning: Scene %s has both music.midi and music.no_stop set. The music.no_stop setting will be ignored.",
+				scene_file);
+			out->music.no_stop = false;
 		}
 	}
 

@@ -34,7 +34,14 @@ typedef struct EpisodeFlow {
 	EpisodeFlowPhase phase;
 	int enter_index;
 	int exit_index;
+	// When a scene is running under EpisodeFlow, this indicates whether that scene's exit
+	// should preserve currently playing MIDI (used to implement chaining into a music.no_stop scene).
+	bool preserve_midi_on_scene_exit;
 } EpisodeFlow;
+
+// If EpisodeFlow is currently running a Scene, returns whether that Scene should preserve
+// currently playing MIDI when it exits.
+bool episode_flow_preserve_midi_on_scene_exit(const EpisodeFlow* self);
 
 typedef struct EpisodeFlowRuntime {
 	const AssetPaths* paths;

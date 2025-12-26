@@ -132,7 +132,9 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - `config_reload` — reloads config from disk (non-fatal on invalid config)
 - `config_change <key_path> <value>` — updates a single config key in memory (validated)
 - `load_map <map.json>` — loads a map from `Assets/Levels/`
-- `load_episode <episode.json>` — loads an episode from `Assets/Episodes/`
+- `unload_map` — unloads the current map/world
+- `load_episode <episode.json>` — loads an episode from `Assets/Episodes/` (safe relative path; unloads current map/world and starts episode flow)
+- `load_scene <scene.json>` — loads a scene from `Assets/Scenes/` (runs as active screen; gameplay suspended while active)
 - `dump_perf` — begins a perf trace capture
 - `dump_entities` — prints an entity + projection dump into the console
 - `show_fps <boolean>` — toggles FPS overlay

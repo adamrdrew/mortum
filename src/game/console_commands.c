@@ -631,6 +631,7 @@ static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user
 		console_print(con, "Error: Failed to load scene (see log).");
 		return false;
 	}
+	bool preserve_midi = scene.music.no_stop && (!scene.music.midi_file || scene.music.midi_file[0] == '\0');
 
 	Screen* scr = scene_screen_create(scene);
 	if (!scr) {
@@ -647,6 +648,7 @@ static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user
 	sctx.allow_input = false;
 	sctx.audio_enabled = (ctx->audio_enabled && *ctx->audio_enabled);
 	sctx.music_enabled = (ctx->music_enabled && *ctx->music_enabled);
+	sctx.preserve_midi_on_exit = preserve_midi;
 
 	screen_runtime_set(ctx->screens, scr, &sctx);
 	console_print(con, "OK");

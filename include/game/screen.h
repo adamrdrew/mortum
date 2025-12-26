@@ -21,6 +21,9 @@ typedef struct ScreenContext {
 	bool allow_input;
 	bool audio_enabled;
 	bool music_enabled;
+	// If true, screens that normally stop MIDI on exit should preserve it.
+	// This is used to implement Scene music.no_stop across Scene-to-Scene transitions.
+	bool preserve_midi_on_exit;
 } ScreenContext;
 
 struct Screen;

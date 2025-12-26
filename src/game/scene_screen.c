@@ -118,19 +118,27 @@ static void scene_screen_on_enter(Screen* s, const ScreenContext* ctx) {
 	}
 
 	// Music
-	if (ctx->audio_enabled && ctx->music_enabled && self->scene.music.midi_file && self->scene.music.midi_file[0] != '\0') {
-		const char* sf = self->scene.music.soundfont_file ? self->scene.music.soundfont_file : "hl4mgm.sf2";
-		char* midi_path = asset_path_join(ctx->paths, "Sounds/MIDI", self->scene.music.midi_file);
-		char* sf_path = asset_path_join(ctx->paths, "Sounds/SoundFonts", sf);
-		if (midi_path && sf_path) {
-			midi_stop();
-			if (midi_init(sf_path) == 0) {
-				midi_play(midi_path);
-				self->music_started = true;
+	if (ctx->audio_enabled && ctx->music_enabled) {
+		bool has_midi = (self->scene.music.midi_file && self->scene.music.midi_file[0] != '\0');
+		if (has_midi) {
+			const char* sf = self->scene.music.soundfont_file ? self->scene.music.soundfont_file : "hl4mgm.sf2";
+			char* midi_path = asset_path_join(ctx->paths, "Sounds/MIDI", self->scene.music.midi_file);
+			char* sf_path = asset_path_join(ctx->paths, "Sounds/SoundFonts", sf);
+			if (midi_path && sf_path) {
+				midi_stop();
+				if (midi_init(sf_path) == 0) {
+					midi_play(midi_path);
+					self->music_started = true;
+				}
+			}
+			free(midi_path);
+			free(sf_path);
+		} else {
+			// Default behavior: stop any currently playing MIDI unless explicitly told not to.
+			if (!self->scene.music.no_stop) {
+				midi_stop();
 			}
 		}
-		free(midi_path);
-		free(sf_path);
 	}
 }
 
@@ -139,7 +147,7 @@ static void scene_screen_on_exit(Screen* s, const ScreenContext* ctx) {
 	if (!self || !ctx) {
 		return;
 	}
-	if (self->music_started) {
+	if (self->music_started && !ctx->preserve_midi_on_exit) {
 		midi_stop();
 	}
 	if (ctx->audio_enabled && self->scene.sfx.exit_wav && self->scene.sfx.exit_wav[0] != '\0') {

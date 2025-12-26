@@ -53,6 +53,7 @@ typedef struct SceneSfx {
 typedef struct SceneMusic {
 	char* midi_file;      // owned; filename relative to Assets/Sounds/MIDI/
 	char* soundfont_file; // owned; filename relative to Assets/Sounds/SoundFonts/
+	bool no_stop;         // if true and midi_file is not set, do not stop any currently playing MIDI
 } SceneMusic;
 
 typedef struct Scene {
