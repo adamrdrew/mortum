@@ -28,7 +28,7 @@ Primary integration points:
 
 There are also spec artifacts you may see referenced:
 
-- JSON Schema contract: `specs/001-mortum-vision-spec/contracts/episode.schema.json` (currently matches the engine loader)
+- JSON Schema contract: `specs/001-mortum-vision-spec/contracts/episode.schema.json` (kept in sync with the engine loader)
 
 ---
 
