@@ -257,6 +257,15 @@ Validation rules:
 - Movable sectors must have clearance: `ceil_z > max(floor_z_origin, floor_z_toggled_pos) + 0.10`.
 - Each sector must have at least one **closed boundary loop** formed from its walls (see “Sector boundary validity”).
 
+Validator warnings you may see:
+
+- `Sector N has X wall components that are not closed loops (internal segments?)`
+  - Meaning: besides the sector’s main boundary loop(s), there are additional connected components made from that sector’s `front_sector` wall edges whose vertices don’t all have degree 2 (i.e., not a cycle).
+  - This is often accidental “stray” geometry, but it can also be intentional internal segments.
+- `Sector N has X closed loops (obstacles/holes?)`
+  - Meaning: the sector’s walls form multiple disjoint closed cycles.
+  - The validator treats this as a warning (not a hard error). Containment tests in the validator pick the *largest* closed loop so obstacle/hole loops don’t break point-in-sector checks.
+
 ---
 
 ## Schema: `walls` (required)
