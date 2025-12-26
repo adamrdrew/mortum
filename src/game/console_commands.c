@@ -813,7 +813,7 @@ void console_commands_register_all(Console* con) {
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "load_episode",
 		.description = "Loads an episode from Assets/Episodes/.",
-		.example = "load_episode episode1.json",
+		.example = "load_episode boot.json",
 		.syntax = "load_episode string",
 		.fn = cmd_load_episode,
 	});

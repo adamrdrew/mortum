@@ -77,8 +77,8 @@ int main(int argc, char** argv) {
 			}
 		}
 	} else {
-		// Default: validate episode1.json and its maps.
-		ok = validate_episode_maps(&paths, "episode1.json");
+		// Default: validate boot.json and its maps.
+		ok = validate_episode_maps(&paths, "boot.json");
 	}
 
 	asset_paths_destroy(&paths);

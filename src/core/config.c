@@ -45,7 +45,7 @@ static CoreConfig g_cfg = {
 		.sfx_device_buffer_samples = 1024,
 	},
 	.content = {
-		.boot_episode = "episode1.json",
+		.boot_episode = "boot.json",
 	},
 	.ui = {
 		.font = {

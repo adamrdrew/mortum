@@ -34,7 +34,7 @@ There are also spec artifacts you may see referenced:
 
 ## Quick concepts / glossary
 
-- **Episode file**: a JSON file under `Assets/Episodes/` (example: `Assets/Episodes/episode1.json`).
+- **Episode file**: a JSON file under `Assets/Episodes/` (example: `Assets/Episodes/boot.json`).
 - **Episode**: metadata + optional **enter/exit scene lists** + optional **map list**.
 - **Scene filename**: a string like `"title.json"` that is treated as **relative to `Assets/Scenes/`** when the engine loads it.
 - **Map filename**: a string like `"e1m1.json"` that is treated as **relative to `Assets/Levels/`** when the engine loads it.
@@ -81,7 +81,7 @@ If either is missing or has the wrong type, `episode_load()` returns `false`.
 
 ### Example
 
-`Assets/Episodes/episode1.json`:
+`Assets/Episodes/boot.json`:
 
 ```json
 {
@@ -238,12 +238,12 @@ There is a small asset validation tool in `tools/validate_assets.c` (wired into 
 
 Behavior:
 
-- With no args: validates `episode1.json` and then attempts to load every map listed in that episode.
+- With no args: validates `boot.json` and then attempts to load every map listed in that episode.
 - With args: treats each argument as a map filename and validates it directly.
 
 Examples:
 
-- Validate `episode1.json` and its maps (tool default):
+- Validate `boot.json` and its maps (tool default):
   - `make validate`
 - Validate a specific map:
   - `make validate MAP=arena.json`
