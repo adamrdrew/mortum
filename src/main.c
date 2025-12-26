@@ -1,6 +1,7 @@
 #include "core/config.h"
 #include "core/game_loop.h"
 #include "core/log.h"
+#include "core/crash_diag.h"
 
 #include "platform/fs.h"
 #include "platform/input.h"
@@ -238,6 +239,8 @@ int main(int argc, char** argv) {
 	if (!log_init(LOG_LEVEL_INFO)) {
 		return 1;
 	}
+	crash_diag_init();
+	crash_diag_set_phase(PHASE_BOOT_SCENES_RUNNING);
 
 	PlatformConfig pcfg;
 	pcfg.enable_audio = true;
@@ -376,7 +379,9 @@ int main(int argc, char** argv) {
 		ep_flow.active = false;
 	}
 	if (map_name_buf[0] != '\0') {
+		crash_diag_set_phase(PHASE_MAP_LOAD_BEGIN);
 		map_ok = map_load(&map, &paths, map_name_buf);
+		crash_diag_set_phase(map_ok ? PHASE_MAP_INIT_WORLD : PHASE_MAP_LOAD_BEGIN);
 		if (map_ok) {
 			log_info("Map loaded: entities=%d", map.entity_count);
 			if (map.entities && map.entity_count > 0) {
@@ -391,7 +396,9 @@ int main(int argc, char** argv) {
 			}
 		}
 		// Validate MIDI and SoundFont existence for background music
+		crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_BEGIN);
 		game_map_music_maybe_start(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
+		crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 	}
 
 	LevelMesh mesh;
@@ -432,10 +439,12 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	crash_diag_set_phase(PHASE_MAP_SPAWN_ENTITIES_BEGIN);
 	entity_system_reset(&entities, map_ok ? &map.world : NULL, map_ok ? &particle_emitters : NULL, &entity_defs);
 	if (map_ok && map.entities && map.entity_count > 0) {
 		entity_system_spawn_map(&entities, map.entities, map.entity_count);
 	}
+	crash_diag_set_phase(PHASE_MAP_SPAWN_ENTITIES_END);
 
 	Input in;
 	memset(&in, 0, sizeof(in));
@@ -623,6 +632,9 @@ int main(int argc, char** argv) {
 		}
 
 		bool screen_active = screen_runtime_is_active(&screens);
+		if (screen_active) {
+			crash_diag_set_phase(PHASE_BOOT_SCENES_RUNNING);
+		}
 		if (in.quit_requested || (!console_open && !screen_active && input_key_down(&in, SDL_SCANCODE_ESCAPE))) {
 			running = false;
 			if (audio_enabled) {
@@ -719,7 +731,9 @@ int main(int argc, char** argv) {
 			}
 			// If a scene overrode map music, restore the current map's MIDI when returning to gameplay.
 			if (completed && !exit_after_scene) {
+				crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_BEGIN);
 				game_map_music_maybe_start(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
+				crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 			}
 			// Episode-driven scenes advance only when the active screen completes.
 			if (completed && ep_flow.active && !exit_after_scene) {
@@ -764,6 +778,7 @@ int main(int argc, char** argv) {
 		}
 		for (int i = 0; i < steps; i++) {
 			if (gs.mode == GAME_MODE_PLAYING) {
+				crash_diag_set_phase(PHASE_GAMEPLAY_UPDATE_TICK);
 				bool action_down = key_down2(&in, cfg->input.action_primary, cfg->input.action_secondary);
 				bool action_pressed = action_down && !player.action_prev_down;
 				player.action_prev_down = action_down;
@@ -1021,6 +1036,7 @@ int main(int argc, char** argv) {
 		}
 		win_prev = win_now;
 
+		crash_diag_set_phase(PHASE_FIRST_FRAME_RENDER);
 		Camera cam = camera_make(player.body.x, player.body.y, player.angle_deg, cfg->render.fov_deg);
 		{
 			float phase = player.weapon_view_bob_phase;

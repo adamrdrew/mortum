@@ -67,8 +67,14 @@ void texture_registry_destroy(TextureRegistry* self) {
 		return;
 	}
 	for (int i = 0; i < self->count; i++) {
-		free(self->items[i].pixels);
-		self->items[i].pixels = NULL;
+		Texture* t = self->items[i];
+		if (!t) {
+			continue;
+		}
+		free(t->pixels);
+		t->pixels = NULL;
+		free(t);
+		self->items[i] = NULL;
 	}
 	free(self->items);
 	memset(self, 0, sizeof(*self));
@@ -79,8 +85,12 @@ static Texture* registry_find(TextureRegistry* self, const char* filename) {
 		if (g_perf) {
 			g_perf->registry_string_compares++;
 		}
-		if (strncmp(self->items[i].name, filename, sizeof(self->items[i].name)) == 0) {
-			return &self->items[i];
+		Texture* t = self->items[i];
+		if (!t) {
+			continue;
+		}
+		if (strncmp(t->name, filename, sizeof(t->name)) == 0) {
+			return t;
 		}
 	}
 	return NULL;
@@ -89,15 +99,18 @@ static Texture* registry_find(TextureRegistry* self, const char* filename) {
 static Texture* registry_push(TextureRegistry* self) {
 	if (self->count >= self->capacity) {
 		int new_cap = self->capacity == 0 ? 8 : self->capacity * 2;
-		Texture* n = (Texture*)realloc(self->items, (size_t)new_cap * sizeof(Texture));
+		Texture** n = (Texture**)realloc(self->items, (size_t)new_cap * sizeof(Texture*));
 		if (!n) {
 			return NULL;
 		}
 		self->items = n;
 		self->capacity = new_cap;
 	}
-	Texture* t = &self->items[self->count++];
-	memset(t, 0, sizeof(*t));
+	Texture* t = (Texture*)calloc(1, sizeof(Texture));
+	if (!t) {
+		return NULL;
+	}
+	self->items[self->count++] = t;
 	return t;
 }
 
@@ -182,6 +195,7 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 		Texture* miss = registry_push(self);
 		if (miss) {
 			strncpy(miss->name, filename, sizeof(miss->name) - 1);
+			miss->name[sizeof(miss->name) - 1] = '\0';
 		}
 		free(preferred);
 		free(particles);
@@ -214,6 +228,7 @@ const Texture* texture_registry_get(TextureRegistry* self, const AssetPaths* pat
 	t->pixels = img.pixels;
 	img.pixels = NULL;
 	strncpy(t->name, filename, sizeof(t->name) - 1);
+	t->name[sizeof(t->name) - 1] = '\0';
 	if (g_perf) {
 		g_perf->get_ms += (platform_time_seconds() - t0) * 1000.0;
 	}

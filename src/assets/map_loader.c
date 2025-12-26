@@ -330,6 +330,26 @@ static bool json_get_particle_rotate(const JsonDoc* doc, int tok, ParticleEmitte
 }
 
 void map_load_result_destroy(MapLoadResult* self) {
+	if (!self) {
+		return;
+	}
+	log_info_s(
+		"map",
+		"map_load_result_destroy: self=%p world={v=%p vc=%d s=%p sc=%d w=%p wc=%d} sounds=%p sc=%d particles=%p pc=%d entities=%p ec=%d",
+		(void*)self,
+		(void*)self->world.vertices,
+		self->world.vertex_count,
+		(void*)self->world.sectors,
+		self->world.sector_count,
+		(void*)self->world.walls,
+		self->world.wall_count,
+		(void*)self->sounds,
+		self->sound_count,
+		(void*)self->particles,
+		self->particle_count,
+		(void*)self->entities,
+		self->entity_count
+	);
 	free(self->sounds);
 	self->sounds = NULL;
 	self->sound_count = 0;
@@ -341,6 +361,7 @@ void map_load_result_destroy(MapLoadResult* self) {
 	self->entity_count = 0;
 	world_destroy(&self->world);
 	memset(self, 0, sizeof(*self));
+	log_info_s("map", "map_load_result_destroy: done self=%p", (void*)self);
 }
 
 bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filename) {

@@ -4,6 +4,7 @@
 #include "assets/midi_player.h"
 
 #include "core/log.h"
+#include "core/crash_diag.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -22,7 +23,10 @@ static bool file_exists(const char* path) {
 }
 
 void game_map_music_stop(char* prev_bgmusic, size_t prev_bgmusic_cap, char* prev_soundfont, size_t prev_soundfont_cap) {
+	crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_BEGIN);
+	log_info_s("music", "MIDI stop requested");
 	midi_stop();
+	crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 	if (prev_bgmusic && prev_bgmusic_cap > 0) {
 		prev_bgmusic[0] = '\0';
 	}
@@ -56,25 +60,48 @@ void game_map_music_maybe_start(
 		return;
 	}
 
+	crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_BEGIN);
+	log_info_s(
+		"music",
+		"Map music switch: bgmusic='%s' soundfont='%s' (prev bgmusic='%s' soundfont='%s' same=%d playing=%d)",
+		map->bgmusic,
+		map->soundfont,
+		prev_bgmusic,
+		prev_soundfont,
+		same ? 1 : 0,
+		midi_is_playing()
+	);
+
 	midi_stop();
 	char* midi_path = asset_path_join(paths, "Sounds/MIDI", map->bgmusic);
 	char* sf_path = asset_path_join(paths, "Sounds/SoundFonts", map->soundfont);
+	log_info_s(
+		"music",
+		"Resolved paths: midi_path=%p '%s' sf_path=%p '%s'",
+		(void*)midi_path,
+		midi_path ? midi_path : "(null)",
+		(void*)sf_path,
+		sf_path ? sf_path : "(null)"
+	);
 	if (!midi_path || !sf_path) {
 		log_warn("MIDI path allocation failed");
 		free(midi_path);
 		free(sf_path);
+		crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 		return;
 	}
 	if (!file_exists(midi_path)) {
 		log_warn("MIDI file not found: %s", midi_path);
 		free(midi_path);
 		free(sf_path);
+		crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 		return;
 	}
 	if (!file_exists(sf_path)) {
 		log_warn("SoundFont file not found: %s", sf_path);
 		free(midi_path);
 		free(sf_path);
+		crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 		return;
 	}
 	if (midi_init(sf_path) == 0) {
@@ -92,4 +119,5 @@ void game_map_music_maybe_start(
 	}
 	free(midi_path);
 	free(sf_path);
+	crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 }

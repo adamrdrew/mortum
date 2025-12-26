@@ -3,6 +3,7 @@
 #include "assets/scene_loader.h"
 #include "assets/midi_player.h"
 #include "core/log.h"
+#include "core/crash_diag.h"
 
 #include "game/map_music.h"
 #include "game/scene_screen.h"
@@ -75,8 +76,31 @@ static bool try_load_current_map(EpisodeFlowRuntime* rt) {
 		return false;
 	}
 
+	crash_diag_set_phase(PHASE_SCENE_TO_MAP_REQUEST);
+	log_info_s(
+		"transition",
+		"Scene->Map request: map='%s' map_ptr=%p prev_map_ok=%d screen_ptr=%p",
+		map_name,
+		(void*)rt->map,
+		(rt->map_ok ? (int)*rt->map_ok : -1),
+		(rt->screens ? (void*)rt->screens->active : NULL)
+	);
+
 	// map_load() overwrites the MapLoadResult struct; destroy prior owned allocations first.
 	if (*rt->map_ok) {
+		log_info_s(
+			"transition",
+			"Destroying previous map: map_ptr=%p world={v=%p vc=%d s=%p sc=%d w=%p wc=%d} entities=%p ec=%d",
+			(void*)rt->map,
+			(void*)rt->map->world.vertices,
+			rt->map->world.vertex_count,
+			(void*)rt->map->world.sectors,
+			rt->map->world.sector_count,
+			(void*)rt->map->world.walls,
+			rt->map->world.wall_count,
+			(void*)rt->map->entities,
+			rt->map->entity_count
+		);
 		map_load_result_destroy(rt->map);
 		*rt->map_ok = false;
 		if (rt->mesh) {
@@ -85,12 +109,38 @@ static bool try_load_current_map(EpisodeFlowRuntime* rt) {
 		}
 	}
 
+	crash_diag_set_phase(PHASE_MAP_LOAD_BEGIN);
+	crash_diag_set_phase(PHASE_MAP_ASSETS_LOAD);
 	bool ok = map_load(rt->map, rt->paths, map_name);
 	*rt->map_ok = ok;
 	if (!ok) {
 		log_error("Episode map failed to load: %s", map_name);
 		return false;
 	}
+	crash_diag_set_phase(PHASE_MAP_INIT_WORLD);
+	log_info_s(
+		"transition",
+		"Map loaded: map_ptr=%p world={v=%p vc=%d s=%p sc=%d w=%p wc=%d idx=%p ic=%d lights=%p lc=%d} sounds=%p sc=%d particles=%p pc=%d entities=%p ec=%d bgmusic='%s' soundfont='%s'",
+		(void*)rt->map,
+		(void*)rt->map->world.vertices,
+		rt->map->world.vertex_count,
+		(void*)rt->map->world.sectors,
+		rt->map->world.sector_count,
+		(void*)rt->map->world.walls,
+		rt->map->world.wall_count,
+		(void*)rt->map->world.sector_wall_indices,
+		rt->map->world.sector_wall_index_count,
+		(void*)rt->map->world.lights,
+		rt->map->world.light_count,
+		(void*)rt->map->sounds,
+		rt->map->sound_count,
+		(void*)rt->map->particles,
+		rt->map->particle_count,
+		(void*)rt->map->entities,
+		rt->map->entity_count,
+		rt->map->bgmusic,
+		rt->map->soundfont
+	);
 
 	if (rt->map_name_buf && rt->map_name_cap > 0) {
 		strncpy(rt->map_name_buf, map_name, rt->map_name_cap);
@@ -101,6 +151,7 @@ static bool try_load_current_map(EpisodeFlowRuntime* rt) {
 	episode_runner_apply_level_start(rt->player, rt->map);
 	rt->player->footstep_timer_s = 0.0f;
 
+	crash_diag_set_phase(PHASE_MAP_SPAWN_ENTITIES_BEGIN);
 	// Respawn map-authored systems.
 	sound_emitters_reset(rt->sfx_emitters);
 	sound_emitters_set_enabled(rt->sfx_emitters, rt->audio_enabled && rt->sound_emitters_enabled);
@@ -124,10 +175,20 @@ static bool try_load_current_map(EpisodeFlowRuntime* rt) {
 	if (rt->map->entities && rt->map->entity_count > 0) {
 		entity_system_spawn_map(rt->entities, rt->map->entities, rt->map->entity_count);
 	}
+	crash_diag_set_phase(PHASE_MAP_SPAWN_ENTITIES_END);
+	log_info_s(
+		"transition",
+		"Spawned map systems: entity_system=%p particle_emitters=%p sound_emitters=%p",
+		(void*)rt->entities,
+		(void*)rt->particle_emitters,
+		(void*)rt->sfx_emitters
+	);
 
 	rt->gs->mode = GAME_MODE_PLAYING;
+	crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_BEGIN);
 	game_map_music_maybe_start(rt->paths, rt->map, *rt->map_ok, rt->audio_enabled, rt->music_enabled, rt->prev_bgmusic, rt->prev_bgmusic_cap,
 			rt->prev_soundfont, rt->prev_soundfont_cap);
+	crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 	return true;
 }
 

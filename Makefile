@@ -39,6 +39,7 @@ endif
 SRC := \
   src/main.c \
   src/core/log.c \
+  src/core/crash_diag.c \
   src/core/config.c \
   src/core/path_safety.c \
   src/core/game_loop.c \

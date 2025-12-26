@@ -13,7 +13,7 @@ typedef struct Texture {
 } Texture;
 
 typedef struct TextureRegistry {
-	Texture* items; // owned
+	Texture** items; // owned pointers; each Texture is heap-allocated and stable
 	int count;
 	int capacity;
 } TextureRegistry;
