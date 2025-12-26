@@ -45,8 +45,7 @@ static CoreConfig g_cfg = {
 		.sfx_device_buffer_samples = 1024,
 	},
 	.content = {
-		.default_episode = "episode1.json",
-		.boot_episode = "",
+		.boot_episode = "episode1.json",
 	},
 	.ui = {
 		.font = {
@@ -725,19 +724,8 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 				log_error("Config: %s: content must be an object", path);
 				ok = false;
 			} else {
-				// NOTE: boot_episode is intentionally optional; failures fall back to default_episode at runtime.
-				static const char* const allowed_content2[] = {"default_episode", "boot_episode"};
+				static const char* const allowed_content2[] = {"boot_episode"};
 				warn_unknown_keys(&doc, t_content, allowed_content2, (int)(sizeof(allowed_content2) / sizeof(allowed_content2[0])), "content");
-				int t_ep = -1;
-				if (json_object_get(&doc, t_content, "default_episode", &t_ep)) {
-					StringView sv;
-					if (!json_get_string(&doc, t_ep, &sv) || sv.len == 0) {
-						log_error("Config: %s: content.default_episode must be a non-empty string", path);
-						ok = false;
-					} else {
-						copy_sv_to_buf(next.content.default_episode, sizeof(next.content.default_episode), sv);
-					}
-				}
 				int t_boot = -1;
 				if (json_object_get(&doc, t_content, "boot_episode", &t_boot)) {
 					StringView sv;
@@ -1206,19 +1194,10 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 		}
 
 		// Asset validation (required assets must exist for the config to be accepted).
-		// Validate the default episode file we will attempt to load at startup.
-		(void)validate_asset_file(assets, "Episodes", next.content.default_episode, path, "content.default_episode", &ok);
-		// boot_episode is optional and must not make startup fatal; warn if it does not exist.
 		if (next.content.boot_episode[0] != '\0') {
-			char* full = asset_path_join(assets, "Episodes", next.content.boot_episode);
-			if (!full) {
-				log_warn("Config: %s: boot_episode path alloc failed", path);
-			} else {
-				if (!file_exists(full)) {
-					log_warn("Config: %s: content.boot_episode file not found (will fall back at runtime): %s", path, full);
-				}
-				free(full);
-			}
+			(void)validate_asset_file(assets, "Episodes", next.content.boot_episode, path, "content.boot_episode", &ok);
+		} else {
+			log_warn("Config: %s: content.boot_episode is empty; startup will require an explicit map arg", path);
 		}
 
 		if (next.audio.enabled) {
@@ -1472,18 +1451,6 @@ CoreConfigSetStatus core_config_try_set_by_path(
 	}
 
 	// render
-	if (key_eq(key_path, "render.internal_width")) {
-		return set_int(&g_cfg.render.internal_width, 64, 8192, provided_kind, value_str, out_expected_kind);
-	}
-	if (key_eq(key_path, "render.internal_height")) {
-		return set_int(&g_cfg.render.internal_height, 64, 8192, provided_kind, value_str, out_expected_kind);
-	}
-	if (key_eq(key_path, "render.fov_deg")) {
-		return set_float(&g_cfg.render.fov_deg, 1.0f, 179.0f, provided_kind, value_str, out_expected_kind);
-	}
-	if (key_eq(key_path, "render.point_lights_enabled")) {
-		return set_bool(&g_cfg.render.point_lights_enabled, key_path, provided_kind, value_str, out_expected_kind);
-	}
 	if (key_eq(key_path, "render.lighting.enabled")) {
 		return set_bool(&g_cfg.render.lighting.enabled, key_path, provided_kind, value_str, out_expected_kind);
 	}
@@ -1527,18 +1494,6 @@ CoreConfigSetStatus core_config_try_set_by_path(
 	}
 
 	// content
-	if (key_eq(key_path, "content.default_episode")) {
-		// Allow path separators? Keep consistent with existing load behavior: episode loader expects filename.
-		if (provided_kind != CORE_CONFIG_VALUE_STRING) {
-			return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected_kind);
-		}
-		if (!value_str || value_str[0] == '\0') {
-			return CORE_CONFIG_SET_INVALID_VALUE;
-		}
-		strncpy(g_cfg.content.default_episode, value_str, sizeof(g_cfg.content.default_episode) - 1);
-		g_cfg.content.default_episode[sizeof(g_cfg.content.default_episode) - 1] = '\0';
-		return CORE_CONFIG_SET_OK;
-	}
 	if (key_eq(key_path, "content.boot_episode")) {
 		if (provided_kind != CORE_CONFIG_VALUE_STRING) {
 			return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected_kind);

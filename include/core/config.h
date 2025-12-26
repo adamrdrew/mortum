@@ -128,7 +128,6 @@ typedef struct AudioConfig {
 } AudioConfig;
 
 typedef struct ContentConfig {
-	char default_episode[64];
 	char boot_episode[64];
 } ContentConfig;
 

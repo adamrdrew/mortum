@@ -363,18 +363,15 @@ int main(int argc, char** argv) {
 		map_name_buf[0] = '\0';
 	} else {
 		// Episode mode: load an episode asset now; EpisodeFlow decides whether to run scenes first.
-		const char* episode_to_try = (cfg->content.boot_episode[0] != '\0') ? cfg->content.boot_episode : cfg->content.default_episode;
-		ep_ok = episode_load(&ep, &paths, episode_to_try);
-		if (!ep_ok && cfg->content.boot_episode[0] != '\0') {
-			log_warn("boot_episode failed to load; falling back to default_episode: %s", cfg->content.default_episode);
-			ep_ok = episode_load(&ep, &paths, cfg->content.default_episode);
+		if (cfg->content.boot_episode[0] != '\0') {
+			ep_ok = episode_load(&ep, &paths, cfg->content.boot_episode);
 		}
 	}
 	if (!scene_name_arg && map_name_arg) {
 		// A filename relative to Assets/Levels/ (e.g. "mortum_test.json").
 		strncpy(map_name_buf, map_name_arg, sizeof(map_name_buf));
 		map_name_buf[sizeof(map_name_buf) - 1] = '\0';
-		// Explicit map arg overrides boot_episode/default_episode.
+		// Explicit map arg overrides content.boot_episode.
 		using_episode = false;
 		ep_flow.active = false;
 	}

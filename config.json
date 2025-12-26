@@ -32,7 +32,6 @@
     "sfx_device_buffer_samples": 1024
   },
   "content": {
-    "default_episode": "episode1.json",
     "boot_episode": "boot.json"
   },
   "ui": {
