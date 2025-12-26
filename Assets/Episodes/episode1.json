@@ -1,5 +1,0 @@
-{
-  "name": "Episode 1: The Spill",
-  "splash": "episode1_splash.bmp",
-  "maps": ["e1m1.json", "arena.json"]
-}
