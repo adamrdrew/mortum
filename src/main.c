@@ -80,8 +80,8 @@ static bool file_exists(const char* path) {
 	if (!f) {
 		return false;
 	}
-	free(midi_path);
-	free(sf_path);
+	fclose(f);
+	return true;
 }
 
 static char* dup_cstr(const char* s) {

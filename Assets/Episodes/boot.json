@@ -1,0 +1,8 @@
+{
+  "name": "Boot",
+  "splash": "boot_splash.bmp",
+  "scenes": {
+    "enter": ["developer.json", "engine.json", "title.json"]
+  },
+  "maps": ["big.json"]
+}

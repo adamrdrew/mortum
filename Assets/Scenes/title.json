@@ -1,0 +1,16 @@
+{
+  "background_png": "Scenes/title.png",
+  "fade_in": { "duration_ms": 300, "from_rgba": [0, 0, 0, 255] },
+  "fade_out": { "duration_ms": 300, "from_rgba": [0, 0, 0, 255] },
+  "text": {
+    "value": "Press any key to continue",
+    "align": "center",
+    "font": "ProggyClean.ttf",
+    "size_px": 16,
+    "color_rgba": [255, 255, 255, 255],
+    "opacity": 1.0,
+    "x_px": 320,
+    "y_px": 370
+  },
+  "end": { "any_key": true }
+}

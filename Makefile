@@ -40,6 +40,7 @@ SRC := \
   src/main.c \
   src/core/log.c \
   src/core/config.c \
+  src/core/path_safety.c \
   src/core/game_loop.c \
   src/platform/platform.c \
   src/platform/window_sdl.c \
@@ -91,6 +92,8 @@ SRC := \
   src/game/particles.c \
   src/game/console.c \
   src/game/console_commands.c \
+  src/game/episode_flow.c \
+  src/game/map_music.c \
   src/game/screen_runtime.c \
   src/game/scene_screen.c
 
