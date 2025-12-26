@@ -128,7 +128,7 @@ typedef struct AudioConfig {
 } AudioConfig;
 
 typedef struct ContentConfig {
-	char boot_episode[64];
+	char boot_timeline[64];
 } ContentConfig;
 
 typedef struct UiFontConfig {
