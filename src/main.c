@@ -124,6 +124,44 @@ static char* join2(const char* a, const char* b) {
 	return out;
 }
 
+static float cross2f(float ax, float ay, float bx, float by) {
+	return ax * by - ay * bx;
+}
+
+// Returns true if segment P (p0->p1) intersects segment Q (q0->q1).
+// If true, out_t is the param along P in (0,1].
+static bool segment_intersect_param(
+	float p0x,
+	float p0y,
+	float p1x,
+	float p1y,
+	float q0x,
+	float q0y,
+	float q1x,
+	float q1y,
+	float* out_t
+) {
+	float rx = p1x - p0x;
+	float ry = p1y - p0y;
+	float sx = q1x - q0x;
+	float sy = q1y - q0y;
+	float denom = cross2f(rx, ry, sx, sy);
+	if (fabsf(denom) < 1e-8f) {
+		return false;
+	}
+	float qpx = q0x - p0x;
+	float qpy = q0y - p0y;
+	float t = cross2f(qpx, qpy, sx, sy) / denom;
+	float u = cross2f(qpx, qpy, rx, ry) / denom;
+	if (t > 1e-6f && t <= 1.0f + 1e-6f && u >= -1e-6f && u <= 1.0f + 1e-6f) {
+		if (out_t) {
+			*out_t = t;
+		}
+		return true;
+	}
+	return false;
+}
+
 static char* resolve_config_path(int argc, char** argv) {
 	// Precedence:
 	// 1) CLI: --config <path> or CONFIG=<path>
@@ -1113,6 +1151,83 @@ int main(int argc, char** argv) {
 				floor_z = map.world.sectors[player.body.sector].floor_z;
 			}
 			cam.z = (player.body.z - floor_z) + bob_z;
+		}
+		// During step-up, PhysicsBody intentionally locks body.sector to the origin sector
+		// while allowing body.x/y to advance. The raycaster assumes cam.x/y is inside the
+		// start sector (and on the correct side of portal walls); when that invariant is
+		// violated it can produce transient portal-edge rendering artifacts.
+		if (
+			map_ok &&
+			player.body.step_up.active &&
+			(unsigned)player.body.sector < (unsigned)map.world.sector_count &&
+			(unsigned)player.body.step_up.to_sector < (unsigned)map.world.sector_count
+		) {
+			int from_sector = player.body.sector;
+			int to_sector = player.body.step_up.to_sector;
+			float frac = player.body.step_up.applied_frac;
+			if (frac < 0.0f) {
+				frac = 0.0f;
+			} else if (frac > 1.0f) {
+				frac = 1.0f;
+			}
+			// Reconstruct the point where the step started in world space.
+			float origin_x = player.body.x - player.body.step_up.total_dx * frac;
+			float origin_y = player.body.y - player.body.step_up.total_dy * frac;
+
+			// First try a geometric clamp: keep cam on the from-sector side of the actual portal wall.
+			float best_t = 1e30f;
+			for (int i = 0; i < map.world.wall_count; i++) {
+				Wall w = map.world.walls[i];
+				if (w.back_sector < 0) {
+					continue;
+				}
+				bool matches =
+					(w.front_sector == from_sector && w.back_sector == to_sector) ||
+					(w.front_sector == to_sector && w.back_sector == from_sector);
+				if (!matches) {
+					continue;
+				}
+				if (w.v0 < 0 || w.v0 >= map.world.vertex_count || w.v1 < 0 || w.v1 >= map.world.vertex_count) {
+					continue;
+				}
+				Vertex a = map.world.vertices[w.v0];
+				Vertex b = map.world.vertices[w.v1];
+				float t = 0.0f;
+				if (segment_intersect_param(origin_x, origin_y, cam.x, cam.y, a.x, a.y, b.x, b.y, &t)) {
+					if (t < best_t) {
+						best_t = t;
+					}
+				}
+			}
+			if (best_t < 1e20f) {
+				// Pull back a tiny bit from the crossing so we stay on the from-sector side.
+				float t = best_t - 1e-4f;
+				if (t < 0.0f) {
+					t = 0.0f;
+				}
+				cam.x = origin_x + (cam.x - origin_x) * t;
+				cam.y = origin_y + (cam.y - origin_y) * t;
+			} else {
+				// Fallback: clamp using sector membership queries.
+				int sec_now = world_find_sector_at_point(&map.world, cam.x, cam.y);
+				if (sec_now != from_sector) {
+					float lo = 0.0f;
+					float hi = frac;
+					for (int i = 0; i < 10; i++) {
+						float mid = 0.5f * (lo + hi);
+						float tx = origin_x + player.body.step_up.total_dx * mid;
+						float ty = origin_y + player.body.step_up.total_dy * mid;
+						int s = world_find_sector_at_point(&map.world, tx, ty);
+						if (s == from_sector) {
+							lo = mid;
+						} else {
+							hi = mid;
+						}
+					}
+					cam.x = origin_x + player.body.step_up.total_dx * lo;
+					cam.y = origin_y + player.body.step_up.total_dy * lo;
+				}
+			}
 		}
 
 		// Update looping ambient emitters with current listener position.
