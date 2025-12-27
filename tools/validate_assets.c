@@ -8,8 +8,35 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
-static bool validate_timeline_content(const AssetPaths* paths, const char* timeline_filename) {
+static bool validate_timeline_content_depth(const AssetPaths* paths, const char* timeline_filename, int depth, const char* const* stack, int stack_count);
+
+static bool stack_contains(const char* const* stack, int stack_count, const char* name) {
+	if (!stack || stack_count <= 0 || !name) {
+		return false;
+	}
+	for (int i = 0; i < stack_count; i++) {
+		if (stack[i] && strcmp(stack[i], name) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool validate_timeline_content_depth(const AssetPaths* paths, const char* timeline_filename, int depth, const char* const* stack, int stack_count) {
+	if (!paths || !timeline_filename) {
+		return false;
+	}
+	if (depth > 8) {
+		log_warn("Timeline validation depth exceeded; skipping deeper validation at: %s", timeline_filename);
+		return true;
+	}
+	if (stack_contains(stack, stack_count, timeline_filename)) {
+		log_warn("Timeline validation cycle detected; skipping deeper validation at: %s", timeline_filename);
+		return true;
+	}
+
 	Timeline tl;
 	if (!timeline_load(&tl, paths, timeline_filename)) {
 		log_error("Failed to load timeline: %s", timeline_filename);
@@ -43,10 +70,34 @@ static bool validate_timeline_content(const AssetPaths* paths, const char* timel
 			}
 			map_load_result_destroy(&map);
 		}
+
+		if (ev->on_complete == TIMELINE_ON_COMPLETE_LOAD) {
+			const char* target = ev->target ? ev->target : "";
+			if (target[0] == '\0') {
+				log_error("Timeline event[%d] on_complete=load missing target", i);
+				ok = false;
+				break;
+			}
+			log_info("Validating timeline target: %s", target);
+			const char* next_stack[16];
+			int next_count = 0;
+			for (int j = 0; j < stack_count && j < (int)(sizeof(next_stack) / sizeof(next_stack[0])) - 1; j++) {
+				next_stack[next_count++] = stack[j];
+			}
+			next_stack[next_count++] = timeline_filename;
+			if (!validate_timeline_content_depth(paths, target, depth + 1, next_stack, next_count)) {
+				ok = false;
+				break;
+			}
+		}
 	}
 
 	timeline_destroy(&tl);
 	return ok;
+}
+
+static bool validate_timeline_content(const AssetPaths* paths, const char* timeline_filename) {
+	return validate_timeline_content_depth(paths, timeline_filename, 0, NULL, 0);
 }
 
 static bool validate_map(const AssetPaths* paths, const char* map_filename) {

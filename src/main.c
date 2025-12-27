@@ -349,6 +349,7 @@ int main(int argc, char** argv) {
 	}
 
 	Timeline timeline;
+	memset(&timeline, 0, sizeof(timeline));
 	bool timeline_ok = false;
 	TimelineFlow tl_flow;
 	timeline_flow_init(&tl_flow);
@@ -1190,9 +1191,7 @@ int main(int argc, char** argv) {
 	if (map_ok) {
 		map_load_result_destroy(&map);
 	}
-	if (timeline_ok) {
-		timeline_destroy(&timeline);
-	}
+	timeline_destroy(&timeline);
 
 	entity_system_shutdown(&entities);
 	entity_defs_destroy(&entity_defs);
