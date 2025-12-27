@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mortum.dev/contracts/timeline.schema.json",
+  "title": "Mortum Timeline",
+  "type": "object",
+  "required": ["name", "events"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "name", "on_complete"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["scene", "map"] },
+          "name": { "type": "string", "minLength": 1 },
+          "on_complete": { "type": "string", "enum": ["advance", "loop", "load"] },
+          "target": { "type": "string", "minLength": 1 }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "on_complete": { "const": "load" } }, "required": ["on_complete"] },
+            "then": { "required": ["target"] }
+          },
+          {
+            "if": { "properties": { "on_complete": { "enum": ["advance", "loop"] } }, "required": ["on_complete"] },
+            "then": { "not": { "required": ["target"] } }
+          }
+        ],
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
