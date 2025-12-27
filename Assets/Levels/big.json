@@ -3,7 +3,7 @@
     "bgmusic": "PORTAL-JUMP.MID",
     "soundfont": "hl4mgm.sf2",
     "name": "E1M1_STRESS_TEST",
-    "sky": "red.png",
+    "sky": "purple.png",
     "player_start": {
         "x": 15,
         "y": 15,
