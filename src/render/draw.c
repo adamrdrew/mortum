@@ -224,3 +224,53 @@ void draw_blit_abgr8888_scaled_nearest(
 		}
 	}
 }
+
+void draw_blit_abgr8888_scaled_nearest_alpha(
+	Framebuffer* fb,
+	int dst_x,
+	int dst_y,
+	int dst_w,
+	int dst_h,
+	const uint32_t* src_pixels,
+	int src_w,
+	int src_h
+) {
+	if (!fb || !fb->pixels || !src_pixels || src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) {
+		return;
+	}
+
+	// Clip destination rect to framebuffer.
+	int x0 = dst_x;
+	int y0 = dst_y;
+	int x1 = dst_x + dst_w;
+	int y1 = dst_y + dst_h;
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 > fb->width) x1 = fb->width;
+	if (y1 > fb->height) y1 = fb->height;
+	if (x0 >= x1 || y0 >= y1) {
+		return;
+	}
+
+	const int clipped_w = x1 - x0;
+	const int clipped_h = y1 - y0;
+	const int dst_off_x = x0 - dst_x;
+	const int dst_off_y = y0 - dst_y;
+
+	for (int dy = 0; dy < clipped_h; dy++) {
+		int dst_yi = y0 + dy;
+		int sy = (int)((int64_t)(dy + dst_off_y) * (int64_t)src_h / (int64_t)dst_h);
+		if (sy < 0) sy = 0;
+		if (sy >= src_h) sy = src_h - 1;
+		const uint32_t* src_row = src_pixels + (size_t)sy * (size_t)src_w;
+		uint32_t* dst_row = fb->pixels + (size_t)dst_yi * (size_t)fb->width;
+
+		for (int dx = 0; dx < clipped_w; dx++) {
+			int sx = (int)((int64_t)(dx + dst_off_x) * (int64_t)src_w / (int64_t)dst_w);
+			if (sx < 0) sx = 0;
+			if (sx >= src_w) sx = src_w - 1;
+			uint32_t src = src_row[sx];
+			dst_row[x0 + dx] = blend_abgr8888_over(src, dst_row[x0 + dx]);
+		}
+	}
+}

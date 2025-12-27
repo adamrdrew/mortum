@@ -3,6 +3,7 @@
   "theme": {
     "background": "main.png",
     "cursor": "cursor.png",
+    "cursor_render_size": 16,
     "font": "ProggyClean.ttf",
     "text_size": 16,
     "text_color": "#FFFFFF",

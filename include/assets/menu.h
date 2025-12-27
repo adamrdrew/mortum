@@ -18,6 +18,7 @@ typedef struct MenuSfxTheme {
 typedef struct MenuTheme {
 	char* background_png; // owned; filename under Assets/Images/Menus/Backgrounds/
 	char* cursor_png;     // owned; filename under Assets/Images/Menus/Cursors/ (optional; if NULL/missing, runtime uses fallback glyph)
+	int cursor_render_size_px; // rendered size in pixels (square). Cursor asset can be any square dimensions.
 	char* font_ttf;       // owned; filename under Assets/Fonts/
 	char* music_midi;     // owned; filename under Assets/Sounds/MIDI/ (optional)
 	int text_size_px;

@@ -32,3 +32,16 @@ void draw_blit_abgr8888_scaled_nearest(
 	int src_w,
 	int src_h
 );
+
+// Nearest-neighbor scale+alpha-blend ABGR8888 pixels into the framebuffer.
+// For each pixel: dst = src * a + dst * (1-a).
+void draw_blit_abgr8888_scaled_nearest_alpha(
+	Framebuffer* fb,
+	int dst_x,
+	int dst_y,
+	int dst_w,
+	int dst_h,
+	const uint32_t* src_pixels,
+	int src_w,
+	int src_h
+);

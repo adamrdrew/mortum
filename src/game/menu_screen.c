@@ -28,6 +28,7 @@ typedef struct MenuScreen {
 	MenuAsset asset;
 	bool invoked_from_timeline;
 	ConsoleCommandContext* cmd_ctx; // not owned
+	bool ignore_esc_until_released;
 
 	// Runtime state
 	int stack_depth;
@@ -52,6 +53,20 @@ typedef struct MenuScreen {
 	bool music_started;
 	bool fatal;
 } MenuScreen;
+
+static void cursor_apply_magenta_colorkey(Image* img) {
+	if (!img || !img->pixels || img->width <= 0 || img->height <= 0) {
+		return;
+	}
+	size_t count = (size_t)img->width * (size_t)img->height;
+	for (size_t i = 0; i < count; i++) {
+		uint32_t px = img->pixels[i];
+		// Global sprite colorkey: FF00FF (magenta) is transparent.
+		if ((px & 0x00FFFFFFu) == 0x00FF00FFu) {
+			img->pixels[i] = px & 0x00FFFFFFu; // alpha -> 0
+		}
+	}
+}
 
 static void menu_screen_destroy(Screen* s) {
 	MenuScreen* self = (MenuScreen*)s;
@@ -228,6 +243,10 @@ static void menu_screen_on_enter(Screen* s, const ScreenContext* ctx) {
 	self->fatal = false;
 	self->music_started = false;
 	self->text_color = self->asset.theme.text_color;
+	// If the pause menu was opened by ESC, the input system will still report ESC
+	// as pressed for this frame. Ignore ESC until it is released to avoid
+	// immediately closing the menu.
+	self->ignore_esc_until_released = (!self->invoked_from_timeline) && ctx->in && input_key_down(ctx->in, SDL_SCANCODE_ESCAPE);
 	menu_runtime_reset(self);
 
 	// Background
@@ -250,11 +269,7 @@ static void menu_screen_on_enter(Screen* s, const ScreenContext* ctx) {
 			if (!self->cursor_loaded) {
 				log_warn("MenuScreen: failed to load cursor PNG: %s", cur_path);
 			} else {
-				if (self->cursor.width != 32 || self->cursor.height != 32) {
-					log_error("Menu cursor must be 32x32 pixels (got %dx%d): %s", self->cursor.width, self->cursor.height, cur_path);
-					image_destroy(&self->cursor);
-					self->cursor_loaded = false;
-				}
+				cursor_apply_magenta_colorkey(&self->cursor);
 			}
 			free(cur_path);
 		}
@@ -322,6 +337,13 @@ static ScreenResult menu_screen_update(Screen* s, const ScreenContext* ctx, doub
 	}
 	if (!ctx || !ctx->allow_input || !ctx->in) {
 		return SCREEN_RESULT_RUNNING;
+	}
+
+	if (!self->invoked_from_timeline && self->ignore_esc_until_released) {
+		if (input_key_down(ctx->in, SDL_SCANCODE_ESCAPE)) {
+			return SCREEN_RESULT_RUNNING;
+		}
+		self->ignore_esc_until_released = false;
 	}
 
 	int vi = current_view_index(self);
@@ -426,10 +448,6 @@ static void menu_draw_background(MenuScreen* self, const ScreenContext* ctx) {
 	}
 }
 
-static uint32_t abgr_from_rgba8(MenuRGBA8 c) {
-	return ((uint32_t)c.a << 24) | ((uint32_t)c.b << 16) | ((uint32_t)c.g << 8) | (uint32_t)c.r;
-}
-
 static void menu_screen_draw(Screen* s, const ScreenContext* ctx) {
 	MenuScreen* self = (MenuScreen*)s;
 	if (!self || !ctx || !ctx->fb) {
@@ -483,10 +501,14 @@ static void menu_screen_draw(Screen* s, const ScreenContext* ctx) {
 
 		if (i == sel) {
 			int pad = 8;
-			int cx = x - 32 - pad;
-			int cy = y + (line_h - 32) / 2;
+			int render = self->asset.theme.cursor_render_size_px;
+			if (render <= 0) {
+				render = 32;
+			}
+			int cx = x - render - pad;
+			int cy = y + (line_h - render) / 2;
 			if (self->cursor_loaded && self->cursor.pixels) {
-				draw_blit_abgr8888_scaled_nearest(ctx->fb, cx, cy, 32, 32, self->cursor.pixels, self->cursor.width, self->cursor.height);
+				draw_blit_abgr8888_scaled_nearest_alpha(ctx->fb, cx, cy, render, render, self->cursor.pixels, self->cursor.width, self->cursor.height);
 			} else {
 				// Fallback cursor glyph
 				font_draw_text(&self->font, ctx->fb, cx, y, ">", text_c, 1.0f);

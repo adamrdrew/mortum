@@ -591,6 +591,7 @@ int main(int argc, char** argv) {
 	}
 	bool q_prev_down = false;
 	bool e_prev_down = false;
+	bool esc_prev_down = false;
 	bool win_prev = false;
 	double particle_ms_remainder = 0.0;
 
@@ -643,7 +644,10 @@ int main(int argc, char** argv) {
 			}
 		}
 		// Pause menu toggle: during gameplay, Escape opens a menu screen.
-		if (running && !console_open && !screen_active && map_ok && input_key_pressed(&in, SDL_SCANCODE_ESCAPE)) {
+		bool esc_down = (!console_open) && input_key_down(&in, SDL_SCANCODE_ESCAPE);
+		bool esc_pressed = esc_down && !esc_prev_down;
+		esc_prev_down = esc_down;
+		if (running && !console_open && !screen_active && map_ok && esc_pressed) {
 			MenuAsset pause_menu;
 			if (!menu_load(&pause_menu, &paths, "pause_menu.json")) {
 				log_warn("Failed to load pause menu: pause_menu.json");
@@ -653,6 +657,7 @@ int main(int argc, char** argv) {
 					log_warn("Failed to create pause menu screen");
 					menu_asset_destroy(&pause_menu);
 				} else {
+					log_info_s("menu", "Opening pause menu via ESC");
 					ScreenContext sctx;
 					memset(&sctx, 0, sizeof(sctx));
 					sctx.preserve_midi_on_exit = false;

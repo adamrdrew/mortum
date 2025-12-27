@@ -15,6 +15,7 @@ static void menu_theme_zero(MenuTheme* t) {
 		return;
 	}
 	memset(t, 0, sizeof(*t));
+	t->cursor_render_size_px = 32;
 	t->text_size_px = 18;
 	t->text_color = (MenuRGBA8){255, 255, 255, 255};
 }
@@ -463,6 +464,7 @@ bool menu_load(MenuAsset* out, const AssetPaths* paths, const char* menu_file) {
 	// Theme fields.
 	int t_bg = -1;
 	int t_cursor = -1;
+	int t_cursor_render_size = -1;
 	int t_font = -1;
 	int t_music = -1;
 	int t_text_size = -1;
@@ -476,6 +478,7 @@ bool menu_load(MenuAsset* out, const AssetPaths* paths, const char* menu_file) {
 		return false;
 	}
 	(void)json_object_get(&doc, t_theme, "cursor", &t_cursor);
+	(void)json_object_get(&doc, t_theme, "cursor_render_size", &t_cursor_render_size);
 	(void)json_object_get(&doc, t_theme, "music", &t_music);
 	(void)json_object_get(&doc, t_theme, "sfx", &t_sfx);
 
@@ -525,8 +528,19 @@ bool menu_load(MenuAsset* out, const AssetPaths* paths, const char* menu_file) {
 		return false;
 	}
 
+	int cursor_render_size = out->theme.cursor_render_size_px;
+	if (t_cursor_render_size >= 0) {
+		if (!json_get_int(&doc, t_cursor_render_size, &cursor_render_size) || cursor_render_size <= 0 || cursor_render_size > 512) {
+			log_error("Menu theme.cursor_render_size must be a positive integer <= 512");
+			menu_asset_destroy(out);
+			json_doc_destroy(&doc);
+			return false;
+		}
+	}
+
 	out->theme.text_size_px = text_size;
 	out->theme.text_color = color;
+	out->theme.cursor_render_size_px = cursor_render_size;
 	out->theme.background_png = sv_dup(sv_bg);
 	out->theme.cursor_png = (sv_cursor.len > 0) ? sv_dup(sv_cursor) : NULL;
 	out->theme.font_ttf = sv_dup(sv_font);
