@@ -2,11 +2,15 @@
 
 #include "assets/scene_loader.h"
 
+#include "assets/timeline_loader.h"
+
 #include "assets/midi_player.h"
 
 #include "core/log.h"
 
 #include "game/debug_dump.h"
+
+#include "game/episode_runner.h" // per-level reset helper
 
 #include "render/camera.h"
 #include "render/raycast.h"
@@ -274,8 +278,8 @@ static void unload_map_and_world(ConsoleCommandContext* ctx) {
 	if (ctx->map_name_buf && ctx->map_name_cap > 0) {
 		ctx->map_name_buf[0] = '\0';
 	}
-	if (ctx->using_episode) {
-		*ctx->using_episode = false;
+	if (ctx->using_timeline) {
+		*ctx->using_timeline = false;
 	}
 
 	// Reset runtime systems that may still be producing audio/particles/entities.
@@ -300,7 +304,7 @@ static void unload_map_and_world(ConsoleCommandContext* ctx) {
 	}
 }
 
-static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, bool stop_episode) {
+static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, bool stop_timeline) {
 	if (!ctx || !ctx->map || !ctx->paths || !ctx->map_ok || !ctx->mesh || !ctx->player || !ctx->gs) {
 		return false;
 	}
@@ -321,8 +325,11 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 		strncpy(ctx->map_name_buf, map_name, ctx->map_name_cap);
 		ctx->map_name_buf[ctx->map_name_cap - 1] = '\0';
 	}
-	if (stop_episode && ctx->using_episode) {
-		*ctx->using_episode = false;
+	if (stop_timeline && ctx->using_timeline) {
+		*ctx->using_timeline = false;
+	}
+	if (stop_timeline && ctx->tl_flow) {
+		timeline_flow_abort(ctx->tl_flow);
 	}
 
 	level_mesh_build(ctx->mesh, &ctx->map->world);
@@ -334,8 +341,8 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 	return true;
 }
 
-static bool load_episode_by_name(ConsoleCommandContext* ctx, const char* episode_name) {
-	if (!ctx || !ctx->ep || !ctx->runner || !ctx->flow || !name_is_safe_relpath(episode_name)) {
+static bool load_timeline_by_name(ConsoleCommandContext* ctx, const char* timeline_name) {
+	if (!ctx || !ctx->timeline || !ctx->tl_flow || !name_is_safe_relpath(timeline_name)) {
 		return false;
 	}
 	// Stop any currently running scene.
@@ -351,20 +358,22 @@ static bool load_episode_by_name(ConsoleCommandContext* ctx, const char* episode
 		screen_runtime_shutdown(ctx->screens, &sctx);
 	}
 
-	// Unload any currently loaded map/world before switching episodes.
+	// Abort timeline flow progression before tearing down world/timeline assets.
+	timeline_flow_abort(ctx->tl_flow);
+
+	// Unload any currently loaded map/world before switching timelines.
 	unload_map_and_world(ctx);
 
-	// episode_load() overwrites the Episode struct; destroy prior owned allocations first.
-	episode_destroy(ctx->ep);
-	if (!episode_load(ctx->ep, ctx->paths, episode_name)) {
+	// timeline_load() overwrites the Timeline struct; destroy prior owned allocations first.
+	timeline_destroy(ctx->timeline);
+	if (!timeline_load(ctx->timeline, ctx->paths, timeline_name)) {
 		return false;
 	}
-	EpisodeFlowRuntime rt;
+	TimelineFlowRuntime rt;
 	memset(&rt, 0, sizeof(rt));
 	rt.paths = ctx->paths;
-	rt.ep = ctx->ep;
-	rt.runner = ctx->runner;
-	rt.using_episode = ctx->using_episode;
+	rt.timeline = ctx->timeline;
+	rt.using_timeline = ctx->using_timeline;
 	rt.map = ctx->map;
 	rt.map_ok = ctx->map_ok;
 	rt.map_name_buf = ctx->map_name_buf;
@@ -388,7 +397,7 @@ static bool load_episode_by_name(ConsoleCommandContext* ctx, const char* episode
 	rt.prev_soundfont = ctx->prev_soundfont;
 	rt.prev_soundfont_cap = ctx->prev_soundfont_cap;
 
-	return episode_flow_start(ctx->flow, &rt);
+	return timeline_flow_start(ctx->tl_flow, &rt);
 }
 
 // -----------------------------
@@ -400,6 +409,7 @@ static bool cmd_exit(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_config_change(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_config_reload(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_map(Console* con, int argc, const char** argv, void* user_ctx);
+static bool cmd_load_timeline(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_episode(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_dump_perf(Console* con, int argc, const char** argv, void* user_ctx);
@@ -601,22 +611,33 @@ static bool cmd_unload_map(Console* con, int argc, const char** argv, void* user
 	return true;
 }
 
+static bool cmd_load_timeline(Console* con, int argc, const char** argv, void* user_ctx) {
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!ctx || argc < 1) {
+		console_print(con, "Error: Expected <timeline.json>");
+		return false;
+	}
+	if (!name_is_safe_relpath(argv[0])) {
+		console_print(con, "Error: Unsafe timeline path (must be relative; no '..' or backslashes)");
+		return false;
+	}
+	if (!load_timeline_by_name(ctx, argv[0])) {
+		console_print(con, "Error: Failed to load timeline.");
+		return false;
+	}
+	console_print(con, "OK");
+	return true;
+}
+
 static bool cmd_load_episode(Console* con, int argc, const char** argv, void* user_ctx) {
 	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
 	if (!ctx || argc < 1) {
 		console_print(con, "Error: Expected <episode.json>");
 		return false;
 	}
-	if (!name_is_safe_relpath(argv[0])) {
-		console_print(con, "Error: Unsafe episode path (must be relative; no '..' or backslashes)");
-		return false;
-	}
-	if (!load_episode_by_name(ctx, argv[0])) {
-		console_print(con, "Error: Failed to load episode.");
-		return false;
-	}
-	console_print(con, "OK");
-	return true;
+	console_print(con, "Warning: load_episode is deprecated; use load_timeline");
+	// Treat the provided arg as a timeline filename.
+	return cmd_load_timeline(con, argc, argv, user_ctx);
 }
 
 static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user_ctx) {
@@ -811,8 +832,15 @@ void console_commands_register_all(Console* con) {
 		.fn = cmd_unload_map,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
+		.name = "load_timeline",
+		.description = "Loads a timeline from Assets/Timelines/.",
+		.example = "load_timeline boot.json",
+		.syntax = "load_timeline string",
+		.fn = cmd_load_timeline,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
 		.name = "load_episode",
-		.description = "Loads an episode from Assets/Episodes/.",
+		.description = "Deprecated alias for load_timeline.",
 		.example = "load_episode boot.json",
 		.syntax = "load_episode string",
 		.fn = cmd_load_episode,

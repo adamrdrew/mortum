@@ -45,7 +45,7 @@ static CoreConfig g_cfg = {
 		.sfx_device_buffer_samples = 1024,
 	},
 	.content = {
-		.boot_episode = "boot.json",
+		.boot_timeline = "boot.json",
 	},
 	.ui = {
 		.font = {
@@ -724,19 +724,26 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 				log_error("Config: %s: content must be an object", path);
 				ok = false;
 			} else {
-				static const char* const allowed_content2[] = {"boot_episode"};
+				static const char* const allowed_content2[] = {"boot_timeline", "boot_episode"};
 				warn_unknown_keys(&doc, t_content, allowed_content2, (int)(sizeof(allowed_content2) / sizeof(allowed_content2[0])), "content");
-				int t_boot = -1;
-				if (json_object_get(&doc, t_content, "boot_episode", &t_boot)) {
+				int t_boot_tl = -1;
+				int t_boot_ep = -1;
+				(void)json_object_get(&doc, t_content, "boot_timeline", &t_boot_tl);
+				(void)json_object_get(&doc, t_content, "boot_episode", &t_boot_ep);
+				if (t_boot_ep != -1 && t_boot_tl == -1) {
+					log_warn("Config: %s: content.boot_episode is deprecated; use content.boot_timeline", path);
+					t_boot_tl = t_boot_ep;
+				}
+				if (t_boot_tl != -1) {
 					StringView sv;
-					if (!json_get_string(&doc, t_boot, &sv)) {
-						log_error("Config: %s: content.boot_episode must be a string", path);
+					if (!json_get_string(&doc, t_boot_tl, &sv)) {
+						log_error("Config: %s: content.boot_timeline must be a string", path);
 						ok = false;
 					} else {
-						copy_sv_to_buf(next.content.boot_episode, sizeof(next.content.boot_episode), sv);
-						if (next.content.boot_episode[0] != '\0' && !name_is_safe_relpath(next.content.boot_episode)) {
-							log_warn("Config: %s: content.boot_episode is not a safe relative path; ignoring: %s", path, next.content.boot_episode);
-							next.content.boot_episode[0] = '\0';
+						copy_sv_to_buf(next.content.boot_timeline, sizeof(next.content.boot_timeline), sv);
+						if (next.content.boot_timeline[0] != '\0' && !name_is_safe_relpath(next.content.boot_timeline)) {
+							log_warn("Config: %s: content.boot_timeline is not a safe relative path; ignoring: %s", path, next.content.boot_timeline);
+							next.content.boot_timeline[0] = '\0';
 						}
 					}
 				}
@@ -1194,10 +1201,10 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 		}
 
 		// Asset validation (required assets must exist for the config to be accepted).
-		if (next.content.boot_episode[0] != '\0') {
-			(void)validate_asset_file(assets, "Episodes", next.content.boot_episode, path, "content.boot_episode", &ok);
+		if (next.content.boot_timeline[0] != '\0') {
+			(void)validate_asset_file(assets, "Timelines", next.content.boot_timeline, path, "content.boot_timeline", &ok);
 		} else {
-			log_warn("Config: %s: content.boot_episode is empty; startup will require an explicit map arg", path);
+			log_warn("Config: %s: content.boot_timeline is empty; startup will require an explicit map arg", path);
 		}
 
 		if (next.audio.enabled) {
@@ -1494,7 +1501,7 @@ CoreConfigSetStatus core_config_try_set_by_path(
 	}
 
 	// content
-	if (key_eq(key_path, "content.boot_episode")) {
+	if (key_eq(key_path, "content.boot_timeline") || key_eq(key_path, "content.boot_episode")) {
 		if (provided_kind != CORE_CONFIG_VALUE_STRING) {
 			return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected_kind);
 		}
@@ -1505,8 +1512,11 @@ CoreConfigSetStatus core_config_try_set_by_path(
 		if (value_str[0] != '\0' && !name_is_safe_relpath(value_str)) {
 			return CORE_CONFIG_SET_INVALID_VALUE;
 		}
-		strncpy(g_cfg.content.boot_episode, value_str, sizeof(g_cfg.content.boot_episode) - 1);
-		g_cfg.content.boot_episode[sizeof(g_cfg.content.boot_episode) - 1] = '\0';
+		if (key_eq(key_path, "content.boot_episode")) {
+			log_warn("config_change: content.boot_episode is deprecated; use content.boot_timeline");
+		}
+		strncpy(g_cfg.content.boot_timeline, value_str, sizeof(g_cfg.content.boot_timeline) - 1);
+		g_cfg.content.boot_timeline[sizeof(g_cfg.content.boot_timeline) - 1] = '\0';
 		return CORE_CONFIG_SET_OK;
 	}
 

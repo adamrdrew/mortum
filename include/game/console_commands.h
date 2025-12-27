@@ -4,16 +4,14 @@
 #include <stddef.h>
 
 #include "assets/asset_paths.h"
-#include "assets/episode_loader.h"
+#include "assets/timeline_loader.h"
 #include "assets/map_loader.h"
 
 #include "core/config.h"
 
 #include "game/console.h"
 #include "game/entities.h"
-#include "game/episode_runner.h"
-
-#include "game/episode_flow.h"
+#include "game/timeline_flow.h"
 #include "game/game_state.h"
 #include "game/perf_trace.h"
 #include "game/player.h"
@@ -54,10 +52,9 @@ typedef struct ConsoleCommandContext {
 	bool* map_ok;
 	char* map_name_buf;
 	size_t map_name_cap;
-	bool* using_episode;
-	Episode* ep;
-	EpisodeRunner* runner;
-	EpisodeFlow* flow;
+	bool* using_timeline;
+	Timeline* timeline;
+	TimelineFlow* tl_flow;
 	LevelMesh* mesh;
 
 	// World state.

@@ -19,7 +19,7 @@
 #include "render/texture.h"
 
 #include "assets/asset_paths.h"
-#include "assets/episode_loader.h"
+#include "assets/timeline_loader.h"
 #include "assets/map_loader.h"
 #include "assets/midi_player.h"
 
@@ -38,7 +38,7 @@
 #include "game/debug_dump.h"
 #include "game/perf_trace.h"
 #include "game/episode_runner.h"
-#include "game/episode_flow.h"
+#include "game/timeline_flow.h"
 #include "game/purge_item.h"
 #include "game/rules.h"
 #include "game/sector_height.h"
@@ -348,35 +348,33 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	Episode ep;
-	bool ep_ok = false;
-	EpisodeFlow ep_flow;
-	episode_flow_init(&ep_flow);
+	Timeline timeline;
+	bool timeline_ok = false;
+	TimelineFlow tl_flow;
+	timeline_flow_init(&tl_flow);
 	MapLoadResult map;
 	memset(&map, 0, sizeof(map));
 	bool map_ok = false;
 	char map_name_buf[64] = "";
-	EpisodeRunner runner;
-	episode_runner_init(&runner);
-	bool using_episode = false;
+	bool using_timeline = false;
 	if (scene_name_arg) {
 		// Standalone scene mode: do not load episodes or maps.
-		using_episode = false;
+		using_timeline = false;
 		map_ok = false;
 		map_name_buf[0] = '\0';
 	} else {
-		// Episode mode: load an episode asset now; EpisodeFlow decides whether to run scenes first.
-		if (cfg->content.boot_episode[0] != '\0') {
-			ep_ok = episode_load(&ep, &paths, cfg->content.boot_episode);
+		// Timeline mode: load a timeline asset now; TimelineFlow decides what to run first.
+		if (cfg->content.boot_timeline[0] != '\0') {
+			timeline_ok = timeline_load(&timeline, &paths, cfg->content.boot_timeline);
 		}
 	}
 	if (!scene_name_arg && map_name_arg) {
 		// A filename relative to Assets/Levels/ (e.g. "mortum_test.json").
 		strncpy(map_name_buf, map_name_arg, sizeof(map_name_buf));
 		map_name_buf[sizeof(map_name_buf) - 1] = '\0';
-		// Explicit map arg overrides content.boot_episode.
-		using_episode = false;
-		ep_flow.active = false;
+		// Explicit map arg overrides content.boot_timeline.
+		using_timeline = false;
+		tl_flow.active = false;
 	}
 	if (map_name_buf[0] != '\0') {
 		crash_diag_set_phase(PHASE_MAP_LOAD_BEGIN);
@@ -506,10 +504,9 @@ int main(int argc, char** argv) {
 	console_ctx.map_ok = &map_ok;
 	console_ctx.map_name_buf = map_name_buf;
 	console_ctx.map_name_cap = sizeof(map_name_buf);
-	console_ctx.using_episode = &using_episode;
-	console_ctx.ep = &ep;
-	console_ctx.runner = &runner;
-	console_ctx.flow = &ep_flow;
+	console_ctx.using_timeline = &using_timeline;
+	console_ctx.timeline = &timeline;
+	console_ctx.tl_flow = &tl_flow;
 	console_ctx.mesh = &mesh;
 	console_ctx.player = &player;
 	console_ctx.gs = &gs;
@@ -529,14 +526,13 @@ int main(int argc, char** argv) {
 	screen_runtime_init(&screens);
 	console_ctx.screens = &screens;
 
-	// Start episode-driven flow (enter scenes -> maps -> exit scenes) unless overridden by --scene or an explicit map arg.
-	if (!scene_name_arg && !map_name_arg && ep_ok) {
-		EpisodeFlowRuntime rt;
+	// Start timeline-driven flow unless overridden by --scene or an explicit map arg.
+	if (!scene_name_arg && !map_name_arg && timeline_ok) {
+		TimelineFlowRuntime rt;
 		memset(&rt, 0, sizeof(rt));
 		rt.paths = &paths;
-		rt.ep = &ep;
-		rt.runner = &runner;
-		rt.using_episode = &using_episode;
+		rt.timeline = &timeline;
+		rt.using_timeline = &using_timeline;
 		rt.map = &map;
 		rt.map_ok = &map_ok;
 		rt.map_name_buf = map_name_buf;
@@ -559,7 +555,7 @@ int main(int argc, char** argv) {
 		rt.prev_bgmusic_cap = sizeof(prev_bgmusic);
 		rt.prev_soundfont = prev_soundfont;
 		rt.prev_soundfont_cap = sizeof(prev_soundfont);
-		(void)episode_flow_start(&ep_flow, &rt);
+		(void)timeline_flow_start(&tl_flow, &rt);
 	}
 
 	// If launched with --scene, load and activate the scene now.
@@ -684,7 +680,7 @@ int main(int argc, char** argv) {
 			}
 			ScreenContext sctx;
 			memset(&sctx, 0, sizeof(sctx)); 
-			sctx.preserve_midi_on_exit = episode_flow_preserve_midi_on_scene_exit(&ep_flow);
+			sctx.preserve_midi_on_exit = timeline_flow_preserve_midi_on_scene_exit(&tl_flow);
 			sctx.fb = &fb;
 			sctx.in = &in;
 			sctx.paths = &paths;
@@ -735,14 +731,13 @@ int main(int argc, char** argv) {
 				game_map_music_maybe_start(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
 				crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 			}
-			// Episode-driven scenes advance only when the active screen completes.
-			if (completed && ep_flow.active && !exit_after_scene) {
-				EpisodeFlowRuntime rt;
+			// Timeline-driven scenes advance only when the active screen completes.
+			if (completed && tl_flow.active && !exit_after_scene) {
+				TimelineFlowRuntime rt;
 				memset(&rt, 0, sizeof(rt));
 				rt.paths = &paths;
-				rt.ep = &ep;
-				rt.runner = &runner;
-				rt.using_episode = &using_episode;
+				rt.timeline = &timeline;
+				rt.using_timeline = &using_timeline;
 				rt.map = &map;
 				rt.map_ok = &map_ok;
 				rt.map_name_buf = map_name_buf;
@@ -765,7 +760,7 @@ int main(int argc, char** argv) {
 				rt.prev_bgmusic_cap = sizeof(prev_bgmusic);
 				rt.prev_soundfont = prev_soundfont;
 				rt.prev_soundfont_cap = sizeof(prev_soundfont);
-				episode_flow_on_scene_completed(&ep_flow, &rt);
+				timeline_flow_on_scene_completed(&tl_flow, &rt);
 			}
 		} else {
 
@@ -1001,15 +996,14 @@ int main(int argc, char** argv) {
 			update_t1 = platform_time_seconds();
 		}
 
-		// Episode progression on win edge (maps -> exit scenes -> done).
+		// Timeline progression on win edge.
 		bool win_now = (gs.mode == GAME_MODE_WIN);
-		if (win_now && !win_prev && ep_flow.active && using_episode) {
-			EpisodeFlowRuntime rt;
+		if (win_now && !win_prev && tl_flow.active && using_timeline) {
+			TimelineFlowRuntime rt;
 			memset(&rt, 0, sizeof(rt));
 			rt.paths = &paths;
-			rt.ep = &ep;
-			rt.runner = &runner;
-			rt.using_episode = &using_episode;
+			rt.timeline = &timeline;
+			rt.using_timeline = &using_timeline;
 			rt.map = &map;
 			rt.map_ok = &map_ok;
 			rt.map_name_buf = map_name_buf;
@@ -1032,7 +1026,7 @@ int main(int argc, char** argv) {
 			rt.prev_bgmusic_cap = sizeof(prev_bgmusic);
 			rt.prev_soundfont = prev_soundfont;
 			rt.prev_soundfont_cap = sizeof(prev_soundfont);
-			episode_flow_on_map_win(&ep_flow, &rt);
+			timeline_flow_on_map_win(&tl_flow, &rt);
 		}
 		win_prev = win_now;
 
@@ -1196,8 +1190,8 @@ int main(int argc, char** argv) {
 	if (map_ok) {
 		map_load_result_destroy(&map);
 	}
-	if (ep_ok) {
-		episode_destroy(&ep);
+	if (timeline_ok) {
+		timeline_destroy(&timeline);
 	}
 
 	entity_system_shutdown(&entities);

@@ -1,0 +1,9 @@
+{
+  "name": "Boot",
+  "events": [
+    { "kind": "scene", "name": "developer.json", "on_complete": "advance" },
+    { "kind": "scene", "name": "engine.json", "on_complete": "advance" },
+    { "kind": "scene", "name": "title.json", "on_complete": "advance" },
+    { "kind": "map", "name": "big.json", "on_complete": "loop" }
+  ]
+}

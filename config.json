@@ -32,7 +32,7 @@
     "sfx_device_buffer_samples": 1024
   },
   "content": {
-    "boot_episode": "boot.json"
+    "boot_timeline": "boot.json"
   },
   "ui": {
     "font": {
