@@ -387,6 +387,7 @@ static bool load_timeline_by_name(ConsoleCommandContext* ctx, const char* timeli
 	rt.particle_emitters = ctx->particle_emitters;
 	rt.screens = ctx->screens;
 	rt.fb = ctx->fb;
+	rt.console_ctx = ctx;
 	rt.in = NULL;
 	rt.allow_scene_input = false;
 	rt.audio_enabled = (ctx->audio_enabled && *ctx->audio_enabled);
@@ -406,6 +407,7 @@ static bool load_timeline_by_name(ConsoleCommandContext* ctx, const char* timeli
 
 static bool cmd_clear(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_exit(Console* con, int argc, const char** argv, void* user_ctx);
+static bool cmd_quit(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_config_change(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_config_reload(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_map(Console* con, int argc, const char** argv, void* user_ctx);
@@ -435,6 +437,17 @@ static bool cmd_exit(Console* con, int argc, const char** argv, void* user_ctx) 
 	(void)argv;
 	(void)user_ctx;
 	console_set_open(con, false);
+	return true;
+}
+
+static bool cmd_quit(Console* con, int argc, const char** argv, void* user_ctx) {
+	(void)argc;
+	(void)argv;
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (ctx && ctx->running) {
+		*ctx->running = false;
+	}
+	console_print(con, "OK");
 	return true;
 }
 
@@ -798,6 +811,13 @@ void console_commands_register_all(Console* con) {
 		.example = "exit",
 		.syntax = "exit",
 		.fn = cmd_exit,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "quit",
+		.description = "Quits the game.",
+		.example = "quit",
+		.syntax = "quit",
+		.fn = cmd_quit,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "config_change",

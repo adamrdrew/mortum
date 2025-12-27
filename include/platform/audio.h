@@ -37,6 +37,10 @@ void sfx_set_master_volume(float volume);
 // Returns {0,0} on failure.
 SfxSampleId sfx_load_effect_wav(const char* filename);
 
+// Loads (or returns a cached) WAV sample from Assets/Sounds/Menus/<filename>.
+// Returns {0,0} on failure.
+SfxSampleId sfx_load_menu_wav(const char* filename);
+
 // Plays a sample. gain is linear [0,1].
 // If looping is true, the sample loops until stopped.
 // Returns {0,0} when audio is disabled or on failure.

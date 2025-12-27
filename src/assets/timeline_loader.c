@@ -97,6 +97,10 @@ static bool parse_event_kind(const char* s, TimelineEventKind* out) {
 		*out = TIMELINE_EVENT_MAP;
 		return true;
 	}
+	if (strcmp(s, "menu") == 0) {
+		*out = TIMELINE_EVENT_MENU;
+		return true;
+	}
 	return false;
 }
 
@@ -249,7 +253,7 @@ bool timeline_load(Timeline* out, const AssetPaths* paths, const char* timeline_
 
 		TimelineEventKind kind;
 		if (!parse_event_kind(kind_buf, &kind)) {
-			log_error("Timeline events[%d].kind must be 'scene' or 'map'", i);
+			log_error("Timeline events[%d].kind must be 'scene', 'map', or 'menu'", i);
 			timeline_destroy(out);
 			json_doc_destroy(&doc);
 			return false;
@@ -283,6 +287,13 @@ bool timeline_load(Timeline* out, const AssetPaths* paths, const char* timeline_
 		} else if (ev->kind == TIMELINE_EVENT_MAP) {
 			if (!name_is_safe_filename(ev->name) || !ends_with_ci(ev->name, ".json")) {
 				log_error("Timeline events[%d].name must be a safe .json filename under Assets/Levels (no slashes): %s", i, ev->name);
+				timeline_destroy(out);
+				json_doc_destroy(&doc);
+				return false;
+			}
+		} else if (ev->kind == TIMELINE_EVENT_MENU) {
+			if (!name_is_safe_filename(ev->name) || !ends_with_ci(ev->name, ".json")) {
+				log_error("Timeline events[%d].name must be a safe .json filename under Assets/Menus (no slashes): %s", i, ev->name);
 				timeline_destroy(out);
 				json_doc_destroy(&doc);
 				return false;

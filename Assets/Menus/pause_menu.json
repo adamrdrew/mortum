@@ -1,0 +1,42 @@
+{
+  "name": "Pause Menu",
+  "theme": {
+    "background": "main.png",
+    "cursor": "cursor.png",
+    "font": "ProggyClean.ttf",
+    "text_size": 16,
+    "text_color": "#FFFFFF",
+    "sfx": {
+      "on_move": "click.wav",
+      "on_select": "click.wav",
+      "on_back": "click.wav"
+    }
+  },
+  "views": {
+    "root": {
+      "title": "Paused",
+      "items": [
+        {
+          "label": "Resume",
+          "action": { "kind": "close" }
+        },
+        {
+          "label": "Quit to Menu",
+          "action": {
+            "kind": "command",
+            "command": "load_timeline",
+            "args": ["boot.json"]
+          }
+        },
+        {
+          "label": "Quit Game",
+          "action": {
+            "kind": "command",
+            "command": "quit",
+            "args": []
+          }
+        }
+      ]
+    }
+  }
+}

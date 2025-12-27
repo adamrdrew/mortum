@@ -16,7 +16,7 @@
 typedef struct SfxSample {
 	bool alive;
 	uint16_t generation;
-	char filename[64];
+	char filename[128];
 	float* frames_f32; // interleaved stereo float32
 	uint32_t frame_count;
 } SfxSample;
@@ -278,12 +278,39 @@ void sfx_set_master_volume(float volume) {
 	g_sfx.master_volume = clamp01(volume);
 }
 
+static SfxSampleId sfx_load_wav_impl(const char* assets_subdir, const char* cache_prefix, const char* filename);
+
 SfxSampleId sfx_load_effect_wav(const char* filename) {
+	// Cache key includes subdir prefix to avoid collisions with other roots.
+	return sfx_load_wav_impl("Sounds/Effects", "Effects/", filename);
+}
+
+SfxSampleId sfx_load_menu_wav(const char* filename) {
+	return sfx_load_wav_impl("Sounds/Menus", "Menus/", filename);
+}
+
+// ---------------- internal shared loader ----------------
+
+static SfxSampleId sfx_load_wav_impl(const char* assets_subdir, const char* cache_prefix, const char* filename) {
 	if (!g_sfx.initialized || !g_sfx.enabled || !filename || filename[0] == '\0') {
 		return sfx_make_sample_id(0, 0);
 	}
+	if (!assets_subdir || !cache_prefix) {
+		return sfx_make_sample_id(0, 0);
+	}
 
-	uint16_t existing = sfx_find_sample_slot_by_name(filename);
+	char key[sizeof(((SfxSample*)0)->filename)];
+	size_t kp = strlen(cache_prefix);
+	size_t fn = strlen(filename);
+	if (kp + fn + 1 >= sizeof(key)) {
+		log_warn("SFX filename too long: %s%s", cache_prefix, filename);
+		return sfx_make_sample_id(0, 0);
+	}
+	memcpy(key, cache_prefix, kp);
+	memcpy(key + kp, filename, fn);
+	key[kp + fn] = '\0';
+
+	uint16_t existing = sfx_find_sample_slot_by_name(key);
 	if (existing != UINT16_MAX) {
 		SfxSample* s = &g_sfx.samples[existing];
 		return sfx_make_sample_id(existing, s->generation);
@@ -291,11 +318,11 @@ SfxSampleId sfx_load_effect_wav(const char* filename) {
 
 	uint16_t slot = sfx_find_free_sample_slot();
 	if (slot == UINT16_MAX) {
-		log_warn("SFX sample cache full (max %d): %s", (int)SFX_MAX_SAMPLES, filename);
+		log_warn("SFX sample cache full (max %d): %s", (int)SFX_MAX_SAMPLES, key);
 		return sfx_make_sample_id(0, 0);
 	}
 
-	char* full = asset_path_join(&g_sfx.paths, "Sounds/Effects", filename);
+	char* full = asset_path_join(&g_sfx.paths, assets_subdir, filename);
 	if (!full) {
 		return sfx_make_sample_id(0, 0);
 	}
@@ -319,7 +346,7 @@ SfxSampleId sfx_load_effect_wav(const char* filename) {
 
 	SDL_AudioCVT cvt;
 	if (SDL_BuildAudioCVT(&cvt, src.format, src.channels, src.freq, dst.format, dst.channels, dst.freq) < 0) {
-		log_error("SDL_BuildAudioCVT failed for %s: %s", filename, SDL_GetError());
+		log_error("SDL_BuildAudioCVT failed for %s: %s", key, SDL_GetError());
 		SDL_FreeWAV(src_buf);
 		return sfx_make_sample_id(0, 0);
 	}
@@ -327,13 +354,13 @@ SfxSampleId sfx_load_effect_wav(const char* filename) {
 	cvt.len = (int)src_len;
 	cvt.buf = (Uint8*)SDL_malloc((size_t)cvt.len * (size_t)cvt.len_mult);
 	if (!cvt.buf) {
-		log_error("Out of memory converting WAV: %s", filename);
+		log_error("Out of memory converting WAV: %s", key);
 		SDL_FreeWAV(src_buf);
 		return sfx_make_sample_id(0, 0);
 	}
 	memcpy(cvt.buf, src_buf, src_len);
 	if (SDL_ConvertAudio(&cvt) < 0) {
-		log_error("SDL_ConvertAudio failed for %s: %s", filename, SDL_GetError());
+		log_error("SDL_ConvertAudio failed for %s: %s", key, SDL_GetError());
 		SDL_free(cvt.buf);
 		SDL_FreeWAV(src_buf);
 		return sfx_make_sample_id(0, 0);
@@ -352,7 +379,7 @@ SfxSampleId sfx_load_effect_wav(const char* filename) {
 	memset(s, 0, sizeof(*s));
 	s->alive = true;
 	s->generation = gen;
-	strncpy(s->filename, filename, sizeof(s->filename) - 1);
+	strncpy(s->filename, key, sizeof(s->filename) - 1);
 	s->filename[sizeof(s->filename) - 1] = '\0';
 	s->frames_f32 = (float*)cvt.buf;
 	s->frame_count = frame_count;

@@ -28,6 +28,13 @@
 // Keep this POD and owned by main.
 
 typedef struct ConsoleCommandContext {
+	// Main loop control (optional).
+	bool* running;
+
+	// Deferred command execution (used by MenuScreen). Executed by main at a safe point.
+	char deferred_line[CONSOLE_MAX_INPUT];
+	bool deferred_line_pending;
+
 	int argc;
 	char** argv;
 	char* config_path;

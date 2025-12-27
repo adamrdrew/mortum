@@ -19,7 +19,9 @@
 #include "render/framebuffer.h"
 #include "render/level_mesh.h"
 
-// Timeline-driven flow: runs one event at a time (scene or map) and advances/loops/loads on completion.
+// Timeline-driven flow: runs one event at a time (scene, map, or menu) and advances/loops/loads on completion.
+
+typedef struct ConsoleCommandContext ConsoleCommandContext;
 
 typedef struct TimelineFlow {
 	bool active;
@@ -53,6 +55,7 @@ typedef struct TimelineFlowRuntime {
 	// Screen system for Scenes.
 	ScreenRuntime* screens;
 	Framebuffer* fb;
+	ConsoleCommandContext* console_ctx;
 
 	// For ScreenContext (update-time input comes from main; for on_enter it may be NULL).
 	const Input* in;
@@ -76,7 +79,10 @@ bool timeline_flow_start(TimelineFlow* self, TimelineFlowRuntime* rt);
 
 bool timeline_flow_is_active(const TimelineFlow* self);
 
-// Notify flow that the currently running scene screen completed.
+// Notify flow that the currently running screen (scene or menu) completed.
+void timeline_flow_on_screen_completed(TimelineFlow* self, TimelineFlowRuntime* rt);
+
+// Back-compat alias.
 void timeline_flow_on_scene_completed(TimelineFlow* self, TimelineFlowRuntime* rt);
 
 // Notify flow that gameplay entered WIN mode this frame.

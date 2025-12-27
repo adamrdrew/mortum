@@ -19,6 +19,7 @@
 #include "render/texture.h"
 
 #include "assets/asset_paths.h"
+#include "assets/menu_loader.h"
 #include "assets/timeline_loader.h"
 #include "assets/map_loader.h"
 #include "assets/midi_player.h"
@@ -55,6 +56,7 @@
 
 #include "game/screen_runtime.h"
 #include "assets/scene_loader.h"
+#include "game/menu_screen.h"
 #include "game/scene_screen.h"
 
 #include <SDL.h>
@@ -488,6 +490,7 @@ int main(int argc, char** argv) {
 
 	ConsoleCommandContext console_ctx;
 	memset(&console_ctx, 0, sizeof(console_ctx));
+	console_ctx.running = &running;
 	console_ctx.argc = argc;
 	console_ctx.argv = argv;
 	console_ctx.config_path = config_path;
@@ -547,6 +550,7 @@ int main(int argc, char** argv) {
 		rt.particle_emitters = &particle_emitters;
 		rt.screens = &screens;
 		rt.fb = &fb;
+		rt.console_ctx = &console_ctx;
 		rt.in = NULL;
 		rt.allow_scene_input = true;
 		rt.audio_enabled = audio_enabled;
@@ -632,11 +636,37 @@ int main(int argc, char** argv) {
 		if (screen_active) {
 			crash_diag_set_phase(PHASE_BOOT_SCENES_RUNNING);
 		}
-		if (in.quit_requested || (!console_open && !screen_active && input_key_down(&in, SDL_SCANCODE_ESCAPE))) {
+		if (in.quit_requested) {
 			running = false;
 			if (audio_enabled) {
 				midi_stop();
 			}
+		}
+		// Pause menu toggle: during gameplay, Escape opens a menu screen.
+		if (running && !console_open && !screen_active && map_ok && input_key_pressed(&in, SDL_SCANCODE_ESCAPE)) {
+			MenuAsset pause_menu;
+			if (!menu_load(&pause_menu, &paths, "pause_menu.json")) {
+				log_warn("Failed to load pause menu: pause_menu.json");
+			} else {
+				Screen* scr = menu_screen_create(pause_menu, false, &console_ctx);
+				if (!scr) {
+					log_warn("Failed to create pause menu screen");
+					menu_asset_destroy(&pause_menu);
+				} else {
+					ScreenContext sctx;
+					memset(&sctx, 0, sizeof(sctx));
+					sctx.preserve_midi_on_exit = false;
+					sctx.fb = &fb;
+					sctx.in = &in;
+					sctx.paths = &paths;
+					sctx.allow_input = true;
+					sctx.audio_enabled = audio_enabled;
+					sctx.music_enabled = music_enabled;
+					screen_runtime_set(&screens, scr, &sctx);
+				}
+			}
+			// Refresh screen_active after opening.
+			screen_active = screen_runtime_is_active(&screens);
 		}
 
 		bool allow_game_input = !console_open;
@@ -689,6 +719,31 @@ int main(int argc, char** argv) {
 			sctx.audio_enabled = audio_enabled;
 			sctx.music_enabled = music_enabled;
 			bool completed = screen_runtime_update(&screens, &sctx, frame_dt_s);
+			if (console_ctx.deferred_line_pending) {
+				TimelineEvent* before_events = timeline.events;
+				int before_event_count = timeline.event_count;
+				bool before_flow_active = tl_flow.active;
+				int before_flow_index = tl_flow.index;
+				bool before_using_timeline = using_timeline;
+
+				char line[CONSOLE_MAX_INPUT];
+				strncpy(line, console_ctx.deferred_line, sizeof(line) - 1);
+				line[sizeof(line) - 1] = '\0';
+				console_ctx.deferred_line[0] = '\0';
+				console_ctx.deferred_line_pending = false;
+				(void)console_execute_line(&console, line, &console_ctx);
+
+				bool changed_timeline_flow =
+					(before_events != timeline.events) ||
+					(before_event_count != timeline.event_count) ||
+					(before_flow_active != tl_flow.active) ||
+					(before_flow_index != tl_flow.index) ||
+					(before_using_timeline != using_timeline);
+				if (changed_timeline_flow) {
+					// Avoid incorrectly advancing a newly-started flow (e.g. after load_timeline).
+					completed = false;
+				}
+			}
 			if (perf_trace_is_active(&perf)) {
 				update_t1 = platform_time_seconds();
 				ui_t0 = update_t1;
@@ -752,6 +807,7 @@ int main(int argc, char** argv) {
 				rt.particle_emitters = &particle_emitters;
 				rt.screens = &screens;
 				rt.fb = &fb;
+				rt.console_ctx = &console_ctx;
 				rt.in = &in;
 				rt.allow_scene_input = !console_open;
 				rt.audio_enabled = audio_enabled;
@@ -761,7 +817,7 @@ int main(int argc, char** argv) {
 				rt.prev_bgmusic_cap = sizeof(prev_bgmusic);
 				rt.prev_soundfont = prev_soundfont;
 				rt.prev_soundfont_cap = sizeof(prev_soundfont);
-				timeline_flow_on_scene_completed(&tl_flow, &rt);
+				timeline_flow_on_screen_completed(&tl_flow, &rt);
 			}
 		} else {
 
@@ -1018,6 +1074,7 @@ int main(int argc, char** argv) {
 			rt.particle_emitters = &particle_emitters;
 			rt.screens = &screens;
 			rt.fb = &fb;
+			rt.console_ctx = &console_ctx;
 			rt.in = &in;
 			rt.allow_scene_input = true;
 			rt.audio_enabled = audio_enabled;

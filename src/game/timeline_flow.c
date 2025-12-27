@@ -1,12 +1,16 @@
 #include "game/timeline_flow.h"
 
+#include "assets/menu_loader.h"
 #include "assets/scene_loader.h"
 #include "core/crash_diag.h"
 #include "core/log.h"
 
 #include "game/map_music.h"
+#include "game/menu_screen.h"
 #include "game/scene_screen.h"
 #include "game/level_start.h"
+
+#include "game/console_commands.h"
 
 #include <string.h>
 
@@ -151,6 +155,28 @@ static bool try_load_map(TimelineFlowRuntime* rt, const char* map_name) {
 	return true;
 }
 
+static bool try_start_menu(TimelineFlowRuntime* rt, const char* menu_file) {
+	if (!rt || !rt->paths || !rt->fb || !rt->screens || !rt->console_ctx || !menu_file || menu_file[0] == '\0') {
+		return false;
+	}
+	MenuAsset menu;
+	if (!menu_load(&menu, rt->paths, menu_file)) {
+		log_warn("Timeline menu failed to load (treating as completed): %s", menu_file);
+		return false;
+	}
+	Screen* scr = menu_screen_create(menu, true, rt->console_ctx);
+	if (!scr) {
+		log_warn("Timeline menu failed to create screen (treating as completed): %s", menu_file);
+		menu_asset_destroy(&menu);
+		return false;
+	}
+	ScreenContext sctx;
+	make_screen_ctx(rt, &sctx);
+	sctx.preserve_midi_on_exit = false;
+	screen_runtime_set(rt->screens, scr, &sctx);
+	return true;
+}
+
 static void flow_done(TimelineFlow* self, TimelineFlowRuntime* rt) {
 	if (!self) {
 		return;
@@ -211,6 +237,7 @@ static const char* kind_to_string(TimelineEventKind k) {
 	switch (k) {
 		case TIMELINE_EVENT_SCENE: return "scene";
 		case TIMELINE_EVENT_MAP: return "map";
+		case TIMELINE_EVENT_MENU: return "menu";
 		default: return "?";
 	}
 }
@@ -283,6 +310,16 @@ static void flow_step(TimelineFlow* self, TimelineFlowRuntime* rt) {
 			continue;
 		}
 
+		if (ev->kind == TIMELINE_EVENT_MENU) {
+			self->preserve_midi_on_scene_exit = false;
+			if (try_start_menu(rt, ev->name)) {
+				return;
+			}
+			// Load failed: treat as completed immediately.
+			apply_on_complete(self, rt, ev);
+			continue;
+		}
+
 		// Unknown kind: skip safely.
 		log_error("Timeline event has unknown kind; skipping");
 		apply_on_complete(self, rt, ev);
@@ -315,18 +352,23 @@ static bool current_event_is_kind(const TimelineFlow* self, const Timeline* tl, 
 	return tl->events && tl->events[self->index].kind == k;
 }
 
-void timeline_flow_on_scene_completed(TimelineFlow* self, TimelineFlowRuntime* rt) {
+
+void timeline_flow_on_screen_completed(TimelineFlow* self, TimelineFlowRuntime* rt) {
 	if (!self || !rt || !rt->timeline || !self->active) {
 		return;
 	}
-	if (!current_event_is_kind(self, rt->timeline, TIMELINE_EVENT_SCENE)) {
+	if (!current_event_is_kind(self, rt->timeline, TIMELINE_EVENT_SCENE) && !current_event_is_kind(self, rt->timeline, TIMELINE_EVENT_MENU)) {
 		return;
 	}
 	TimelineEvent* ev = &rt->timeline->events[self->index];
-	log_info_s("timeline", "Scene completed: idx=%d name='%s'", self->index, ev->name ? ev->name : "");
+	log_info_s("timeline", "Screen completed: idx=%d kind=%s name='%s'", self->index, kind_to_string(ev->kind), ev->name ? ev->name : "");
 	apply_on_complete(self, rt, ev);
 	self->preserve_midi_on_scene_exit = false;
 	flow_step(self, rt);
+}
+
+void timeline_flow_on_scene_completed(TimelineFlow* self, TimelineFlowRuntime* rt) {
+	timeline_flow_on_screen_completed(self, rt);
 }
 
 void timeline_flow_on_map_win(TimelineFlow* self, TimelineFlowRuntime* rt) {

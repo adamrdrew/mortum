@@ -60,6 +60,7 @@ SRC := \
   src/assets/json.c \
   src/assets/asset_paths.c \
   src/assets/timeline_loader.c \
+  src/assets/menu_loader.c \
   src/assets/map_loader.c \
   src/assets/map_validate.c \
   src/assets/image_bmp.c \
@@ -97,7 +98,8 @@ SRC := \
   src/game/level_start.c \
   src/game/map_music.c \
   src/game/screen_runtime.c \
-  src/game/scene_screen.c
+  src/game/scene_screen.c \
+  src/game/menu_screen.c
 
 SRC := $(SRC) \
 	src/game/entities.c

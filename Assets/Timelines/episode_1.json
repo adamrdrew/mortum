@@ -1,0 +1,6 @@
+{
+  "name": "Episode 1",
+  "events": [
+    { "kind": "map", "name": "big.json", "on_complete": "load", "target": "boot.json" }
+  ]
+}

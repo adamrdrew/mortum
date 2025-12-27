@@ -521,6 +521,84 @@ void console_update(Console* con, const Input* in, void* user_ctx) {
 	con->input[0] = '\0';
 }
 
+bool console_execute_line(Console* con, const char* line, void* user_ctx) {
+	if (!con || !line) {
+		return false;
+	}
+	// Trim leading spaces.
+	while (*line && token_is_space(*line)) {
+		line++;
+	}
+	if (!*line) {
+		return false;
+	}
+
+	// Echo into console output for visibility.
+	console_printf(con, "> %s", line);
+	con->scroll = 0;
+
+	char scratch[512];
+	const char* argv[CONSOLE_MAX_TOKENS];
+	int argc = 0;
+	char err[128];
+	err[0] = '\0';
+	if (!console_tokenize(line, scratch, sizeof(scratch), argv, &argc, err, sizeof(err))) {
+		console_printf(con, "Error: %s", err[0] ? err : "Invalid input");
+		return false;
+	}
+	if (argc <= 0) {
+		return false;
+	}
+
+	bool flag_close = false;
+	bool stop_flag_parse = false;
+	const char* pos_argv[CONSOLE_MAX_TOKENS];
+	int pos_argc = 0;
+	for (int i = 0; i < argc; i++) {
+		const char* t = argv[i];
+		if (!t || !t[0]) {
+			continue;
+		}
+		if (!stop_flag_parse && strcmp(t, "--") == 0) {
+			stop_flag_parse = true;
+			continue;
+		}
+		if (!stop_flag_parse && t[0] == '-' && t[1] == '-') {
+			if (strcmp(t, "--close") == 0) {
+				flag_close = true;
+				continue;
+			}
+			console_printf(con, "Error: Unknown flag: %s", t);
+			return false;
+		}
+		if (pos_argc < CONSOLE_MAX_TOKENS) {
+			pos_argv[pos_argc++] = t;
+		}
+	}
+
+	if (pos_argc <= 0) {
+		console_print(con, "Error: Missing command.");
+		return false;
+	}
+
+	const ConsoleCommand* cmd = find_command(con, pos_argv[0]);
+	if (!cmd) {
+		console_print(con, "Error: Unknown command.");
+		return false;
+	}
+
+	console_history_push(con, line);
+
+	if (flag_close) {
+		console_set_open(con, false);
+	}
+	bool ok = cmd->fn(con, pos_argc - 1, &pos_argv[1], user_ctx);
+	if (flag_close) {
+		console_clear(con);
+	}
+	return ok;
+}
+
 void console_draw(const Console* con, FontSystem* font, Framebuffer* fb) {
 	if (!con || !font || !fb || !con->open) {
 		return;

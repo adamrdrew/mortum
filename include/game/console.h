@@ -86,6 +86,10 @@ bool console_register_command(Console* con, ConsoleCommand cmd);
 // - On Enter: echoes "> <line>" then dispatches to commands.
 void console_update(Console* con, const Input* in, void* user_ctx);
 
+// Executes a command line programmatically using the same tokenizer/dispatch path as console_update().
+// Returns true if a known command was found and invoked.
+bool console_execute_line(Console* con, const char* line, void* user_ctx);
+
 // Renders the console overlay if open.
 void console_draw(const Console* con, FontSystem* font, Framebuffer* fb);
 // Call this once per frame to update the blink timer (dt in seconds)

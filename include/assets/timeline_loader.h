@@ -7,6 +7,7 @@
 typedef enum TimelineEventKind {
 	TIMELINE_EVENT_SCENE = 0,
 	TIMELINE_EVENT_MAP = 1,
+	TIMELINE_EVENT_MENU = 2,
 } TimelineEventKind;
 
 typedef enum TimelineOnComplete {

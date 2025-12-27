@@ -1,4 +1,5 @@
 #include "assets/asset_paths.h"
+#include "assets/menu_loader.h"
 #include "assets/timeline_loader.h"
 #include "assets/map_loader.h"
 #include "assets/scene_loader.h"
@@ -69,6 +70,15 @@ static bool validate_timeline_content_depth(const AssetPaths* paths, const char*
 				break;
 			}
 			map_load_result_destroy(&map);
+		} else if (ev->kind == TIMELINE_EVENT_MENU) {
+			MenuAsset menu;
+			log_info("Validating menu: %s", ev->name);
+			if (!menu_load(&menu, paths, ev->name)) {
+				log_error("Failed to load menu: %s", ev->name);
+				ok = false;
+				break;
+			}
+			menu_asset_destroy(&menu);
 		}
 
 		if (ev->on_complete == TIMELINE_ON_COMPLETE_LOAD) {
