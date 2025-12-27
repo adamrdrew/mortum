@@ -2,7 +2,7 @@
 
 #include <stdbool.h>
 
-// Safe relative path rules (used by Scenes and episode/config references):
+// Safe relative path rules (used by Scenes and config/content references):
 // - Must be relative (cannot start with '/' or '\\')
 // - Must not contain ".."
 // - Must not contain backslashes

@@ -10,7 +10,7 @@
 
 #include "game/debug_dump.h"
 
-#include "game/episode_runner.h" // per-level reset helper
+#include "game/level_start.h"
 
 #include "render/camera.h"
 #include "render/raycast.h"
@@ -333,7 +333,7 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 	}
 
 	level_mesh_build(ctx->mesh, &ctx->map->world);
-	episode_runner_apply_level_start(ctx->player, ctx->map);
+	level_start_apply(ctx->player, ctx->map);
 	ctx->player->footstep_timer_s = 0.0f;
 	respawn_map_emitters_and_entities(ctx);
 	ctx->gs->mode = GAME_MODE_PLAYING;
@@ -410,7 +410,6 @@ static bool cmd_config_change(Console* con, int argc, const char** argv, void* u
 static bool cmd_config_reload(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_map(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_timeline(Console* con, int argc, const char** argv, void* user_ctx);
-static bool cmd_load_episode(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_dump_perf(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_dump_entities(Console* con, int argc, const char** argv, void* user_ctx);
@@ -629,17 +628,6 @@ static bool cmd_load_timeline(Console* con, int argc, const char** argv, void* u
 	return true;
 }
 
-static bool cmd_load_episode(Console* con, int argc, const char** argv, void* user_ctx) {
-	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
-	if (!ctx || argc < 1) {
-		console_print(con, "Error: Expected <episode.json>");
-		return false;
-	}
-	console_print(con, "Warning: load_episode is deprecated; use load_timeline");
-	// Treat the provided arg as a timeline filename.
-	return cmd_load_timeline(con, argc, argv, user_ctx);
-}
-
 static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user_ctx) {
 	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
 	if (!ctx || !ctx->paths || !ctx->fb || !ctx->screens || argc < 1) {
@@ -837,13 +825,6 @@ void console_commands_register_all(Console* con) {
 		.example = "load_timeline boot.json",
 		.syntax = "load_timeline string",
 		.fn = cmd_load_timeline,
-	});
-	(void)console_register_command(con, (ConsoleCommand){
-		.name = "load_episode",
-		.description = "Deprecated alias for load_timeline.",
-		.example = "load_episode boot.json",
-		.syntax = "load_episode string",
-		.fn = cmd_load_episode,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "load_scene",

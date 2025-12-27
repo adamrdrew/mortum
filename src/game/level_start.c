@@ -1,47 +1,8 @@
-#include "game/episode_runner.h"
+#include "game/level_start.h"
 
 #include "game/world.h"
 
-#include <string.h>
-
-void episode_runner_init(EpisodeRunner* self) {
-	if (!self) {
-		return;
-	}
-	self->map_index = 0;
-}
-
-bool episode_runner_start(EpisodeRunner* self, const Episode* ep) {
-	if (!self || !ep || !ep->maps || ep->map_count <= 0) {
-		return false;
-	}
-	self->map_index = 0;
-	return true;
-}
-
-const char* episode_runner_current_map(const EpisodeRunner* self, const Episode* ep) {
-	if (!self || !ep || !ep->maps || ep->map_count <= 0) {
-		return NULL;
-	}
-	if (self->map_index < 0 || self->map_index >= ep->map_count) {
-		return NULL;
-	}
-	return ep->maps[self->map_index];
-}
-
-bool episode_runner_advance(EpisodeRunner* self, const Episode* ep) {
-	if (!self || !ep || ep->map_count <= 0) {
-		return false;
-	}
-	int next = self->map_index + 1;
-	if (next < 0 || next >= ep->map_count) {
-		return false;
-	}
-	self->map_index = next;
-	return true;
-}
-
-void episode_runner_apply_level_start(Player* player, const MapLoadResult* map) {
+void level_start_apply(Player* player, const MapLoadResult* map) {
 	if (!player || !map) {
 		return;
 	}

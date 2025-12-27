@@ -724,16 +724,10 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 				log_error("Config: %s: content must be an object", path);
 				ok = false;
 			} else {
-				static const char* const allowed_content2[] = {"boot_timeline", "boot_episode"};
+				static const char* const allowed_content2[] = {"boot_timeline"};
 				warn_unknown_keys(&doc, t_content, allowed_content2, (int)(sizeof(allowed_content2) / sizeof(allowed_content2[0])), "content");
 				int t_boot_tl = -1;
-				int t_boot_ep = -1;
 				(void)json_object_get(&doc, t_content, "boot_timeline", &t_boot_tl);
-				(void)json_object_get(&doc, t_content, "boot_episode", &t_boot_ep);
-				if (t_boot_ep != -1 && t_boot_tl == -1) {
-					log_warn("Config: %s: content.boot_episode is deprecated; use content.boot_timeline", path);
-					t_boot_tl = t_boot_ep;
-				}
 				if (t_boot_tl != -1) {
 					StringView sv;
 					if (!json_get_string(&doc, t_boot_tl, &sv)) {
@@ -1501,7 +1495,7 @@ CoreConfigSetStatus core_config_try_set_by_path(
 	}
 
 	// content
-	if (key_eq(key_path, "content.boot_timeline") || key_eq(key_path, "content.boot_episode")) {
+	if (key_eq(key_path, "content.boot_timeline")) {
 		if (provided_kind != CORE_CONFIG_VALUE_STRING) {
 			return type_mismatch(CORE_CONFIG_VALUE_STRING, provided_kind, out_expected_kind);
 		}
@@ -1511,9 +1505,6 @@ CoreConfigSetStatus core_config_try_set_by_path(
 		}
 		if (value_str[0] != '\0' && !name_is_safe_relpath(value_str)) {
 			return CORE_CONFIG_SET_INVALID_VALUE;
-		}
-		if (key_eq(key_path, "content.boot_episode")) {
-			log_warn("config_change: content.boot_episode is deprecated; use content.boot_timeline");
 		}
 		strncpy(g_cfg.content.boot_timeline, value_str, sizeof(g_cfg.content.boot_timeline) - 1);
 		g_cfg.content.boot_timeline[sizeof(g_cfg.content.boot_timeline) - 1] = '\0';

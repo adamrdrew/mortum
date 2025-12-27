@@ -37,7 +37,7 @@
 #include "game/debug_overlay.h"
 #include "game/debug_dump.h"
 #include "game/perf_trace.h"
-#include "game/episode_runner.h"
+#include "game/level_start.h"
 #include "game/timeline_flow.h"
 #include "game/purge_item.h"
 #include "game/rules.h"
@@ -358,7 +358,7 @@ int main(int argc, char** argv) {
 	char map_name_buf[64] = "";
 	bool using_timeline = false;
 	if (scene_name_arg) {
-		// Standalone scene mode: do not load episodes or maps.
+		// Standalone scene mode: do not load timelines or maps.
 		using_timeline = false;
 		map_ok = false;
 		map_name_buf[0] = '\0';
@@ -411,7 +411,7 @@ int main(int argc, char** argv) {
 	Player player;
 	player_init(&player);
 	if (map_ok) {
-		episode_runner_apply_level_start(&player, &map);
+			level_start_apply(&player, &map);
 	}
 
 	// Spawn map-authored sound emitters (e.g., ambient loops).

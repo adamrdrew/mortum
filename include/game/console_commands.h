@@ -47,7 +47,7 @@ typedef struct ConsoleCommandContext {
 	bool* show_debug;
 	bool* show_font_test;
 
-	// Level/episode state.
+	// Level/timeline state.
 	MapLoadResult* map;
 	bool* map_ok;
 	char* map_name_buf;

@@ -6,7 +6,7 @@
 
 #include "game/map_music.h"
 #include "game/scene_screen.h"
-#include "game/episode_runner.h" // for episode_runner_apply_level_start (per-level reset)
+#include "game/level_start.h"
 
 #include <string.h>
 
@@ -117,7 +117,7 @@ static bool try_load_map(TimelineFlowRuntime* rt, const char* map_name) {
 	}
 
 	level_mesh_build(rt->mesh, &rt->map->world);
-	episode_runner_apply_level_start(rt->player, rt->map);
+	level_start_apply(rt->player, rt->map);
 	rt->player->footstep_timer_s = 0.0f;
 
 	crash_diag_set_phase(PHASE_MAP_SPAWN_ENTITIES_BEGIN);
