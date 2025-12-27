@@ -26,7 +26,7 @@ From the repository root:
 
 ## Running specific maps
 
-- Default (episode): `make run`
+- Default: `make run`
 - Override map (relative to `Assets/Levels/`): `make run RUN_MAP=arena.json` (or `./build/mortum arena.json`)
 
 ## Controls (current)
@@ -46,14 +46,14 @@ Dev toggles:
 
 ## Assets Layout (target workflow)
 
-- `Assets/Episodes/` — episode JSON files
+- `Assets/Timelines/` — timeline JSON files
 - `Assets/Levels/` — map JSON files
 - `Assets/Images/` — textures/sprites/UI images
 - `Assets/Sounds/` — WAV (early); OGG later if desired
 
 ## File Format Contracts
 
-- Episode schema: `specs/001-mortum-vision-spec/contracts/episode.schema.json`
+- Timeline schema: `specs/001-mortum-vision-spec/contracts/timeline.schema.json`
 - Map schema: `specs/001-mortum-vision-spec/contracts/map.schema.json`
 - Map lighting extension: `specs/001-mortum-vision-spec/contracts/map.lighting.schema.json`
 

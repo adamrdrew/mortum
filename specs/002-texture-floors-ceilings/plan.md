@@ -19,7 +19,7 @@ Upgrade texture handling so maps can reference the expanded texture library unde
 
 **Language/Version**: C11  
 **Primary Dependencies**: SDL2 (window/input/audio), vendored `jsmn` via `assets/json.c`  
-**Storage**: JSON asset files under `Assets/` (maps, episodes, images, sounds)  
+**Storage**: JSON asset files under `Assets/` (maps, timelines, images, sounds)  
 **Testing**: `make test` (C test harness)  
 **Target Platform**: macOS, Linux, Windows (SDL2)  
 **Project Type**: single native C project (software renderer)  

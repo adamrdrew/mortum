@@ -133,4 +133,3 @@ Startup selection logic (`src/main.c`):
 Console:
 
 - `load_timeline <timeline.json>` loads a timeline from `Assets/Timelines/`, unloading any current map/world and stopping any active Scene screen.
-- `load_episode` is kept as a deprecated alias that forwards to `load_timeline`.

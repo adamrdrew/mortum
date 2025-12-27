@@ -6,7 +6,7 @@ This describes the minimum set of entities and file-backed data needed to satisf
 
 ### PlayerState
 
-Represents the player’s persistent state within an episode/run.
+Represents the player’s persistent state within a run.
 
 Fields:
 - `health_current`: number
@@ -171,14 +171,19 @@ Map-defined spawns for enemies/pickups/gates.
 
 ## File-backed Data
 
-### Episode File
+### Timeline File
 
-Minimal JSON file listing levels for an episode.
+Minimal JSON file that drives progression.
 
 Fields:
 - `name`: string
-- `splash`: string (path relative to `Assets/Images/`)
-- `maps`: array of strings (paths relative to `Assets/Levels/`)
+- `events`: array of objects
+
+Each event:
+- `kind`: `scene` or `map`
+- `name`: string (a `.json` filename; map names use filename-only rules, scenes may be safe relative paths)
+- `on_complete`: `advance`, `loop`, or `load`
+- `target`: required only when `on_complete` is `load` (timeline `.json` filename)
 
 ### Map File
 

@@ -26,11 +26,11 @@ This document resolves technical choices needed to proceed with Phase 1 design. 
 - Alternatives considered:
   - CMake: keep as a fallback if the Makefile becomes painful for Windows users.
 
-## Data Formats (Episode + Map)
+## Data Formats (Timeline + Map)
 
-### Decision: JSON for episodes and maps
+### Decision: JSON for timelines and maps
 
-- Decision: Store **episodes** and **maps** as JSON files.
+- Decision: Store **timelines** and **maps** as JSON files.
 - Rationale:
   - Human-editable, tool-friendly, easy to validate.
   - Supports future editor tooling naturally.
@@ -42,7 +42,7 @@ This document resolves technical choices needed to proceed with Phase 1 design. 
 - Decision: Vendor a small JSON parser for C (planned) rather than adding a heavy dependency.
 - Rationale:
   - Keeps the build boring and self-contained.
-  - JSON parsing requirements are modest (episodes + maps).
+  - JSON parsing requirements are modest (timelines + maps).
 - Alternatives considered:
   - cJSON: mature, easy API, but slightly larger and with more allocation behavior to reason about.
   - jsmn: extremely small and allocation-light; requires a bit more glue code.

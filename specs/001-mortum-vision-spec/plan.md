@@ -19,7 +19,7 @@ Improve moment-to-moment readability and “Doom-like” feel by fixing sprite d
 
 **Language/Version**: C11 (clang primary, gcc secondary)  
 **Primary Dependencies**: SDL2 (window/input/audio)  
-**Storage**: JSON files in `Assets/` (maps, episodes)  
+**Storage**: JSON files in `Assets/` (maps, timelines)  
 **Testing**: `make test` (C tests; asset validation via `make validate`)  
 **Target Platform**: macOS, Linux, Windows (MinGW)  
 **Project Type**: single C game executable (software framebuffer renderer)  
@@ -88,7 +88,7 @@ include/
 Assets/
   Levels/
   Images/
-  Episodes/
+  Timelines/
 ```
 
 **Structure Decision**: Single C project. Rendering stays inside `src/render/*` and consumes `game/world.h` + lightweight inputs; HUD stays in `src/game/hud.c` and uses `render/font.h` + `render/draw.h`.

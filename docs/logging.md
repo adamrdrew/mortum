@@ -188,7 +188,7 @@ Likely an audio-thread race or lifecycle issue.
 - Crash diagnostics: `src/core/crash_diag.c`, `include/core/crash_diag.h`
 - Phase markers are set primarily in:
 	- `src/main.c`
-	- `src/game/episode_flow.c`
+	- `src/game/timeline_flow.c`
 	- `src/game/map_music.c`
 
 ## FAQ

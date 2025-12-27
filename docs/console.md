@@ -134,7 +134,6 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - `load_map <map.json>` — loads a map from `Assets/Levels/`
 - `unload_map` — unloads the current map/world
 - `load_timeline <timeline.json>` — loads a timeline from `Assets/Timelines/` (safe relative path; unloads current map/world and starts timeline flow)
-- `load_episode <episode.json>` — deprecated alias for `load_timeline` (kept for compatibility)
 - `load_scene <scene.json>` — loads a scene from `Assets/Scenes/` (runs as active screen; gameplay suspended while active)
 - `dump_perf` — begins a perf trace capture
 - `dump_entities` — prints an entity + projection dump into the console

@@ -96,10 +96,8 @@ Validation happens inside `core_config_load_from_file()` and includes:
    - Strings are checked for non-empty when required.
 
 3. **Asset existence checks (on-disk)**
-   - Episode file:
    - Timeline file:
    - `content.boot_timeline` (if non-empty) must exist under `Assets/Timelines/`.
-   - `content.boot_episode` is deprecated but may still be accepted for compatibility.
    - WAV assets (only when `audio.enabled` is `true`):
      - Weapon shot WAV files must exist under `Assets/Sounds/Effects/`.
      - A representative footstep WAV is validated using `footsteps.filename_pattern` with variant `1`.

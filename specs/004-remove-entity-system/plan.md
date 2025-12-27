@@ -13,7 +13,7 @@ This plan intentionally treats the “string-ban” requirement as a hard gate v
 
 **Language/Version**: C11 (Makefile uses `-std=c11`)  
 **Primary Dependencies**: SDL2 (window/input/audio), FluidSynth (MIDI playback), vendored LodePNG  
-**Storage**: JSON assets on disk (`Assets/Levels/*.json`, `Assets/Episodes/*.json`, images/sounds)  
+**Storage**: JSON assets on disk (`Assets/Levels/*.json`, `Assets/Timelines/*.json`, images/sounds)  
 **Testing**: No automated tests; rely on `make`, `make validate`, and a manual smoke test  
 **Target Platform**: macOS (current), plus SDL2-supported platforms (Linux/Windows)  
 **Project Type**: Single C executable built by `Makefile`  

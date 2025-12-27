@@ -21,7 +21,7 @@ The authoritative implementations for maps are:
 
 Primary runtime consumers:
 
-- Player spawn selection: `episode_runner_apply_level_start()` in `src/game/episode_runner.c`
+- Player spawn selection: `level_start_apply()` in `src/game/level_start.c`
 - Collision: `collision_move_circle()` and `collision_line_of_sight()` in `src/game/collision.c`
 - Rendering (portal raycaster, lighting, sky): `raycast_render_textured*()` in `src/render/raycast.c`
 - Movable floors (toggle walls): `sector_height_try_toggle_touching_wall()` / `sector_height_update()` in `src/game/sector_height.c`
@@ -68,7 +68,7 @@ Typical flow (matches `src/main.c`):
 
 Once a map is loaded:
 
-- The player is placed via `episode_runner_apply_level_start(&player, &map)`.
+- The player is placed via `level_start_apply(&player, &map)`.
 - Movement/collision uses `World.walls` for solid walls.
 - Rendering uses `World` for raycasting and portal recursion.
 - Optional “map auth” systems are spawned from `MapLoadResult`:
@@ -482,7 +482,7 @@ Implication:
 
 Most gameplay assumes a point is inside one sector, but some maps intentionally overlap (raised platform inside room).
 
-Spawn logic (`episode_runner_apply_level_start`) handles overlap by:
+Spawn logic (`level_start_apply`) handles overlap by:
 
 - considering all sectors that contain the spawn point,
 - choosing the sector with the **highest floor** that still has enough headroom for the player body.
@@ -615,7 +615,7 @@ map_load_result_destroy(&map);
 
 ### Level transitions
 
-On level change (see `src/main.c` episode progression):
+On level change (see `src/main.c` timeline progression):
 
 - Destroy previous map result.
 - Load the new map.

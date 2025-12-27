@@ -2,7 +2,7 @@
 
 This document is the source of truth for Mortum’s **Scene** feature and the minimal internal **Screen** runtime that powers it.
 
-Scenes are **developer-facing** content used for debugging/testing and future UI flows. Scenes can run standalone (console / `--scene`) and can also be run by Episodes via `EpisodeFlow` (`scenes.enter` / `scenes.exit`). While a Scene is active, normal gameplay update/render is suspended.
+Scenes are **developer-facing** content used for debugging/testing and future UI flows. Scenes can run standalone (console / `--scene`) and can also be run by Timelines (via TimelineFlow events). While a Scene is active, normal gameplay update/render is suspended.
 
 ## Overview
 

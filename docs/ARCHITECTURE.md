@@ -5,11 +5,11 @@
 - `src/platform/`: SDL2-only code (window, input, time, audio, filesystem). Gameplay must not call SDL directly.
 - `src/render/`: software renderer + framebuffer; consumes world/camera data.
 - `src/game/`: world model, entities, rules; must not call SDL directly.
-- `src/assets/`: loading/parsing of episodes/maps/images/sounds.
+- `src/assets/`: loading/parsing of timelines/maps/images/sounds.
 
 Notable cross-cutting helpers:
 
-- `src/game/episode_runner.c`: episode progression (map index + carry-forward state).
+- `src/game/level_start.c`: level-start setup and per-level player resets.
 - `src/game/debug_overlay.c`: optional debug text overlay.
 - `src/game/console.c` + `src/game/console_commands.c`: in-game Quake-style console and developer commands.
 - `src/game/debug_spawn.c`: dev-only spawn helpers.
@@ -68,4 +68,4 @@ Enemies and the player share the same underlying `PhysicsBody` traversal system 
 
 ## Tools
 
-- `make validate` builds and runs an offline asset loader/validator (episode + maps).
+- `make validate` builds and runs an offline asset loader/validator (timelines + maps).

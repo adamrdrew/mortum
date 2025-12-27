@@ -24,7 +24,7 @@ The repository includes a fully-populated default config at [config.json](config
 - Runtime reload (via in-game console `config_reload`): invalid config logs errors and keeps the previous config.
 - Unknown keys: logged as warnings (forward-compatible).
 - Asset references: validated on load.
-	- `content.default_episode` must exist under `Assets/Episodes/`.
+	- `content.boot_timeline` must exist under `Assets/Timelines/`.
 	- If `audio.enabled` is true, referenced WAV filenames must exist under `Assets/Sounds/Effects/`.
 
 ### Supported keys
@@ -64,7 +64,7 @@ Notes:
 | `audio.sfx_atten_max_dist` | number | `28` | Reloadable | Must satisfy `max_dist >= min_dist` |
 | `audio.sfx_device_freq` | int | `48000` | Startup-only | Range: `[8000..192000]` |
 | `audio.sfx_device_buffer_samples` | int | `1024` | Startup-only | Range: `[128..8192]` |
-| `content.default_episode` | string | `"boot.json"` | Startup-only | Must exist in `Assets/Episodes/` |
+| `content.boot_timeline` | string | `"boot.json"` | Startup-only | Must exist in `Assets/Timelines/` |
 | `input.bindings.forward` | key or `[key,key]` | `["W","Up"]` | Reloadable | Move forward |
 | `input.bindings.back` | key or `[key,key]` | `["S","Down"]` | Reloadable | Move back |
 | `input.bindings.left` | key or `[key,key]` | `"A"` | Reloadable | Strafe left |
