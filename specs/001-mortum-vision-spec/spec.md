@@ -10,7 +10,7 @@
 ### Session 2025-12-19
 
 - Q: In Undead mode, how are “purge shards” obtained? → A: Every enemy kill drops exactly 1 purge shard (deterministic).
-- Q: Should Mortum (corruption %) persist between levels within a run? → A: Carry Mortum across levels unchanged.
+- Q: Should Mortum (corruption %) persist between levels within an episode/run? → A: Carry Mortum across levels unchanged.
 - Q: If Mortum reaches 100% in the same moment the player takes fatal damage, what should happen? → A: Death takes priority (game over).
 - Q: If the player reaches the exit while in Undead mode, what should happen? → A: Block exit until the player cleanses; while Undead is active, enemies spawn continuously and escalate in difficulty/intensity over time.
 - Q: For MVP Mortum gain sources, which should be considered “in scope”? → A: Both hazard zones and enemy proximity.
@@ -112,11 +112,11 @@ As a player, I can choose between distinct weapons and upgrades (max health vs m
 - **FR-014**: Weapons MUST be choices rather than strict upgrades (each remains situationally useful).
 - **FR-015**: The game MUST include permanent upgrades that increase max health and max ammo, enabling light build flexibility.
 
-- **FR-016**: Completing a level MUST carry the player’s current loadout and earned upgrades into subsequent levels (within the same run).
-- **FR-016a**: Completing a level MUST carry the player’s current Mortum percentage into subsequent levels (within the same run).
-- **FR-017**: The game MUST support a multi-level progression structure composed of multiple levels and a climactic finale.
+- **FR-016**: Completing a level MUST carry the player’s current loadout and earned upgrades into subsequent levels (within the same run/episode).
+- **FR-016a**: Completing a level MUST carry the player’s current Mortum percentage into subsequent levels (within the same run/episode).
+- **FR-017**: The game MUST support an episodic structure composed of multiple levels and a climactic finale.
 - **FR-018**: The game MUST include pickups for health, ammo by type, and gate items (e.g., keys).
-- **FR-019**: Boss or set-piece encounters SHOULD exist as high-intensity tests of movement and pattern reading (exact count per run is out of scope for this spec).
+- **FR-019**: Boss or set-piece encounters SHOULD exist as high-intensity tests of movement and pattern reading (exact count per episode is out of scope for this spec).
 
 ### Key Entities *(include if feature involves data)*
 
@@ -126,7 +126,7 @@ As a player, I can choose between distinct weapons and upgrades (max health vs m
 - **Projectile Pattern**: Recognizable “shape” and timing that can be learned and dodged.
 - **Pickup**: Type (health, ammo, key, purge item, purge shard, upgrade), value/impact on player state.
 - **Level**: Layout of spaces, gates, encounters, hazards/corruption zones, exit condition.
-- **Timeline**: Ordered sequence of events (levels and/or scenes).
+- **Episode**: Ordered set of levels and a finale.
 - **Undead Mode Session**: Trigger conditions, drain behavior, recovery requirement, completion/failure outcomes.
 
 ## Success Criteria *(mandatory)*
@@ -149,8 +149,8 @@ As a player, I can choose between distinct weapons and upgrades (max health vs m
 - Single-player, level-based progression.
 - No armor system; health is the primary survivability resource.
 - Purge items and purge shards are intentionally scarce and are meant to drive meaningful choices.
-- “Carry forward” means weapons and permanent upgrades persist between levels within a run.
-- Mortum percentage persists between levels within a run.
+- “Carry forward” means weapons and permanent upgrades persist between levels within an episode/run.
+- Mortum percentage persists between levels within an episode/run.
 
 ## Out of Scope
 

@@ -19,7 +19,7 @@ Add a first-person weapon “viewmodel” layer (idle + 6-frame shoot animation)
 
 **Language/Version**: C11 (clang primary, gcc secondary)  
 **Primary Dependencies**: SDL2 (window/input/audio)  
-**Storage**: JSON files in `Assets/` (maps, timelines); PNG assets in `Assets/Images/`  
+**Storage**: JSON files in `Assets/` (maps, episodes); PNG assets in `Assets/Images/`  
 **Testing**: `make test` (C tests) + in-game visual sanity checks  
 **Target Platform**: macOS, Linux, Windows (MinGW)  
 **Project Type**: single C game executable (software framebuffer renderer)  
