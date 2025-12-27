@@ -304,8 +304,8 @@ static bool parse_action(MenuAction* out, const JsonDoc* doc, int t_action) {
 		return out->submenu_id != NULL;
 	}
 
-	// Close the menu screen.
-	if ((sv_kind.len == 5 && strncmp(sv_kind.data, "close", 5) == 0) || (sv_kind.len == 4 && strncmp(sv_kind.data, "none", 4) == 0)) {
+	// No-op action kind (handled as close by MenuScreen today).
+	if (sv_kind.len == 4 && strncmp(sv_kind.data, "none", 4) == 0) {
 		out->kind = MENU_ACTION_NONE;
 		return true;
 	}
@@ -668,8 +668,13 @@ bool menu_load(MenuAsset* out, const AssetPaths* paths, const char* menu_file) {
 				json_doc_destroy(&doc);
 				return false;
 			}
-			StringView sv;
-			(void)json_get_string(&doc, fields[i].tok, &sv);
+			StringView sv = (StringView){0};
+			if (!json_get_string(&doc, fields[i].tok, &sv)) {
+				log_error("Menu theme.sfx.%s must be a string", fields[i].key);
+				menu_asset_destroy(out);
+				json_doc_destroy(&doc);
+				return false;
+			}
 			if (sv.len <= 0) {
 				continue;
 			}
