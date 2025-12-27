@@ -733,7 +733,7 @@ int main(int argc, char** argv) {
 				crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_END);
 			}
 			// Timeline-driven scenes advance only when the active screen completes.
-			if (completed && tl_flow.active && !exit_after_scene) {
+			if (completed && tl_flow.active && using_timeline && !exit_after_scene) {
 				TimelineFlowRuntime rt;
 				memset(&rt, 0, sizeof(rt));
 				rt.paths = &paths;

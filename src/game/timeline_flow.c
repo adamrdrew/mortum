@@ -59,7 +59,6 @@ static bool try_start_scene(TimelineFlow* self, TimelineFlowRuntime* rt, const c
 		log_warn("Timeline scene failed to load (treating as completed): %s", scene_file);
 		return false;
 	}
-	bool preserve_midi = scene.music.no_stop && (!scene.music.midi_file || scene.music.midi_file[0] == '\0');
 	Screen* scr = scene_screen_create(scene);
 	if (!scr) {
 		log_warn("Timeline scene failed to create screen (treating as completed): %s", scene_file);
@@ -68,7 +67,7 @@ static bool try_start_scene(TimelineFlow* self, TimelineFlowRuntime* rt, const c
 	}
 	ScreenContext sctx;
 	make_screen_ctx(rt, &sctx);
-	sctx.preserve_midi_on_exit = preserve_midi;
+	sctx.preserve_midi_on_exit = preserve_midi_on_exit_for_current;
 	screen_runtime_set(rt->screens, scr, &sctx);
 	if (self) {
 		self->preserve_midi_on_scene_exit = preserve_midi_on_exit_for_current;

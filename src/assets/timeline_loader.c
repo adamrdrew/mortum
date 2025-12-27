@@ -120,6 +120,9 @@ static bool parse_on_complete(const char* s, TimelineOnComplete* out) {
 }
 
 bool timeline_load(Timeline* out, const AssetPaths* paths, const char* timeline_filename) {
+	if (!out) {
+		return false;
+	}
 	memset(out, 0, sizeof(*out));
 	if (!paths || !timeline_filename || timeline_filename[0] == '\0') {
 		log_error("Timeline load: missing filename");

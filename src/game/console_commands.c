@@ -635,6 +635,14 @@ static bool cmd_load_scene(Console* con, int argc, const char** argv, void* user
 		return false;
 	}
 
+	// load_scene is a manual override: do not allow it to advance a running timeline.
+	if (ctx->using_timeline) {
+		*ctx->using_timeline = false;
+	}
+	if (ctx->tl_flow) {
+		timeline_flow_abort(ctx->tl_flow);
+	}
+
 	Scene scene;
 	if (!scene_load(&scene, ctx->paths, argv[0])) {
 		console_print(con, "Error: Failed to load scene (see log).");
