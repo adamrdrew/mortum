@@ -81,6 +81,7 @@ SRC := \
   src/game/weapon_defs.c \
   src/game/weapon_visuals.c \
   src/game/weapon_view.c \
+  src/game/postfx.c \
   src/game/upgrades.c \
   src/game/mortum.c \
   src/game/purge_item.c \

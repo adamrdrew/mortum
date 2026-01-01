@@ -29,6 +29,8 @@
 #include "game/game_state.h"
 #include "game/hud.h"
 
+#include "game/postfx.h"
+
 #include "game/font.h"
 
 #include "game/weapon_view.h"
@@ -476,6 +478,9 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	PostFxSystem postfx;
+	postfx_init(&postfx);
+
 	Player player;
 	player_init(&player);
 	if (map_ok) {
@@ -703,6 +708,8 @@ int main(int argc, char** argv) {
 		bool screen_active = screen_runtime_is_active(&screens);
 		if (screen_active) {
 			crash_diag_set_phase(PHASE_BOOT_SCENES_RUNNING);
+			// Post-FX is gameplay-only; never persist into menus/scenes.
+			postfx_reset(&postfx);
 		}
 		if (in.quit_requested) {
 			running = false;
@@ -892,6 +899,8 @@ int main(int argc, char** argv) {
 				timeline_flow_on_screen_completed(&tl_flow, &rt);
 			}
 		} else {
+			// Visual-only gameplay post-FX (damage flashes, status overlays, etc.)
+			postfx_update(&postfx, frame_dt_s);
 
 		if (map_ok) {
 			particle_emitters_begin_frame(&particle_emitters);
@@ -1058,6 +1067,7 @@ int main(int argc, char** argv) {
 									entity_system_request_despawn(&entities, ev->entity);
 								}
 								if (ev->amount > 0) {
+									postfx_trigger_damage_flash(&postfx);
 									player.health -= ev->amount;
 									if (player.health < 0) {
 										player.health = 0;
@@ -1318,6 +1328,7 @@ int main(int argc, char** argv) {
 		}
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);
+		postfx_draw(&postfx, &fb);
 		hud_draw(&hud, &fb, &player, &gs, fps, &texreg, &paths);
 		if (show_debug) {
 			debug_overlay_draw(&ui_font, &fb, &player, map_ok ? &map.world : NULL, &entities, fps);
