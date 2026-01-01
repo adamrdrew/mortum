@@ -669,7 +669,7 @@ static bool enemy_parse_shoot_pattern_type(const JsonDoc* doc, int tok, EnemySho
 		*out = ENEMY_SHOOT_PATTERN_THREE_SPREAD;
 		return true;
 	}
-	if (sv.len == 12 && strncmp(sv.data, "FiveOscSpread", 12) == 0) {
+	if (sv.len == 13 && strncmp(sv.data, "FiveOscSpread", 13) == 0) {
 		*out = ENEMY_SHOOT_PATTERN_FIVE_OSC_SPREAD;
 		return true;
 	}
