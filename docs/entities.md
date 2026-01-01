@@ -161,7 +161,7 @@ Lifecycle rules (implementation truth):
 - Spawn: if the entity def includes a valid `light` object, the light is attached during `entity_system_spawn()`.
 - Tick: any attached lights are re-centered on the entity at the end of `entity_system_tick()`.
 - Death: `entity_system_tick()` detaches lights when it performs the transition into `ENTITY_STATE_DYING` due to `hp <= 0`.
-  - Important edge case: if gameplay code sets `state = ENTITY_STATE_DYING` directly (as `src/main.c` currently does on kills), the tick code will **not** run the “detach on death transition” branch (because it sees the entity already in `DYING`). In that case, attached lights persist until despawn/removal.
+  - Important edge case: if gameplay code sets `state = ENTITY_STATE_DYING` directly, the tick code will **not** run the “detach on death transition” branch (because it sees the entity already in `DYING`). In that case, attached lights persist through the dying/dead timers, but will still be cleaned up when the entity is despawned.
 - Despawn/removal: lights are detached immediately on `entity_system_request_despawn()` and also defensively during slot free/reset/shutdown.
 
 #### Entity Def JSON schema: `light`
@@ -222,7 +222,7 @@ Lifecycle rules (implementation truth):
 - Spawn: if the entity def includes a valid `particles` object, an emitter is attached during `entity_system_spawn()`.
 - Tick: any attached particle emitters are re-centered on the entity at the end of `entity_system_tick()`.
 - Death: `entity_system_tick()` detaches particle emitters when it performs the transition into `ENTITY_STATE_DYING` due to `hp <= 0`.
-  - Important edge case: if gameplay code sets `state = ENTITY_STATE_DYING` directly (as `src/main.c` currently does on kills), the tick code will **not** run the “detach on death transition” branch. In that case, attached emitters persist until despawn/removal.
+  - Important edge case: if gameplay code sets `state = ENTITY_STATE_DYING` directly, the tick code will **not** run the “detach on death transition” branch. In that case, attached emitters persist through the dying/dead timers, but will still be cleaned up when the entity is despawned.
 - Despawn/removal/reset/shutdown: emitters are detached/destroyed immediately and also defensively during slot free/reset/shutdown.
 
 #### Entity Def JSON schema: `particles`
