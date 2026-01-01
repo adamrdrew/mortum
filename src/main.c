@@ -449,6 +449,30 @@ int main(int argc, char** argv) {
 	TextureRegistry texreg;
 	texture_registry_init(&texreg);
 
+	HudSystem hud;
+	memset(&hud, 0, sizeof(hud));
+	if (!hud_system_init(&hud, cfg, &paths, &texreg)) {
+		log_error("HUD init failed; aborting startup");
+		texture_registry_destroy(&texreg);
+		level_mesh_destroy(&mesh);
+		free(wall_depth);
+		free(depth_pixels);
+		present_shutdown(&presenter);
+		framebuffer_destroy(&fb);
+		window_destroy(&win);
+		asset_paths_destroy(&paths);
+		fs_paths_destroy(&fs);
+		font_system_shutdown(&ui_font);
+		sound_emitters_shutdown(&sfx_emitters);
+		particle_emitters_shutdown(&particle_emitters);
+		sfx_shutdown();
+		midi_shutdown();
+		free(config_path);
+		platform_shutdown();
+		log_shutdown();
+		return 1;
+	}
+
 	Player player;
 	player_init(&player);
 	if (map_ok) {
@@ -534,6 +558,8 @@ int main(int argc, char** argv) {
 	console_ctx.config_path = config_path;
 	console_ctx.paths = &paths;
 	console_ctx.win = &win;
+	console_ctx.texreg = &texreg;
+	console_ctx.hud = &hud;
 	console_ctx.cfg = &cfg;
 	console_ctx.audio_enabled = &audio_enabled;
 	console_ctx.music_enabled = &music_enabled;
@@ -1271,7 +1297,7 @@ int main(int argc, char** argv) {
 		}
 
 		weapon_view_draw(&fb, &player, &texreg, &paths);
-		hud_draw(&ui_font, &fb, &player, &gs, fps, &texreg, &paths);
+		hud_draw(&hud, &fb, &player, &gs, fps, &texreg, &paths);
 		if (show_debug) {
 			debug_overlay_draw(&ui_font, &fb, &player, map_ok ? &map.world : NULL, &entities, fps);
 		}
@@ -1373,6 +1399,7 @@ int main(int argc, char** argv) {
 	entity_system_shutdown(&entities);
 	entity_defs_destroy(&entity_defs);
 
+	hud_system_shutdown(&hud);
 	texture_registry_destroy(&texreg);
 	level_mesh_destroy(&mesh);
 	free(wall_depth);

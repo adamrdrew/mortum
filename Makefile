@@ -61,6 +61,7 @@ SRC := \
   src/assets/asset_paths.c \
   src/assets/timeline_loader.c \
   src/assets/menu_loader.c \
+  src/assets/hud_loader.c \
   src/assets/map_loader.c \
   src/assets/map_validate.c \
   src/assets/image_bmp.c \

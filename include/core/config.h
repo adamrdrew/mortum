@@ -139,6 +139,9 @@ typedef struct UiFontConfig {
 
 typedef struct UiConfig {
 	UiFontConfig font;
+	struct {
+		char file[64];
+	} hud;
 } UiConfig;
 
 typedef struct CoreConfig {

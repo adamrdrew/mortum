@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "bar": {
+    "height_mode": "classic",
+    "padding_px": 8,
+    "gap_px": 6,
+    "background": {
+      "mode": "color",
+      "color_abgr": 4280295456,
+      "image": ""
+    },
+    "bevel": {
+      "enabled": true,
+      "hi_abgr": 4282400832,
+      "lo_abgr": 4279242768,
+      "thickness_px": 2
+    }
+  },
+  "widgets": {
+    "panel": {
+      "background": {
+        "mode": "color",
+        "color_abgr": 4280821800,
+        "image": ""
+      },
+      "bevel": {
+        "enabled": true,
+        "hi_abgr": 4282400832,
+        "lo_abgr": 4279242768,
+        "thickness_px": 2
+      },
+      "shadow": {
+        "enabled": true,
+        "offset_x": 1,
+        "offset_y": 1,
+        "color_abgr": 2147483648
+      },
+      "text": {
+        "font_file": "",
+        "color_abgr": 4294967295,
+        "accent_color_abgr": 4294957472,
+        "padding_x": 6,
+        "padding_y": 6,
+        "fit": {
+          "min_scale": 0.65,
+          "max_scale": 1.0
+        }
+      }
+    },
+    "order": [
+      { "kind": "health" },
+      { "kind": "mortum" },
+      { "kind": "ammo" },
+      { "kind": "equipped_weapon" }
+    ]
+  }
+}

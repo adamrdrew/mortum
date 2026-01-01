@@ -24,6 +24,9 @@
 #include "render/framebuffer.h"
 #include "render/level_mesh.h"
 
+typedef struct TextureRegistry TextureRegistry;
+typedef struct HudSystem HudSystem;
+
 // Command wiring context. Commands call into engine systems through pointers here.
 // Keep this POD and owned by main.
 
@@ -41,6 +44,8 @@ typedef struct ConsoleCommandContext {
 
 	AssetPaths* paths;
 	Window* win;
+	TextureRegistry* texreg;
+	HudSystem* hud;
 
 	// Pointer to the current config pointer in main (updated on reload).
 	const CoreConfig** cfg;

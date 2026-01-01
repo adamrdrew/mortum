@@ -1,5 +1,7 @@
 #include "game/console_commands.h"
 
+#include "game/hud.h"
+
 #include "assets/scene_loader.h"
 
 #include "assets/timeline_loader.h"
@@ -535,6 +537,11 @@ static bool cmd_config_reload(Console* con, int argc, const char** argv, void* u
 	}
 	if (ctx->cfg) {
 		*ctx->cfg = core_config_get();
+	}
+	if (ctx->hud && ctx->cfg && *ctx->cfg && ctx->paths && ctx->texreg) {
+		if (!hud_system_reload(ctx->hud, *ctx->cfg, ctx->paths, ctx->texreg)) {
+			console_print(con, "Warning: HUD reload failed; keeping previous HUD.");
+		}
 	}
 	refresh_runtime_audio(ctx);
 	if (ctx->win && ctx->cfg && *ctx->cfg) {

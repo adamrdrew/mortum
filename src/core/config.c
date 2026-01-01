@@ -1,6 +1,7 @@
 #include "core/config.h"
 
 #include "assets/json.h"
+#include "assets/hud_loader.h"
 #include "core/log.h"
 
 #include "core/path_safety.h"
@@ -52,6 +53,9 @@ static CoreConfig g_cfg = {
 			.file = "ProggyClean.ttf",
 			.size_px = 15,
 			.atlas_size = 512,
+		},
+		.hud = {
+			.file = "default.json",
 		},
 	},
 	.input = {
@@ -751,7 +755,7 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 				log_error("Config: %s: ui must be an object", path);
 				ok = false;
 			} else {
-				static const char* const allowed_ui[] = {"font"};
+				static const char* const allowed_ui[] = {"font", "hud"};
 				warn_unknown_keys(&doc, t_ui, allowed_ui, (int)(sizeof(allowed_ui) / sizeof(allowed_ui[0])), "ui");
 
 				int t_font = -1;
@@ -807,6 +811,41 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 								ok = false;
 							} else {
 								next.ui.font.atlas_size = v;
+							}
+						}
+					}
+				}
+
+				// ui.hud
+				int t_hud = -1;
+				if (json_object_get(&doc, t_ui, "hud", &t_hud)) {
+					if (!json_token_is_object(&doc, t_hud)) {
+						log_error("Config: %s: ui.hud must be an object", path);
+						ok = false;
+					} else {
+						static const char* const allowed_hud[] = {"file"};
+						warn_unknown_keys(&doc, t_hud, allowed_hud, (int)(sizeof(allowed_hud) / sizeof(allowed_hud[0])), "ui.hud");
+						int t_file = -1;
+						if (json_object_get(&doc, t_hud, "file", &t_file)) {
+							StringView sv;
+							if (!json_get_string(&doc, t_file, &sv) || sv.len == 0) {
+								log_error("Config: %s: ui.hud.file must be a non-empty string", path);
+								ok = false;
+							} else {
+								bool has_sep = false;
+								for (size_t i = 0; i < sv.len; i++) {
+									char ch = sv.data[i];
+									if (ch == '/' || ch == '\\') {
+										has_sep = true;
+										break;
+									}
+								}
+								if (has_sep) {
+									log_error("Config: %s: ui.hud.file must be a filename under Assets/HUD/ (no path separators)", path);
+									ok = false;
+								} else {
+									copy_sv_to_buf(next.ui.hud.file, sizeof(next.ui.hud.file), sv);
+								}
 							}
 						}
 					}
@@ -1216,6 +1255,17 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 				(void)validate_asset_file(assets, "Sounds/Effects", wav, path, "footsteps.filename_pattern (variant 1)", &ok);
 			}
 		}
+
+		// Validate HUD asset exists if configured.
+		if (next.ui.hud.file[0] != '\0') {
+			if (validate_asset_file(assets, "HUD", next.ui.hud.file, path, "ui.hud.file", &ok)) {
+				// Validate contents (schema + ranges + widget list) to preserve config atomicity.
+				HudAsset tmp;
+				if (!hud_asset_load(&tmp, assets, next.ui.hud.file)) {
+					ok = false;
+				}
+			}
+		}
 	}
 
 	json_doc_destroy(&doc);
@@ -1528,6 +1578,28 @@ CoreConfigSetStatus core_config_try_set_by_path(
 	}
 	if (key_eq(key_path, "ui.font.atlas_size")) {
 		return set_int(&g_cfg.ui.font.atlas_size, 128, 4096, provided_kind, value_str, out_expected_kind);
+	}
+
+	// ui.hud
+	if (key_eq(key_path, "ui.hud.file")) {
+		if (provided_kind != CORE_CONFIG_VALUE_STRING) {
+			if (out_expected_kind) {
+				*out_expected_kind = CORE_CONFIG_VALUE_STRING;
+			}
+			return CORE_CONFIG_SET_TYPE_MISMATCH;
+		}
+		if (!value_str || value_str[0] == '\0') {
+			return CORE_CONFIG_SET_INVALID_VALUE;
+		}
+		// Filename-only (no path separators).
+		for (const char* p = value_str; *p; p++) {
+			if (*p == '/' || *p == '\\') {
+				return CORE_CONFIG_SET_INVALID_VALUE;
+			}
+		}
+		strncpy(g_cfg.ui.hud.file, value_str, sizeof(g_cfg.ui.hud.file) - 1);
+		g_cfg.ui.hud.file[sizeof(g_cfg.ui.hud.file) - 1] = '\0';
+		return CORE_CONFIG_SET_OK;
 	}
 
 	// input.bindings.*

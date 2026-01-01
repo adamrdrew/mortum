@@ -39,6 +39,9 @@
       "file": "ProggyClean.ttf",
       "size": 15,
       "atlas_size": 512
+    },
+    "hud": {
+      "file": "default.json"
     }
   },
   "input": {
