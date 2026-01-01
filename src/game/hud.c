@@ -310,36 +310,56 @@ static void draw_widget_contents(
 	}
 	if (kind == HUD_WIDGET_AMMO) {
 		snprintf(buf0, sizeof(buf0), "AMMO %d/%d", ammo_cur, ammo_max);
-
-		int text_w = cw;
-		// Optional weapon icon on the right.
-		if (player && texreg && paths) {
-			const WeaponVisualSpec* spec = weapon_visual_spec_get(player->weapon_equipped);
-			if (spec) {
-				char filename[128];
-				snprintf(filename, sizeof(filename), "Weapons/%s/%s-ICON.png", spec->dir_name, spec->prefix);
-				const Texture* icon = texture_registry_get(texreg, paths, filename);
-				if (icon && icon->pixels && icon->width > 0 && icon->height > 0) {
-					int icon_pad = 6;
-					int dst_x = x + w - icon->width - icon_pad;
-					int dst_y = y + (h - icon->height) / 2;
-					draw_blit_abgr8888_alpha(fb, dst_x, dst_y, icon->pixels, icon->width, icon->height);
-					int reserved = (w - (dst_x - x));
-					text_w = cw - reserved;
-					if (text_w < 0) {
-						text_w = 0;
-					}
-				}
-			}
-		}
-
-		draw_text_fit(font, fb, cx, cy, text_w, buf0, col, &ts->fit);
+		draw_text_fit(font, fb, cx, cy, cw, buf0, col, &ts->fit);
 		return;
 	}
 	if (kind == HUD_WIDGET_EQUIPPED_WEAPON) {
-		const char* name = wdef ? wdef->name : "(none)";
-		snprintf(buf0, sizeof(buf0), "WEAPON %s", name);
-		draw_text_fit(font, fb, cx, cy, cw, buf0, col, &ts->fit);
+		// Icon-only widget.
+		if (!player || !texreg || !paths) {
+			return;
+		}
+		const WeaponVisualSpec* spec = weapon_visual_spec_get(player->weapon_equipped);
+		if (!spec) {
+			return;
+		}
+		char filename[128];
+		snprintf(filename, sizeof(filename), "Weapons/%s/%s-ICON.png", spec->dir_name, spec->prefix);
+		const Texture* icon = texture_registry_get(texreg, paths, filename);
+		if (!icon || !icon->pixels || icon->width <= 0 || icon->height <= 0) {
+			return;
+		}
+
+		// Scale to fit within the panel's content area (respecting text padding).
+		int pad = ts->padding_x;
+		if (ts->padding_y > pad) {
+			pad = ts->padding_y;
+		}
+		if (pad < 0) {
+			pad = 0;
+		}
+		int avail_w = w - pad * 2;
+		int avail_h = h - pad * 2;
+		if (avail_w <= 0 || avail_h <= 0) {
+			return;
+		}
+
+		// Fit by whichever dimension is more constraining.
+		int draw_w = avail_w;
+		int draw_h = (icon->height * draw_w) / icon->width;
+		if (draw_h > avail_h) {
+			draw_h = avail_h;
+			draw_w = (icon->width * draw_h) / icon->height;
+		}
+		if (draw_w < 1) {
+			draw_w = 1;
+		}
+		if (draw_h < 1) {
+			draw_h = 1;
+		}
+
+		int dst_x = x + (w - draw_w) / 2;
+		int dst_y = y + (h - draw_h) / 2;
+		draw_blit_abgr8888_scaled_nearest_alpha(fb, dst_x, dst_y, draw_w, draw_h, icon->pixels, icon->width, icon->height);
 		return;
 	}
 	if (kind == HUD_WIDGET_KEYS) {

@@ -449,6 +449,9 @@ int main(int argc, char** argv) {
 	TextureRegistry texreg;
 	texture_registry_init(&texreg);
 
+	float* wall_depth = NULL;
+	float* depth_pixels = NULL;
+
 	HudSystem hud;
 	memset(&hud, 0, sizeof(hud));
 	if (!hud_system_init(&hud, cfg, &paths, &texreg)) {
@@ -515,11 +518,11 @@ int main(int argc, char** argv) {
 	GameState gs;
 	game_state_init(&gs);
 
-	float* wall_depth = (float*)malloc((size_t)fb.width * sizeof(float));
+	wall_depth = (float*)malloc((size_t)fb.width * sizeof(float));
 	if (!wall_depth) {
 		log_error("out of memory allocating depth buffer");
 	}
-	float* depth_pixels = (float*)malloc((size_t)fb.width * (size_t)fb.height * sizeof(float));
+	depth_pixels = (float*)malloc((size_t)fb.width * (size_t)fb.height * sizeof(float));
 	if (!depth_pixels) {
 		log_error("out of memory allocating per-pixel depth buffer");
 	}
