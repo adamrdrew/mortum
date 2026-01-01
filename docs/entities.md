@@ -14,7 +14,8 @@ Source of truth:
 - **Stable handles**: `EntityId { index, gen }` prevents use-after-free. Index re-use increments the generation.
 - **Deterministic**: update, queries, and collision resolution are deterministic given the same inputs.
   - Iteration order is index-order (`0..capacity-1`).
-  - Candidate lists from spatial queries are sorted to a deterministic order before resolution.
+  - Internal candidate lists used for resolution (enemy separation, projectile damage) are sorted to a deterministic order before use.
+  - The public `entity_system_query_circle()` output order is deterministic but **not guaranteed to be sorted**.
   - Sorting for sprite rendering is stable.
 - **Deferred destruction**: despawns are requested during gameplay but applied via `entity_system_flush()`.
 - **Data-driven**: entity definitions come from `Assets/Entities/entities.json`, and maps reference defs by name.
@@ -43,6 +44,9 @@ Currently recognized kinds:
 - `support`
 
 Only `pickup`, `projectile`, and `enemy` have **kind-specific JSON payload parsing** and runtime behavior today.
+
+Notes:
+- The public enum also contains `ENTITY_KIND_INVALID` (used for initialization / error paths). JSON parsing fails if `kind` is not one of the strings listed above.
 
 ### EntityState
 
@@ -154,9 +158,10 @@ Relevant API/data:
 
 Lifecycle rules (implementation truth):
 
-- Spawn: if `def.light.enabled`, a light is attached during `entity_system_spawn()`.
-- Tick: attached lights update to the entity center once per tick.
-- Death: enemy lights are detached when the enemy transitions into `DYING`.
+- Spawn: if the entity def includes a valid `light` object, the light is attached during `entity_system_spawn()`.
+- Tick: any attached lights are re-centered on the entity at the end of `entity_system_tick()`.
+- Death: `entity_system_tick()` detaches lights when it performs the transition into `ENTITY_STATE_DYING` due to `hp <= 0`.
+  - Important edge case: if gameplay code sets `state = ENTITY_STATE_DYING` directly (as `src/main.c` currently does on kills), the tick code will **not** run the “detach on death transition” branch (because it sees the entity already in `DYING`). In that case, attached lights persist until despawn/removal.
 - Despawn/removal: lights are detached immediately on `entity_system_request_despawn()` and also defensively during slot free/reset/shutdown.
 
 #### Entity Def JSON schema: `light`
@@ -170,6 +175,9 @@ Inside each entity def object, `light` is optional:
   - `color` (either a hex string like `"#RRGGBB"`/`"RRGGBB"` or an object `{ "r": <float>, "g": <float>, "b": <float> }`)
   - `flicker` (string: `"none" | "flame" | "malfunction"`)
   - `seed` (integer; if omitted/0, a deterministic seed is derived from the entity id)
+
+Notes:
+- There is no `enabled` field in the entity-def `light` schema: presence of a valid `light` object enables it.
 
 Example:
 
@@ -211,9 +219,10 @@ Relevant API/data:
 
 Lifecycle rules (implementation truth):
 
-- Spawn: if `def.particles.enabled`, an emitter is attached during `entity_system_spawn()`.
-- Tick: attached emitters update to the entity center once per tick.
-- Death: enemy emitters are detached when the enemy transitions into `DYING`.
+- Spawn: if the entity def includes a valid `particles` object, an emitter is attached during `entity_system_spawn()`.
+- Tick: any attached particle emitters are re-centered on the entity at the end of `entity_system_tick()`.
+- Death: `entity_system_tick()` detaches particle emitters when it performs the transition into `ENTITY_STATE_DYING` due to `hp <= 0`.
+  - Important edge case: if gameplay code sets `state = ENTITY_STATE_DYING` directly (as `src/main.c` currently does on kills), the tick code will **not** run the “detach on death transition” branch. In that case, attached emitters persist until despawn/removal.
 - Despawn/removal/reset/shutdown: emitters are detached/destroyed immediately and also defensively during slot free/reset/shutdown.
 
 #### Entity Def JSON schema: `particles`
@@ -228,11 +237,13 @@ Schema mirrors map-authored particle emitters, but without the emitter position:
   - `start` (object, keyframe)
   - `end` (object, keyframe)
 - Optional:
-  - `enabled` (bool, default `true` if present; `false` disables)
   - `offset_jitter` (number, default `0`)
   - `rotate` (object)
   - `image` (string; filename under `Assets/Images/Particles/`)
   - `shape` (string: `"circle" | "square"`; default `"circle"`)
+
+Notes:
+- There is no `enabled` field in the entity-def `particles` schema: presence of a valid `particles` object enables it.
 
 Keyframe schema (for `start`/`end`):
 
@@ -352,12 +363,13 @@ Example:
 
 ### Rendering
 
-`void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const World* world, const Camera* cam, int start_sector, TextureRegistry* texreg, const AssetPaths* paths, const float* wall_depth, const float* depth_pixels)`
+`void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const World* world, const Camera* cam, int start_sector, TextureRegistry* texreg, const AssetPaths* paths, const float* wall_depth, float* depth_pixels)`
   - Renders billboard sprites with occlusion against the already-rendered world.
   - Depth inputs:
     - `wall_depth` (per-column): `wall_depth[x]` is **portal-aware** and represents the nearest *occluding wall* depth along that screen column after recursing through portal open spans. Fully open portal boundaries do not occlude sprites, so entities can render across sector boundaries when there is line-of-sight.
     - `depth_pixels` (per-pixel): `depth_pixels[y*width + x]` is the nearest world depth for the already-rendered pixel at `(x,y)` (walls + floors + ceilings). This enables correct partial sprite occlusion on steps (floor/ceiling height discontinuities).
   - Callers typically pass both buffers from the raycaster; passing only `wall_depth` preserves the older “walls-only” occlusion behavior.
+  - If `depth_pixels` is provided, sprite rendering also **writes sprite depth back** into `depth_pixels` (nearest depth wins). This allows later billboard draws (e.g. particles) to depth-test against entity sprites.
 
 Important rendering rules:
 - Sprites are sorted back-to-front by depth using a **stable** insertion sort.
@@ -382,6 +394,9 @@ Lighting + fog integration:
 - `amount`: integer payload (meaning depends on type)
 
 Event types and their semantics:
+
+- `ENTITY_EVENT_NONE`
+  - Reserved / unused sentinel value.
 
 - `ENTITY_EVENT_PLAYER_TOUCH`
   - Emitted for pickups when the player overlaps the pickup trigger.
@@ -428,6 +443,7 @@ Event types and their semantics:
 Pass 1:
 - Optional lifetime despawn: if `lifetime_s > 0` and `state_time >= lifetime_s`, request despawn.
 - Moves in XY based on `yaw_deg` and `speed`.
+- Rendering animation: if `sprite.frames.count > 1`, the projectile sprite frame is animated at a fixed `12 fps` based on `state_time`.
 - Vertical movement: projectiles may also have a vertical velocity (`PhysicsBody.vz`) applied each tick.
   - This is used for DOOM-style **vertical auto-aim** (no mouse-look) so projectiles can still hit targets at different floor heights.
 - Uses `collision_move_circle` (world collision in XY).
@@ -482,6 +498,22 @@ Pass 1:
 Enemy-enemy separation:
 - After Pass 1, the system pushes overlapping enemy pairs apart in XY.
 - Pairs are resolved deterministically using spatial queries with a sorted candidate list.
+- Separation is only applied to enemy pairs in the **same sector**.
+
+## Fixed-size buffers and practical limits (Implementation Truth)
+
+These limits are intentional for performance and determinism; overflow is handled by dropping extra work deterministically (no allocations in tick).
+
+- **Event buffer**: `event_cap == capacity` and events are dropped if full.
+- **Spatial query scratch limits**:
+  - `entity_system_query_circle()` uses an internal scratch buffer of 128 indices, so it can return at most `min(out_cap, 128)` ids.
+  - Internal tick queries for enemy separation and projectile hits use a 64-candidate scratch buffer; extra nearby entities beyond 64 are ignored for that operation.
+- **Sprite rendering limits**:
+  - At most 256 sprite entities are gathered and drawn per call.
+  - Visible light culling for sprite lighting uses a fixed 96-light array; additional visible lights are ignored for sprite shading.
+- **Fixed string storage**:
+  - Many entity-def fields are fixed-size `char[64]` buffers.
+  - Some fields hard-fail if too long (e.g. entity def `name`, `sprite.file.name` in object form, `particles.image`), while others are simply ignored if too long (e.g. `pickup_sound`, `impact_sound`).
 
 ### Turret / Support
 
