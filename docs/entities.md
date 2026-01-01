@@ -57,49 +57,189 @@ In practice:
 - `entity_system_spawn()` initializes entities as `ENTITY_STATE_IDLE`.
 - The enemy AI transitions among `IDLE/ENGAGED/ATTACK/DAMAGED/DYING/DEAD`.
 
+### Entity events (EntityEventType / EntityEvent)
+
+The entity system communicates gameplay-relevant interactions through a fixed-size `EntityEvent` buffer generated during `entity_system_tick()`.
+
+Event types:
+- `ENTITY_EVENT_PLAYER_TOUCH`
+  - A pickup was touched by the player.
+- `ENTITY_EVENT_PROJECTILE_HIT_WALL`
+  - A projectile hit the world.
+- `ENTITY_EVENT_DAMAGE`
+  - An entity damaged another entity.
+- `ENTITY_EVENT_DIED`
+  - An entity died due to damage.
+- `ENTITY_EVENT_PLAYER_DAMAGE`
+  - An enemy melee attack damaged the player.
+
+Event payload fields (`EntityEvent`):
+- `type`: one of the values above.
+- `entity`: the primary entity (e.g. the pickup, projectile, or enemy).
+- `other`: the secondary entity (e.g. the damage target) or none (`entity_id_none()`).
+- `def_id`: def index for `entity` (for convenience/diagnostics).
+- `kind`: kind of `entity` at the time the event was emitted.
+- `x`, `y`: world-space location associated with the event.
+- `amount`: integer payload (damage/heal/etc), interpretation depends on `type`.
+
+The main loop is responsible for consuming events and applying game-side effects (health/ammo, sounds, state changes) and then calling `entity_system_flush()`.
+
 ## Runtime Data Structures (Public)
+
+This section documents **all public types and fields** declared in [include/game/entities.h](../include/game/entities.h).
+
+Note: many of these structs expose engine internals (because this is an early implementation). Prefer using the public API functions unless you are actively working on the engine.
+
+### Core identity and enums
+
+- `EntityId { uint32_t index, uint32_t gen }`
+  - Stable handle: `index` selects a slot; `gen` prevents use-after-free when slots are reused.
+
+- `EntityState`
+  - `SPAWNING`, `IDLE`, `ENGAGED`, `ATTACK`, `DAMAGED`, `DYING`, `DEAD`
+
+- `EntityKind`
+  - `INVALID`, `PICKUP`, `PROJECTILE`, `TURRET`, `ENEMY`, `SUPPORT`
+
+- `PickupType`
+  - `HEALTH`, `AMMO`
+  - In JSON, pickup type is **inferred**:
+    - `heal_amount` => `HEALTH`
+    - `ammo_type + ammo_amount` => `AMMO`
+
+### Events
+
+- `EntityEventType`
+  - `NONE`, `PLAYER_TOUCH`, `PROJECTILE_HIT_WALL`, `DAMAGE`, `DIED`, `PLAYER_DAMAGE`
+
+- `EntityEvent`
+  - `type`: event kind
+  - `entity`: primary entity id (source)
+  - `other`: secondary entity id (target) or none
+  - `def_id`: def index for `entity` (convenience)
+  - `kind`: kind of `entity` at emission time
+  - `x,y`: world-space location
+  - `amount`: integer payload
+
+### Definition payloads (kind-specific)
+
+- `EntityDefPickup`
+  - `type`: `PickupType` (inferred from JSON)
+  - `heal_amount`: used when `type=HEALTH`
+  - `ammo_type`, `ammo_amount`: used when `type=AMMO`
+  - `trigger_radius`: pickup overlap radius
+  - `pickup_sound[64]`: WAV filename (may be empty)
+  - `pickup_sound_gain`: gain scalar (not validated/clamped)
+
+- `EntityDefProjectile`
+  - `speed`: XY speed
+  - `lifetime_s`: time before despawn (0 disables)
+  - `damage`: damage applied on hit
+  - `impact_sound[64]`: WAV filename (may be empty)
+  - `impact_sound_gain`: gain scalar (not validated/clamped)
+
+- `EntityDefEnemyAnim`
+  - `start`, `count`: frame range in the sprite sheet
+  - `fps`: playback rate
+
+### Data-driven enemy behaviors (public types)
+
+- `ENEMY_BEHAVIOR_MAX_PER_STATE` (currently 8)
+
+- `EnemyBehaviorType`
+  - `WAIT`, `WANDER`, `PACE`, `RUSH`, `HANG_BACK`, `FLANK`, `MELEE`, `SHOOT`, `RUN_AWAY`
+
+- `EnemyShootPatternType`
+  - `SINGLE`, `THREE_SPREAD`, `FIVE_OSC_SPREAD`, `RADIAL`, `RADIAL_OSC`, `TRIPLE_TAP`
+
+- `EnemyShootPattern`
+  - `type`
+  - `spread_deg`, `shot_interval_s`, `group_interval_s`, `angle_step_deg` (meaning depends on `type`)
+
+- `EnemyBehavior*` payload structs
+  - `EnemyBehaviorWander { speed, turn_interval_s }`
+  - `EnemyBehaviorPace { speed, switch_interval_s }`
+  - `EnemyBehaviorRush { speed }`
+  - `EnemyBehaviorHangBack { speed, min_dist, max_dist }`
+  - `EnemyBehaviorFlank { speed, fov_avoid_deg }`
+  - `EnemyBehaviorRunAway { speed, fov_avoid_deg }`
+  - `EnemyBehaviorMelee { range, windup_s, cooldown_s, damage }`
+  - `EnemyBehaviorShoot { projectile_def[64], projectile_def_index, range, windup_s, cooldown_s, autoaim, pattern }`
+
+- `EnemyBehavior`
+  - `type`
+  - `u`: union payload for the selected behavior
+
+- `EnemyBehaviorList`
+  - `count`
+  - `behaviors[ENEMY_BEHAVIOR_MAX_PER_STATE]`
+
+- `EnemyStates`
+  - `enabled`: `true` when `enemy.states` exists in JSON
+  - One behavior list per state: `idle`, `engaged`, `attack`, `damaged`, `dying`, `dead`
+
+- `EntityDefEnemy`
+  - Legacy tuning fields: `move_speed`, ranges, attack tuning, and state timers
+  - `states`: optional data-driven behaviors (when disabled, legacy chase+melee is used)
+  - Per-state animations: `anim_idle`, `anim_engaged`, `anim_attack`, `anim_damaged`, `anim_dying`, `anim_dead`
+
+### Sprite and optional effect emitters
+
+- `EntitySpriteFile`
+  - `name[64]`, `width`, `height`
+
+- `EntitySpriteFrames`
+  - `count`, `width`, `height`
+
+- `EntitySprite`
+  - `file`, `frames`, `scale`, `z_offset`
+
+- `EntityLightDef`
+  - `enabled`
+  - `light` (`PointLight` template)
+
+- `EntityParticleEmitterDef`
+  - `enabled`
+  - `emitter` (`ParticleEmitterDef` template)
 
 ### EntityDef / EntityDefs
 
-`EntityDefs` is a dynamically sized array of `EntityDef` loaded from JSON.
+- `EntityDef`
+  - Common fields: `name[64]`, `sprite`, `light`, `particles`, `kind`, `radius`, `height`, `max_hp`, `react_to_world_lights`
+  - Kind-specific payload union `u`: `pickup | projectile | enemy`
 
-`EntityDef` fields:
-- `name` (string)
-- `sprite` (`EntitySprite`)
-- `light` (`EntityLightDef`) (optional entity-attached point light)
-- `particles` (`EntityParticleEmitterDef`) (optional entity-attached particle emitter)
-- `kind` (`EntityKind`)
-- `radius` (float)
-- `height` (float)
-- `max_hp` (int)
-- `react_to_world_lights` (bool; default `true`)
-  - If `false`, the sprite ignores world point lights (but still respects fog + sector ambient/tint).
-- `u` union:
-  - `pickup: EntityDefPickup`
-  - `projectile: EntityDefProjectile`
-  - `enemy: EntityDefEnemy`
+- `EntityDefs`
+  - `defs`: owned array
+  - `count`: number of defs
+  - `capacity`: allocated capacity
 
 ### Entity
 
-`Entity` fields (high level):
 - Identity: `id`, `def_id`
-- Simulation state: `state`, `state_time`, `hp`, `yaw_deg`
-- Physics: `PhysicsBody body` (position, velocity, radius, height, sector, etc.)
-- Rendering: `sprite_frame`
+- Simulation: `state`, `state_time`, `body`, `yaw_deg`, `sprite_frame`, `hp`
 - Relationships: `target`, `owner`
 - Enemy attack bookkeeping: `attack_has_hit`
-- Optional world light: `light_index` (runtime world light slot index; `-1` means none)
-- Optional particle emitter: `particle_emitter` (runtime `ParticleEmitterId`; `{0,0}` means none)
-- Lifetime: `pending_despawn`
+- Enemy AI runtime state (used only for `ENTITY_KIND_ENEMY`):
+  - `enemy_rng_state`
+  - Wander: `enemy_wander_next_turn_s`, `enemy_wander_dir_x`, `enemy_wander_dir_y`
+  - Pace: `enemy_pace_dir_x`, `enemy_pace_dir_y`, `enemy_pace_next_switch_s`, `enemy_pace_flip_cooldown_s`
+  - Stuck detection: `enemy_last_x`, `enemy_last_y`
+  - Shoot scheduling: `enemy_shoot_fired_mask`
+- Optional runtime attachments:
+  - `light_index` (world light slot index; `-1` means none)
+  - `particle_emitter` (particle emitter handle; `{0,0}` means none)
+- `pending_despawn`: deferred removal flag
 
 ### EntitySystem
 
 Holds pooled entities plus deterministic event + spatial query infrastructure.
 
-Notable internal constraints:
-- `capacity` is fixed at `entity_system_init`.
-- `events` is preallocated to `capacity` events; events are cleared every tick.
-- Spatial hash is rebuilt each tick.
+Field overview:
+- Core pools: `entities`, `generation`, `free_next`, `alive`, plus `capacity`, `alive_count`, `free_head`
+- Events: `events`, `event_count`, `event_cap`
+- Deferred despawn: `despawn_queue`, `despawn_count`, `despawn_cap`
+- Spatial hash: `spatial_cell_size`, `spatial_bucket_count`, `spatial_head`, `spatial_next`, `spatial_seen`, `spatial_stamp`, `spatial_valid`
+- External pointers (set by `entity_system_reset`): `world`, `particle_emitters`, `defs`
 
 ## Public API Reference
 
@@ -119,6 +259,64 @@ All declarations are in [include/game/entities.h](../include/game/entities.h).
 
 - `uint32_t entity_defs_find(const EntityDefs* defs, const char* name)`
   - Returns the def index or `UINT32_MAX` if missing.
+
+### EntitySystem Core API
+
+Spawning / lookup:
+- `bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y, float yaw_deg, int sector, EntityId* out_id)`
+  - Spawns a single entity at `(x,y)` in `sector`.
+  - `yaw_deg` affects projectile direction and can be used by AI/projectiles.
+  - Returns `false` on failure (invalid def, no free slots, invalid sector, etc).
+
+- `void entity_system_spawn_map(EntitySystem* es, const MapEntityPlacement* placements, int placement_count)`
+  - Spawns entities from a map’s `entities[]` placements.
+  - Placements with empty `def_name` or invalid `sector` are skipped.
+
+- `bool entity_system_resolve(EntitySystem* es, EntityId id, Entity** out)`
+  - Validates the handle and returns a pointer to the live entity.
+
+Update:
+- `void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float player_yaw_deg, float dt_s)`
+  - Advances entity logic by `dt_s` and generates `EntityEvent`s.
+  - `player_body` is used for proximity checks, line-of-sight, and projectile auto-aim toward the player.
+  - `player_yaw_deg` is used by FoV-aware behaviors (`Flank`, `RunAway`).
+
+- `void entity_system_resolve_player_collisions(EntitySystem* es, PhysicsBody* player_body)`
+  - Resolves overlap between the player (not an entity) and enemies.
+
+Projectiles:
+- `bool entity_system_projectile_autoaim(EntitySystem* es, EntityId projectile_id, bool target_player, const PhysicsBody* player_body)`
+  - Adjusts the projectile’s vertical velocity to connect with a target at a different floor/sector height.
+  - `target_player == true`: aims toward the provided player body.
+  - `target_player == false`: aims toward the nearest damageable entity along projectile yaw.
+
+Events:
+- `const EntityEvent* entity_system_events(const EntitySystem* es, uint32_t* out_count)`
+  - Accesses events generated during the last tick.
+
+- `bool entity_system_emit_event(EntitySystem* es, EntityEvent ev)`
+  - Appends an event deterministically during effect application.
+  - Returns `false` if the event buffer is full.
+
+Deferred destruction:
+- `void entity_system_request_despawn(EntitySystem* es, EntityId id)`
+  - Marks an entity to be removed on `entity_system_flush()`.
+
+- `void entity_system_flush(EntitySystem* es)`
+  - Applies deferred despawns.
+
+Spatial queries:
+- `uint32_t entity_system_query_circle(EntitySystem* es, float x, float y, float radius, EntityId* out_ids, uint32_t out_cap)`
+  - Queries entities within an XY radius.
+  - The spatial index is rebuilt during tick; if queried outside tick it rebuilds lazily.
+
+Rendering:
+- `void entity_system_draw_sprites(const EntitySystem* es, Framebuffer* fb, const World* world, const Camera* cam, int start_sector, TextureRegistry* texreg, const AssetPaths* paths, const float* wall_depth, float* depth_pixels)`
+  - Renders billboard sprites for entities.
+
+Introspection:
+- `uint32_t entity_system_alive_count(const EntitySystem* es)`
+  - Returns the number of live entities.
 
 ### EntitySystem Lifetime
 
@@ -178,6 +376,7 @@ Inside each entity def object, `light` is optional:
 
 Notes:
 - There is no `enabled` field in the entity-def `light` schema: presence of a valid `light` object enables it.
+- Internally, the parsed result is stored in `EntityLightDef { enabled, light }`.
 
 Example:
 
@@ -244,6 +443,7 @@ Schema mirrors map-authored particle emitters, but without the emitter position:
 
 Notes:
 - There is no `enabled` field in the entity-def `particles` schema: presence of a valid `particles` object enables it.
+- Internally, the parsed result is stored in `EntityParticleEmitterDef { enabled, emitter }`.
 
 Keyframe schema (for `start`/`end`):
 
@@ -333,9 +533,11 @@ Example:
 
 ### Tick, Events, and Collisions
 
-- `void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float dt_s)`
+- `void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float player_yaw_deg, float dt_s)`
   - Clears the event list.
   - **Pass 1**: per-entity state update (movement/AI/projectile motion) in index order.
+  - `player_body` is used for proximity checks, line-of-sight, and enemy targeting.
+  - `player_yaw_deg` is used for FoV-aware behaviors (`Flank`, `RunAway`).
   - Rebuild spatial index.
   - Enemy-enemy separation using spatial hash (deterministic pair handling).
   - Rebuild spatial index again.
@@ -473,6 +675,14 @@ Because Mortum uses DOOM-style controls (no mouse-look), projectile weapons can 
 
 ### Enemies
 
+This section describes the enemy update pipeline in `entity_system_tick()`.
+
+- If `enemy.states` is **absent** (or `EnemyStates.enabled == false`), enemies use the **legacy** hard-coded chase + melee behavior described below.
+- If `enemy.states` is **present**, enemies are **data-driven**:
+  - The same high-level state machine (`IDLE/ENGAGED/ATTACK/DAMAGED/DYING/DEAD`) is still used for timing and transitions.
+  - What an enemy *does* within each state is controlled by `enemy.states.<state>.behaviors` (movement + attacks).
+  - If a state is omitted/empty, it defaults as described in the `enemy.states` section.
+
 Pass 1:
 - Faces the player (updates `yaw_deg`).
 - State machine:
@@ -531,6 +741,36 @@ Deterministic behaviors implemented:
 Notes:
 - Events are stored in a fixed buffer and dropped if full.
 - `entity_system_request_despawn` can `realloc` the despawn queue if it fills; if you want to avoid allocations during tick, size the queue generously (or increase initial cap).
+
+Data-driven enemy determinism notes:
+- `enemy.states.*.behaviors` lists are fixed-capacity arrays (`ENEMY_BEHAVIOR_MAX_PER_STATE`) and are evaluated in list order.
+- Randomness in behaviors (e.g. `Wander`) comes from a per-enemy deterministic PRNG seeded from the entity id.
+- Shoot patterns use deterministic scheduling (no dynamic queues/allocations).
+
+## Asset Validation (`make validate`)
+
+The asset validator is built/run via:
+- `make validate` (builds `build/validate_assets` and runs it)
+
+What it validates (high level):
+- Always loads and validates entity defs from `Assets/Entities/entities.json`.
+  - Hard-fails on JSON/IO errors.
+  - For data-driven enemies (`enemy.states`), validates that every `Shoot.projectile_def` resolves to a real entity def of `kind: "projectile"`.
+
+Default behavior (no args):
+- Validates the timelines that drive normal gameplay:
+  - `boot.json` (scenes + menus)
+  - `episode_1.json` (map content)
+- For each referenced map, it validates that every map-authored entity placement references a known entity def.
+
+Validating a specific map:
+- `make validate MAP=big.json`
+  - Runs `build/validate_assets big.json`.
+  - The map filename is treated as relative to `Assets/Levels/`.
+
+Notes:
+- `MAP=...` is a Makefile alias for `RUN_MAP=...`.
+- If you pass a map and it fails validation, the game will typically also fail to spawn those entities at runtime (because map spawns depend on entity defs existing and parsing successfully).
 
 ## Data Formats
 
@@ -637,6 +877,7 @@ Fields:
 - `trigger_radius` (float; optional; defaults to `def.radius`; clamped to `>= 0.01`)
 - `pickup_sound` (string; optional; WAV under `Assets/Sounds/Effects/`)
 - `pickup_sound_gain` (float; optional; default `1.0`)
+  - Note: not currently clamped/validated.
 
 #### Projectile (`kind: "projectile"`)
 
@@ -658,6 +899,7 @@ Defaults and clamping:
 - `damage`: default `10`, must be `>= 0`
 - `impact_sound`: default empty string
 - `impact_sound_gain`: default `1.0`
+  - Note: not currently clamped/validated.
 
 #### Enemy (`kind: "enemy"`)
 
