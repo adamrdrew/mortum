@@ -105,6 +105,125 @@ typedef struct EntityDefEnemyAnim {
 	float fps;
 } EntityDefEnemyAnim;
 
+// -------------------------------
+// Data-driven enemy behaviors
+// -------------------------------
+
+// Fixed-size caps keep tick deterministic and allocation-free.
+#define ENEMY_BEHAVIOR_MAX_PER_STATE 8
+
+typedef enum EnemyBehaviorType {
+	ENEMY_BEHAVIOR_INVALID = 0,
+	ENEMY_BEHAVIOR_WAIT = 1,
+	ENEMY_BEHAVIOR_WANDER = 2,
+	ENEMY_BEHAVIOR_PACE = 3,
+	ENEMY_BEHAVIOR_RUSH = 4,
+	ENEMY_BEHAVIOR_HANG_BACK = 5,
+	ENEMY_BEHAVIOR_FLANK = 6,
+	ENEMY_BEHAVIOR_MELEE = 7,
+	ENEMY_BEHAVIOR_SHOOT = 8,
+	ENEMY_BEHAVIOR_RUN_AWAY = 9,
+} EnemyBehaviorType;
+
+typedef enum EnemyShootPatternType {
+	ENEMY_SHOOT_PATTERN_INVALID = 0,
+	ENEMY_SHOOT_PATTERN_SINGLE = 1,
+	ENEMY_SHOOT_PATTERN_THREE_SPREAD = 2,
+	ENEMY_SHOOT_PATTERN_FIVE_OSC_SPREAD = 3,
+	ENEMY_SHOOT_PATTERN_RADIAL = 4,
+	ENEMY_SHOOT_PATTERN_RADIAL_OSC = 5,
+	ENEMY_SHOOT_PATTERN_TRIPLE_TAP = 6,
+} EnemyShootPatternType;
+
+typedef struct EnemyShootPattern {
+	EnemyShootPatternType type;
+	// Used by spread patterns.
+	float spread_deg;
+	// Used by staggered patterns (TripleTap, FiveOscSpread).
+	float shot_interval_s;
+	// Used by RadialOsc (time between 6-shot groups).
+	float group_interval_s;
+	// Used by RadialOsc (spiral feel by rotating each group).
+	float angle_step_deg;
+} EnemyShootPattern;
+
+typedef struct EnemyBehaviorWander {
+	float speed;
+	float turn_interval_s;
+} EnemyBehaviorWander;
+
+typedef struct EnemyBehaviorPace {
+	float speed;
+	float switch_interval_s;
+} EnemyBehaviorPace;
+
+typedef struct EnemyBehaviorRush {
+	float speed;
+} EnemyBehaviorRush;
+
+typedef struct EnemyBehaviorHangBack {
+	float speed;
+	float min_dist;
+	float max_dist;
+} EnemyBehaviorHangBack;
+
+typedef struct EnemyBehaviorFlank {
+	float speed;
+	float fov_avoid_deg;
+} EnemyBehaviorFlank;
+
+typedef struct EnemyBehaviorRunAway {
+	float speed;
+	float fov_avoid_deg;
+} EnemyBehaviorRunAway;
+
+typedef struct EnemyBehaviorMelee {
+	float range;
+	float windup_s;
+	float cooldown_s;
+	int damage;
+} EnemyBehaviorMelee;
+
+typedef struct EnemyBehaviorShoot {
+	// Projectile entity def to spawn.
+	char projectile_def[64];
+	uint32_t projectile_def_index; // UINT32_MAX if unresolved
+	float range;
+	float windup_s;
+	float cooldown_s;
+	bool autoaim;
+	EnemyShootPattern pattern;
+} EnemyBehaviorShoot;
+
+typedef struct EnemyBehavior {
+	EnemyBehaviorType type;
+	union {
+		EnemyBehaviorWander wander;
+		EnemyBehaviorPace pace;
+		EnemyBehaviorRush rush;
+		EnemyBehaviorHangBack hang_back;
+		EnemyBehaviorFlank flank;
+		EnemyBehaviorRunAway run_away;
+		EnemyBehaviorMelee melee;
+		EnemyBehaviorShoot shoot;
+	} u;
+} EnemyBehavior;
+
+typedef struct EnemyBehaviorList {
+	uint8_t count;
+	EnemyBehavior behaviors[ENEMY_BEHAVIOR_MAX_PER_STATE];
+} EnemyBehaviorList;
+
+typedef struct EnemyStates {
+	bool enabled;
+	EnemyBehaviorList idle;
+	EnemyBehaviorList engaged;
+	EnemyBehaviorList attack;
+	EnemyBehaviorList damaged;
+	EnemyBehaviorList dying;
+	EnemyBehaviorList dead;
+} EnemyStates;
+
 typedef struct EntityDefEnemy {
 	float move_speed;
 	float engage_range;
@@ -116,6 +235,10 @@ typedef struct EntityDefEnemy {
 	float damaged_time_s;
 	float dying_time_s;
 	float dead_time_s;
+
+	// Optional data-driven per-state behaviors. When disabled, behavior matches the legacy
+	// hard-coded chase + melee implementation.
+	EnemyStates states;
 
 	EntityDefEnemyAnim anim_idle;
 	EntityDefEnemyAnim anim_engaged;
@@ -208,6 +331,19 @@ typedef struct Entity {
 	EntityId owner;
 	bool attack_has_hit;
 
+	// Enemy AI runtime state (used only for ENTITY_KIND_ENEMY).
+	uint32_t enemy_rng_state;
+	float enemy_wander_next_turn_s;
+	float enemy_wander_dir_x;
+	float enemy_wander_dir_y;
+	float enemy_pace_dir_x;
+	float enemy_pace_dir_y;
+	float enemy_pace_next_switch_s;
+	float enemy_pace_flip_cooldown_s;
+	float enemy_last_x;
+	float enemy_last_y;
+	uint32_t enemy_shoot_fired_mask;
+
 	// Optional runtime-attached point light index in World. -1 means none.
 	int light_index;
 
@@ -290,7 +426,7 @@ void entity_system_spawn_map(EntitySystem* es, const MapEntityPlacement* placeme
 
 // Tick: advances entity logic and generates events (e.g. player touch).
 // The caller is responsible for applying game-side effects (health/ammo, sounds) and then flushing despawns.
-void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float dt_s);
+void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float player_yaw_deg, float dt_s);
 
 // Resolves player-vs-enemy overlap in the XY plane.
 // This is needed because the player is not part of the entity system, but should still

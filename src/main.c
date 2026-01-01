@@ -885,7 +885,7 @@ int main(int argc, char** argv) {
 				player_controller_update(&player, map_ok ? &map.world : NULL, &ci, loop.fixed_dt_s);
 				entity_system_resolve_player_collisions(&entities, &player.body);
 
-				entity_system_tick(&entities, &player.body, (float)loop.fixed_dt_s);
+				entity_system_tick(&entities, &player.body, player.angle_deg, (float)loop.fixed_dt_s);
 				{
 					uint32_t ei = 0u;
 					for (;;) {

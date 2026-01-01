@@ -709,6 +709,305 @@ Animations:
   - `fps` optional float (defaults to `6.0`; values `<= 0` are forced to `6.0`)
 - Validation: `start + count` must be within `sprite.frames.count`.
 
+##### Optional: data-driven enemy behaviors (`enemy.states`)
+
+By default (when `enemy.states` is **absent**) enemies use the legacy behavior:
+- `IDLE`: wait until the player is within `engage_range` (and line-of-sight)
+- `ENGAGED`: chase the player at `move_speed`
+- `ATTACK`: perform a single melee attack using `attack_*` tuning
+
+If `enemy.states` is present, the enemy becomes **data-driven** and each state can be configured as a list of composable behaviors.
+
+High-level rules:
+- `enemy.states` is an object keyed by state name: `idle | engaged | attack | damaged | dying | dead`.
+- Each state object may contain a `behaviors` array.
+- Each state behavior list is capped at `ENEMY_BEHAVIOR_MAX_PER_STATE` (currently 8). Extra entries are ignored (with a warning).
+- Determinism: behavior evaluation is allocation-free, list-order matters, and any randomness is from a per-enemy deterministic PRNG.
+- Compatibility: if `enemy.states` is absent, enemies behave exactly as before.
+
+Schema:
+
+```json
+"states": {
+  "idle":    { "behaviors": [ /* behavior objects */ ] },
+  "engaged": { "behaviors": [ /* behavior objects */ ] },
+  "attack":  { "behaviors": [ /* behavior objects */ ] },
+  "damaged": { "behaviors": [ /* behavior objects */ ] },
+  "dying":   { "behaviors": [ /* behavior objects */ ] },
+  "dead":    { "behaviors": [ /* behavior objects */ ] }
+}
+```
+
+Defaults when `enemy.states` exists but a state is omitted or has an empty/missing `behaviors` array:
+- `idle`: `Wait`
+- `engaged`: `Rush(speed=enemy.move_speed)`
+- `attack`: `Melee(range=enemy.attack_range, windup_s=enemy.attack_windup_s, cooldown_s=enemy.attack_cooldown_s, damage=enemy.attack_damage)`
+- `damaged`, `dying`, `dead`: `Wait`
+
+###### Behavior objects
+
+Each behavior entry is an object with a required string field `type`.
+
+Movement behaviors (the first “base movement” behavior in the list wins):
+
+- `Wait`
+  - No fields.
+
+- `Wander`
+  - `speed` (float, default `enemy.move_speed`, clamped to `>= 0`)
+  - `turn_interval_s` (float, default `1.5`, clamped to `>= 0.05`)
+
+- `Pace`
+  - `speed` (float, default `enemy.move_speed`, clamped to `>= 0`)
+  - `switch_interval_s` (float, default `1.0`, clamped to `>= 0.05`)
+
+- `Rush`
+  - `speed` (float, default `enemy.move_speed`, clamped to `>= 0`)
+
+- `HangBack`
+  - Maintains distance from the player in the range `[min_dist, max_dist]`.
+  - `speed` (float, default `enemy.move_speed`, clamped to `>= 0`)
+  - `min_dist` (float, default `4.0`, clamped to `>= 0`)
+  - `max_dist` (float, default `7.0`, clamped to `>= min_dist`)
+
+- `RunAway`
+  - Moves away from the player; if inside the “avoid FoV cone”, biases laterally.
+  - `speed` (float, default `enemy.move_speed`, clamped to `>= 0`)
+  - `fov_avoid_deg` (float, default `70.0`, clamped to `[0, 179]`)
+
+Movement modifier behavior (can be combined with a base movement behavior):
+
+- `Flank`
+  - Applies a lateral movement bias (intended to circle the player), biased away from the player’s forward “avoid FoV cone”.
+  - `speed` (float, default `enemy.move_speed`, clamped to `>= 0`)
+  - `fov_avoid_deg` (float, default `70.0`, clamped to `[0, 179]`)
+
+Attack behaviors (at most one of each per state):
+
+- `Melee`
+  - `range` (float, default `enemy.attack_range`, clamped to `>= 0`)
+  - `windup_s` (float, default `enemy.attack_windup_s`, clamped to `>= 0`)
+  - `cooldown_s` (float, default `enemy.attack_cooldown_s`, clamped to `>= windup_s + 0.01`)
+  - `damage` (int, default `enemy.attack_damage`, must be `>= 0`)
+  - Rules:
+    - A state may not contain multiple `Melee` behaviors.
+
+- `Shoot`
+  - Required:
+    - `projectile_def` (string; must refer to a `kind: "projectile"` entity def)
+  - Optional:
+    - `range` (float, default `enemy.engage_range`, clamped to `>= 0`)
+    - `windup_s` (float, default `enemy.attack_windup_s`, clamped to `>= 0`)
+    - `cooldown_s` (float, default `enemy.attack_cooldown_s`, clamped to `>= windup_s + pattern_duration + 0.01`)
+    - `autoaim` (bool, default `true`)
+    - `pattern` (object; optional)
+  - Rules:
+    - A state may not contain multiple `Shoot` behaviors.
+
+###### Shoot patterns
+
+`Shoot.pattern` schema:
+
+```json
+"pattern": {
+  "type": "Single",
+  "spread_deg": 8.0,
+  "shot_interval_s": 0.08,
+  "group_interval_s": 0.12,
+  "angle_step_deg": 12.0
+}
+```
+
+Pattern fields:
+- `type` (required string): `Single | ThreeSpread | FiveOscSpread | Radial | RadialOsc | TripleTap`
+- `spread_deg` (float, default `8.0`, clamped to `[0, 89]`)
+- `shot_interval_s` (float, default `0.08`, clamped to `>= 0`)
+- `group_interval_s` (float, default `0.12`, clamped to `>= 0`)
+- `angle_step_deg` (float, default `12.0`, clamped to `[-179, 179]`)
+
+Pattern behavior:
+- `Single`: 1 projectile fired immediately.
+- `ThreeSpread`: 3 projectiles fired immediately at yaw offsets `[-spread, 0, +spread]`.
+- `TripleTap`: 3 projectiles staggered in time by `shot_interval_s`.
+- `FiveOscSpread`: 5 projectiles staggered by `shot_interval_s` with yaw offsets `[-spread, 0, +spread, 0, -spread]`.
+- `Radial`: 6 projectiles fired immediately in a full circle.
+- `RadialOsc`: 18 projectiles in 3 staggered groups (6 per group). Each group is rotated by `angle_step_deg` from the previous; groups are separated by `group_interval_s`.
+
+###### Complete examples (enemy defs)
+
+These are complete `EntityDef` objects intended to be placed in `Assets/Entities/entities.json` under the root `"defs"` array.
+
+Example 1: melee rusher (legacy tuning expressed via `enemy.states`)
+
+```json
+{
+  "name": "example_melee_rusher",
+  "kind": "enemy",
+  "radius": 0.35,
+  "height": 1.2,
+  "max_hp": 20,
+  "sprite": {
+    "file": {"name": "shambler.png", "dimensions": {"x": 1280, "y": 256}},
+    "frames": {"count": 10, "dimensions": {"x": 128, "y": 256}},
+    "scale": 1,
+    "z_offset": 0
+  },
+  "enemy": {
+    "move_speed": 1.2,
+    "engage_range": 6.0,
+    "disengage_range": 10.0,
+    "attack_range": 1.0,
+    "attack_windup_s": 0.25,
+    "attack_cooldown_s": 0.9,
+    "attack_damage": 10,
+    "damaged_time_s": 0.25,
+    "dying_time_s": 0.8,
+    "dead_time_s": 0.8,
+    "animations": {
+      "idle": {"start": 0, "count": 2, "fps": 3},
+      "engaged": {"start": 2, "count": 2, "fps": 6},
+      "attack": {"start": 4, "count": 2, "fps": 8},
+      "damaged": {"start": 6, "count": 2, "fps": 8},
+      "dying": {"start": 8, "count": 2, "fps": 6},
+      "dead": {"start": 9, "count": 1, "fps": 1}
+    },
+    "states": {
+      "idle": {"behaviors": [{"type": "Wait"}]},
+      "engaged": {"behaviors": [{"type": "Rush"}]},
+      "attack": {"behaviors": [{"type": "Melee"}]}
+    }
+  }
+}
+```
+
+Example 2: hang-back shooter (radial oscillation)
+
+```json
+{
+  "name": "example_hangback_shooter",
+  "kind": "enemy",
+  "radius": 0.35,
+  "height": 1.2,
+  "max_hp": 14,
+  "sprite": {
+    "file": {"name": "void_lurker.png", "dimensions": {"x": 1280, "y": 256}},
+    "frames": {"count": 10, "dimensions": {"x": 128, "y": 256}},
+    "scale": 1,
+    "z_offset": 0
+  },
+  "enemy": {
+    "move_speed": 1.1,
+    "engage_range": 8.0,
+    "disengage_range": 12.0,
+    "attack_range": 1.0,
+    "attack_windup_s": 0.3,
+    "attack_cooldown_s": 1.2,
+    "attack_damage": 6,
+    "damaged_time_s": 0.2,
+    "dying_time_s": 0.8,
+    "dead_time_s": 0.8,
+    "animations": {
+      "idle": {"start": 0, "count": 2, "fps": 3},
+      "engaged": {"start": 2, "count": 2, "fps": 6},
+      "attack": {"start": 4, "count": 2, "fps": 8},
+      "damaged": {"start": 6, "count": 2, "fps": 8},
+      "dying": {"start": 8, "count": 2, "fps": 6},
+      "dead": {"start": 9, "count": 1, "fps": 1}
+    },
+    "states": {
+      "idle": {
+        "behaviors": [
+          {"type": "Wander", "speed": 0.7, "turn_interval_s": 1.2}
+        ]
+      },
+      "engaged": {
+        "behaviors": [
+          {"type": "HangBack", "min_dist": 4.0, "max_dist": 7.0},
+          {"type": "Flank", "fov_avoid_deg": 70.0}
+        ]
+      },
+      "attack": {
+        "behaviors": [
+          {
+            "type": "Shoot",
+            "projectile_def": "test_projectile",
+            "range": 7.0,
+            "windup_s": 0.2,
+            "cooldown_s": 1.4,
+            "autoaim": true,
+            "pattern": {"type": "RadialOsc", "group_interval_s": 0.12, "angle_step_deg": 14.0}
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+Example 3: flanking stalker (paces until engaged, then flanks + triple tap)
+
+```json
+{
+  "name": "example_flanking_stalker",
+  "kind": "enemy",
+  "radius": 0.35,
+  "height": 1.2,
+  "max_hp": 10,
+  "sprite": {
+    "file": {"name": "infected.png", "dimensions": {"x": 1280, "y": 256}},
+    "frames": {"count": 10, "dimensions": {"x": 128, "y": 256}},
+    "scale": 1,
+    "z_offset": 0
+  },
+  "enemy": {
+    "move_speed": 1.4,
+    "engage_range": 7.0,
+    "disengage_range": 12.0,
+    "attack_range": 1.0,
+    "attack_windup_s": 0.2,
+    "attack_cooldown_s": 1.1,
+    "attack_damage": 4,
+    "damaged_time_s": 0.2,
+    "dying_time_s": 0.7,
+    "dead_time_s": 0.8,
+    "animations": {
+      "idle": {"start": 0, "count": 2, "fps": 3},
+      "engaged": {"start": 2, "count": 2, "fps": 6},
+      "attack": {"start": 4, "count": 2, "fps": 8},
+      "damaged": {"start": 6, "count": 2, "fps": 8},
+      "dying": {"start": 8, "count": 2, "fps": 6},
+      "dead": {"start": 9, "count": 1, "fps": 1}
+    },
+    "states": {
+      "idle": {
+        "behaviors": [
+          {"type": "Pace", "speed": 0.9, "switch_interval_s": 0.8}
+        ]
+      },
+      "engaged": {
+        "behaviors": [
+          {"type": "Rush", "speed": 1.3},
+          {"type": "Flank", "speed": 1.1, "fov_avoid_deg": 80.0}
+        ]
+      },
+      "attack": {
+        "behaviors": [
+          {
+            "type": "Shoot",
+            "projectile_def": "test_projectile",
+            "range": 6.0,
+            "windup_s": 0.15,
+            "cooldown_s": 0.9,
+            "autoaim": true,
+            "pattern": {"type": "TripleTap", "shot_interval_s": 0.09}
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
 ## Map-authored entity placements (Levels/*.json)
 
 Maps can contain an optional root field `entities`, parsed by [src/assets/map_loader.c](../src/assets/map_loader.c) into `MapLoadResult.entities`.
@@ -751,7 +1050,9 @@ The main fixed-step loop in [src/main.c](../src/main.c) integrates entities like
 
 1. Player movement/controller update.
 2. `entity_system_resolve_player_collisions(&entities, &player.body)`.
-3. `entity_system_tick(&entities, &player.body, dt)`.
+3. `entity_system_tick(&entities, &player.body, player.angle_deg, dt)`.
+
+  - Note: the tick now also needs the player yaw (in degrees) for FoV-aware behaviors.
 4. Apply effects by consuming events:
    - Pickups: modify player health/ammo, play pickup SFX, request pickup despawn.
    - Projectile wall hits: play impact SFX, request despawn.

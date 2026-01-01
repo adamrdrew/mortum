@@ -590,6 +590,424 @@ static bool parse_enemy_anim(const JsonDoc* doc, int t_anim, const char* def_nam
 	return true;
 }
 
+static uint32_t xorshift32_u32(uint32_t* state) {
+	uint32_t x = state ? *state : 0u;
+	// xorshift32: small, deterministic PRNG.
+	if (x == 0u) {
+		x = 0x6D2B79F5u;
+	}
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	if (state) {
+		*state = x;
+	}
+	return x;
+}
+
+static bool enemy_parse_behavior_type(const JsonDoc* doc, int tok, EnemyBehaviorType* out) {
+	if (!doc || tok < 0 || !out || !json_token_is_string(doc, tok)) {
+		return false;
+	}
+	StringView sv;
+	if (!json_get_string(doc, tok, &sv)) {
+		return false;
+	}
+	// Match exact names from docs/spec.
+	if (sv.len == 4 && strncmp(sv.data, "Wait", 4) == 0) {
+		*out = ENEMY_BEHAVIOR_WAIT;
+		return true;
+	}
+	if (sv.len == 6 && strncmp(sv.data, "Wander", 6) == 0) {
+		*out = ENEMY_BEHAVIOR_WANDER;
+		return true;
+	}
+	if (sv.len == 4 && strncmp(sv.data, "Pace", 4) == 0) {
+		*out = ENEMY_BEHAVIOR_PACE;
+		return true;
+	}
+	if (sv.len == 4 && strncmp(sv.data, "Rush", 4) == 0) {
+		*out = ENEMY_BEHAVIOR_RUSH;
+		return true;
+	}
+	if (sv.len == 8 && strncmp(sv.data, "HangBack", 8) == 0) {
+		*out = ENEMY_BEHAVIOR_HANG_BACK;
+		return true;
+	}
+	if (sv.len == 5 && strncmp(sv.data, "Flank", 5) == 0) {
+		*out = ENEMY_BEHAVIOR_FLANK;
+		return true;
+	}
+	if (sv.len == 5 && strncmp(sv.data, "Melee", 5) == 0) {
+		*out = ENEMY_BEHAVIOR_MELEE;
+		return true;
+	}
+	if (sv.len == 5 && strncmp(sv.data, "Shoot", 5) == 0) {
+		*out = ENEMY_BEHAVIOR_SHOOT;
+		return true;
+	}
+	if (sv.len == 7 && strncmp(sv.data, "RunAway", 7) == 0) {
+		*out = ENEMY_BEHAVIOR_RUN_AWAY;
+		return true;
+	}
+	return false;
+}
+
+static bool enemy_parse_shoot_pattern_type(const JsonDoc* doc, int tok, EnemyShootPatternType* out) {
+	if (!doc || tok < 0 || !out || !json_token_is_string(doc, tok)) {
+		return false;
+	}
+	StringView sv;
+	if (!json_get_string(doc, tok, &sv)) {
+		return false;
+	}
+	if (sv.len == 6 && strncmp(sv.data, "Single", 6) == 0) {
+		*out = ENEMY_SHOOT_PATTERN_SINGLE;
+		return true;
+	}
+	if (sv.len == 11 && strncmp(sv.data, "ThreeSpread", 11) == 0) {
+		*out = ENEMY_SHOOT_PATTERN_THREE_SPREAD;
+		return true;
+	}
+	if (sv.len == 12 && strncmp(sv.data, "FiveOscSpread", 12) == 0) {
+		*out = ENEMY_SHOOT_PATTERN_FIVE_OSC_SPREAD;
+		return true;
+	}
+	if (sv.len == 6 && strncmp(sv.data, "Radial", 6) == 0) {
+		*out = ENEMY_SHOOT_PATTERN_RADIAL;
+		return true;
+	}
+	if (sv.len == 9 && strncmp(sv.data, "RadialOsc", 9) == 0) {
+		*out = ENEMY_SHOOT_PATTERN_RADIAL_OSC;
+		return true;
+	}
+	if (sv.len == 9 && strncmp(sv.data, "TripleTap", 9) == 0) {
+		*out = ENEMY_SHOOT_PATTERN_TRIPLE_TAP;
+		return true;
+	}
+	return false;
+}
+
+static void enemy_behavior_list_clear(EnemyBehaviorList* list) {
+	if (!list) {
+		return;
+	}
+	memset(list, 0, sizeof(*list));
+}
+
+static bool enemy_behavior_list_push(EnemyBehaviorList* list, const EnemyBehavior* b) {
+	if (!list || !b) {
+		return false;
+	}
+	if (list->count >= (uint8_t)ENEMY_BEHAVIOR_MAX_PER_STATE) {
+		return false;
+	}
+	list->behaviors[list->count++] = *b;
+	return true;
+}
+
+static float enemy_shoot_pattern_duration_s(const EnemyShootPattern* p) {
+	if (!p) {
+		return 0.0f;
+	}
+	switch (p->type) {
+		case ENEMY_SHOOT_PATTERN_SINGLE: return 0.0f;
+		case ENEMY_SHOOT_PATTERN_THREE_SPREAD: return 0.0f;
+		case ENEMY_SHOOT_PATTERN_RADIAL: return 0.0f;
+		case ENEMY_SHOOT_PATTERN_TRIPLE_TAP: return fmaxf2(0.0f, 2.0f * p->shot_interval_s);
+		case ENEMY_SHOOT_PATTERN_FIVE_OSC_SPREAD: return fmaxf2(0.0f, 4.0f * p->shot_interval_s);
+		case ENEMY_SHOOT_PATTERN_RADIAL_OSC: return fmaxf2(0.0f, 2.0f * p->group_interval_s);
+		default: return 0.0f;
+	}
+}
+
+static bool enemy_parse_behavior_list(
+	const JsonDoc* doc,
+	int t_state_obj,
+	const char* def_name,
+	const EntityDefEnemy* legacy,
+	EnemyBehaviorList* out_list
+) {
+	if (!doc || t_state_obj < 0 || !def_name || !legacy || !out_list) {
+		return false;
+	}
+	enemy_behavior_list_clear(out_list);
+
+	int t_behaviors = -1;
+	if (!json_object_get(doc, t_state_obj, "behaviors", &t_behaviors) || t_behaviors < 0) {
+		// Missing behaviors => empty list (will be defaulted by caller).
+		return true;
+	}
+	if (!json_token_is_array(doc, t_behaviors)) {
+		log_error("entity def '%s' enemy.states.*.behaviors must be an array", def_name);
+		return false;
+	}
+
+	bool seen_melee = false;
+	bool seen_shoot = false;
+
+	int n = json_array_size(doc, t_behaviors);
+	for (int i = 0; i < n; i++) {
+		int t_b = json_array_nth(doc, t_behaviors, i);
+		if (t_b < 0 || !json_token_is_object(doc, t_b)) {
+			log_error("entity def '%s' enemy.states.*.behaviors[%d] must be an object", def_name, i);
+			return false;
+		}
+		int t_type = -1;
+		if (!json_object_get(doc, t_b, "type", &t_type) || t_type < 0) {
+			log_error("entity def '%s' enemy.states.*.behaviors[%d] missing string field 'type'", def_name, i);
+			return false;
+		}
+		EnemyBehaviorType bt = ENEMY_BEHAVIOR_INVALID;
+		if (!enemy_parse_behavior_type(doc, t_type, &bt)) {
+			log_error("entity def '%s' enemy.states.*.behaviors[%d] unknown type", def_name, i);
+			return false;
+		}
+		EnemyBehavior b;
+		memset(&b, 0, sizeof(b));
+		b.type = bt;
+
+		// Defaults primarily come from the legacy enemy tuning.
+		switch (bt) {
+			case ENEMY_BEHAVIOR_WAIT: {
+				// no fields
+			} break;
+			case ENEMY_BEHAVIOR_WANDER: {
+				b.u.wander.speed = legacy->move_speed;
+				b.u.wander.turn_interval_s = 1.5f;
+				int t_speed = -1, t_turn = -1;
+				(void)json_object_get(doc, t_b, "speed", &t_speed);
+				(void)json_object_get(doc, t_b, "turn_interval_s", &t_turn);
+				if (t_speed >= 0) {
+					(void)json_get_float2(doc, t_speed, &b.u.wander.speed);
+				}
+				if (t_turn >= 0) {
+					(void)json_get_float2(doc, t_turn, &b.u.wander.turn_interval_s);
+				}
+				b.u.wander.speed = fmaxf2(b.u.wander.speed, 0.0f);
+				b.u.wander.turn_interval_s = fmaxf2(b.u.wander.turn_interval_s, 0.05f);
+			} break;
+			case ENEMY_BEHAVIOR_PACE: {
+				b.u.pace.speed = legacy->move_speed;
+				b.u.pace.switch_interval_s = 1.0f;
+				int t_speed = -1, t_sw = -1;
+				(void)json_object_get(doc, t_b, "speed", &t_speed);
+				(void)json_object_get(doc, t_b, "switch_interval_s", &t_sw);
+				if (t_speed >= 0) {
+					(void)json_get_float2(doc, t_speed, &b.u.pace.speed);
+				}
+				if (t_sw >= 0) {
+					(void)json_get_float2(doc, t_sw, &b.u.pace.switch_interval_s);
+				}
+				b.u.pace.speed = fmaxf2(b.u.pace.speed, 0.0f);
+				b.u.pace.switch_interval_s = fmaxf2(b.u.pace.switch_interval_s, 0.05f);
+			} break;
+			case ENEMY_BEHAVIOR_RUSH: {
+				b.u.rush.speed = legacy->move_speed;
+				int t_speed = -1;
+				(void)json_object_get(doc, t_b, "speed", &t_speed);
+				if (t_speed >= 0) {
+					(void)json_get_float2(doc, t_speed, &b.u.rush.speed);
+				}
+				b.u.rush.speed = fmaxf2(b.u.rush.speed, 0.0f);
+			} break;
+			case ENEMY_BEHAVIOR_HANG_BACK: {
+				b.u.hang_back.speed = legacy->move_speed;
+				b.u.hang_back.min_dist = 4.0f;
+				b.u.hang_back.max_dist = 7.0f;
+				int t_speed = -1, t_min = -1, t_max = -1;
+				(void)json_object_get(doc, t_b, "speed", &t_speed);
+				(void)json_object_get(doc, t_b, "min_dist", &t_min);
+				(void)json_object_get(doc, t_b, "max_dist", &t_max);
+				if (t_speed >= 0) {
+					(void)json_get_float2(doc, t_speed, &b.u.hang_back.speed);
+				}
+				if (t_min >= 0) {
+					(void)json_get_float2(doc, t_min, &b.u.hang_back.min_dist);
+				}
+				if (t_max >= 0) {
+					(void)json_get_float2(doc, t_max, &b.u.hang_back.max_dist);
+				}
+				b.u.hang_back.speed = fmaxf2(b.u.hang_back.speed, 0.0f);
+				b.u.hang_back.min_dist = fmaxf2(b.u.hang_back.min_dist, 0.0f);
+				b.u.hang_back.max_dist = fmaxf2(b.u.hang_back.max_dist, b.u.hang_back.min_dist);
+			} break;
+			case ENEMY_BEHAVIOR_FLANK: {
+				b.u.flank.speed = legacy->move_speed;
+				b.u.flank.fov_avoid_deg = 70.0f;
+				int t_speed = -1, t_fov = -1;
+				(void)json_object_get(doc, t_b, "speed", &t_speed);
+				(void)json_object_get(doc, t_b, "fov_avoid_deg", &t_fov);
+				if (t_speed >= 0) {
+					(void)json_get_float2(doc, t_speed, &b.u.flank.speed);
+				}
+				if (t_fov >= 0) {
+					(void)json_get_float2(doc, t_fov, &b.u.flank.fov_avoid_deg);
+				}
+				b.u.flank.speed = fmaxf2(b.u.flank.speed, 0.0f);
+				b.u.flank.fov_avoid_deg = clampf3(b.u.flank.fov_avoid_deg, 0.0f, 179.0f);
+			} break;
+			case ENEMY_BEHAVIOR_RUN_AWAY: {
+				b.u.run_away.speed = legacy->move_speed;
+				b.u.run_away.fov_avoid_deg = 70.0f;
+				int t_speed = -1, t_fov = -1;
+				(void)json_object_get(doc, t_b, "speed", &t_speed);
+				(void)json_object_get(doc, t_b, "fov_avoid_deg", &t_fov);
+				if (t_speed >= 0) {
+					(void)json_get_float2(doc, t_speed, &b.u.run_away.speed);
+				}
+				if (t_fov >= 0) {
+					(void)json_get_float2(doc, t_fov, &b.u.run_away.fov_avoid_deg);
+				}
+				b.u.run_away.speed = fmaxf2(b.u.run_away.speed, 0.0f);
+				b.u.run_away.fov_avoid_deg = clampf3(b.u.run_away.fov_avoid_deg, 0.0f, 179.0f);
+			} break;
+			case ENEMY_BEHAVIOR_MELEE: {
+				if (seen_melee) {
+					log_error("entity def '%s' enemy.states.* has multiple Melee behaviors", def_name);
+					return false;
+				}
+				seen_melee = true;
+				b.u.melee.range = legacy->attack_range;
+				b.u.melee.windup_s = legacy->attack_windup_s;
+				b.u.melee.cooldown_s = legacy->attack_cooldown_s;
+				b.u.melee.damage = legacy->attack_damage;
+				int t_range = -1, t_wind = -1, t_cd = -1, t_dmg = -1;
+				(void)json_object_get(doc, t_b, "range", &t_range);
+				(void)json_object_get(doc, t_b, "windup_s", &t_wind);
+				(void)json_object_get(doc, t_b, "cooldown_s", &t_cd);
+				(void)json_object_get(doc, t_b, "damage", &t_dmg);
+				if (t_range >= 0) {
+					(void)json_get_float2(doc, t_range, &b.u.melee.range);
+				}
+				if (t_wind >= 0) {
+					(void)json_get_float2(doc, t_wind, &b.u.melee.windup_s);
+				}
+				if (t_cd >= 0) {
+					(void)json_get_float2(doc, t_cd, &b.u.melee.cooldown_s);
+				}
+				if (t_dmg >= 0) {
+					int dmg = 0;
+					if (!json_get_int2(doc, t_dmg, &dmg) || dmg < 0) {
+						log_error("entity def '%s' enemy.states.*.Melee.damage invalid", def_name);
+						return false;
+					}
+					b.u.melee.damage = dmg;
+				}
+				b.u.melee.range = fmaxf2(b.u.melee.range, 0.0f);
+				b.u.melee.windup_s = fmaxf2(b.u.melee.windup_s, 0.0f);
+				b.u.melee.cooldown_s = fmaxf2(b.u.melee.cooldown_s, b.u.melee.windup_s + 0.01f);
+			} break;
+			case ENEMY_BEHAVIOR_SHOOT: {
+				if (seen_shoot) {
+					log_error("entity def '%s' enemy.states.* has multiple Shoot behaviors", def_name);
+					return false;
+				}
+				seen_shoot = true;
+				b.u.shoot.projectile_def[0] = '\0';
+				b.u.shoot.projectile_def_index = UINT32_MAX;
+				b.u.shoot.range = legacy->engage_range;
+				b.u.shoot.windup_s = legacy->attack_windup_s;
+				b.u.shoot.cooldown_s = legacy->attack_cooldown_s;
+				b.u.shoot.autoaim = true;
+				b.u.shoot.pattern.type = ENEMY_SHOOT_PATTERN_SINGLE;
+				b.u.shoot.pattern.spread_deg = 8.0f;
+				b.u.shoot.pattern.shot_interval_s = 0.08f;
+				b.u.shoot.pattern.group_interval_s = 0.12f;
+				b.u.shoot.pattern.angle_step_deg = 12.0f;
+
+				int t_proj = -1;
+				if (!json_object_get(doc, t_b, "projectile_def", &t_proj) || t_proj < 0 || !json_token_is_string(doc, t_proj)) {
+					log_error("entity def '%s' enemy.states.*.Shoot requires string field 'projectile_def'", def_name);
+					return false;
+				}
+				StringView svp;
+				if (!json_get_string(doc, t_proj, &svp) || svp.len == 0 || svp.len >= sizeof(b.u.shoot.projectile_def)) {
+					log_error("entity def '%s' enemy.states.*.Shoot.projectile_def invalid", def_name);
+					return false;
+				}
+				snprintf(b.u.shoot.projectile_def, sizeof(b.u.shoot.projectile_def), "%.*s", (int)svp.len, svp.data);
+
+				int t_pat = -1;
+				if (json_object_get(doc, t_b, "pattern", &t_pat) && t_pat >= 0) {
+					if (!json_token_is_object(doc, t_pat)) {
+						log_error("entity def '%s' enemy.states.*.Shoot.pattern must be an object", def_name);
+						return false;
+					}
+					int t_pt = -1;
+					if (!json_object_get(doc, t_pat, "type", &t_pt) || t_pt < 0) {
+						log_error("entity def '%s' enemy.states.*.Shoot.pattern missing 'type'", def_name);
+						return false;
+					}
+					EnemyShootPatternType pt = ENEMY_SHOOT_PATTERN_INVALID;
+					if (!enemy_parse_shoot_pattern_type(doc, t_pt, &pt)) {
+						log_error("entity def '%s' enemy.states.*.Shoot.pattern.type unknown", def_name);
+						return false;
+					}
+					b.u.shoot.pattern.type = pt;
+					int t_spread = -1, t_si = -1, t_gi = -1, t_step = -1;
+					(void)json_object_get(doc, t_pat, "spread_deg", &t_spread);
+					(void)json_object_get(doc, t_pat, "shot_interval_s", &t_si);
+					(void)json_object_get(doc, t_pat, "group_interval_s", &t_gi);
+					(void)json_object_get(doc, t_pat, "angle_step_deg", &t_step);
+					if (t_spread >= 0) {
+						(void)json_get_float2(doc, t_spread, &b.u.shoot.pattern.spread_deg);
+					}
+					if (t_si >= 0) {
+						(void)json_get_float2(doc, t_si, &b.u.shoot.pattern.shot_interval_s);
+					}
+					if (t_gi >= 0) {
+						(void)json_get_float2(doc, t_gi, &b.u.shoot.pattern.group_interval_s);
+					}
+					if (t_step >= 0) {
+						(void)json_get_float2(doc, t_step, &b.u.shoot.pattern.angle_step_deg);
+					}
+					b.u.shoot.pattern.spread_deg = clampf3(b.u.shoot.pattern.spread_deg, 0.0f, 89.0f);
+					b.u.shoot.pattern.shot_interval_s = fmaxf2(b.u.shoot.pattern.shot_interval_s, 0.0f);
+					b.u.shoot.pattern.group_interval_s = fmaxf2(b.u.shoot.pattern.group_interval_s, 0.0f);
+					b.u.shoot.pattern.angle_step_deg = clampf3(b.u.shoot.pattern.angle_step_deg, -179.0f, 179.0f);
+				}
+
+				int t_range = -1, t_wind = -1, t_cd = -1, t_auto = -1;
+				(void)json_object_get(doc, t_b, "range", &t_range);
+				(void)json_object_get(doc, t_b, "windup_s", &t_wind);
+				(void)json_object_get(doc, t_b, "cooldown_s", &t_cd);
+				(void)json_object_get(doc, t_b, "autoaim", &t_auto);
+				if (t_range >= 0) {
+					(void)json_get_float2(doc, t_range, &b.u.shoot.range);
+				}
+				if (t_wind >= 0) {
+					(void)json_get_float2(doc, t_wind, &b.u.shoot.windup_s);
+				}
+				if (t_cd >= 0) {
+					(void)json_get_float2(doc, t_cd, &b.u.shoot.cooldown_s);
+				}
+					if (t_auto >= 0) {
+						(void)json_get_bool2(doc, t_auto, &b.u.shoot.autoaim);
+					}
+				b.u.shoot.range = fmaxf2(b.u.shoot.range, 0.0f);
+				b.u.shoot.windup_s = fmaxf2(b.u.shoot.windup_s, 0.0f);
+				float pat_dur = enemy_shoot_pattern_duration_s(&b.u.shoot.pattern);
+				b.u.shoot.cooldown_s = fmaxf2(b.u.shoot.cooldown_s, b.u.shoot.windup_s + pat_dur + 0.01f);
+			} break;
+			default: {
+				// Unknown/invalid should not happen due to earlier parsing.
+			} break;
+		}
+
+		if (!enemy_behavior_list_push(out_list, &b)) {
+			// Deterministic overflow behavior: ignore extras.
+			if (out_list->count >= (uint8_t)ENEMY_BEHAVIOR_MAX_PER_STATE) {
+				log_warn("entity def '%s' enemy.states.*.behaviors capped at %d; extra behaviors ignored", def_name, ENEMY_BEHAVIOR_MAX_PER_STATE);
+				break;
+			}
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static bool parse_ammo_type_sv(StringView sv, AmmoType* out) {
 	if (!out) {
 		return false;
@@ -1377,6 +1795,94 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 				entity_defs_destroy(defs);
 				return false;
 			}
+
+			// Optional data-driven per-state behaviors.
+			ed->states.enabled = false;
+			enemy_behavior_list_clear(&ed->states.idle);
+			enemy_behavior_list_clear(&ed->states.engaged);
+			enemy_behavior_list_clear(&ed->states.attack);
+			enemy_behavior_list_clear(&ed->states.damaged);
+			enemy_behavior_list_clear(&ed->states.dying);
+			enemy_behavior_list_clear(&ed->states.dead);
+
+			int t_states = -1;
+			if (json_object_get(&doc, t_enemy, "states", &t_states) && t_states >= 0) {
+				if (!json_token_is_object(&doc, t_states)) {
+					log_error("entity def '%s' enemy.states must be an object", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+				ed->states.enabled = true;
+				const struct { const char* key; EnemyBehaviorList* out; } skeys[] = {
+					{"idle", &ed->states.idle},
+					{"engaged", &ed->states.engaged},
+					{"attack", &ed->states.attack},
+					{"damaged", &ed->states.damaged},
+					{"dying", &ed->states.dying},
+					{"dead", &ed->states.dead},
+				};
+				for (int si = 0; si < (int)(sizeof(skeys) / sizeof(skeys[0])); si++) {
+					int t_s = -1;
+					if (!json_object_get(&doc, t_states, skeys[si].key, &t_s) || t_s < 0) {
+						continue;
+					}
+					if (!json_token_is_object(&doc, t_s)) {
+						log_error("entity def '%s' enemy.states.%s must be an object", def.name, skeys[si].key);
+						json_doc_destroy(&doc);
+						entity_defs_destroy(defs);
+						return false;
+					}
+					if (!enemy_parse_behavior_list(&doc, t_s, def.name, ed, skeys[si].out)) {
+						json_doc_destroy(&doc);
+						entity_defs_destroy(defs);
+						return false;
+					}
+				}
+
+				// Defaults for omitted/empty state configs.
+				if (ed->states.idle.count == 0) {
+					EnemyBehavior b;
+					memset(&b, 0, sizeof(b));
+					b.type = ENEMY_BEHAVIOR_WAIT;
+					(void)enemy_behavior_list_push(&ed->states.idle, &b);
+				}
+				if (ed->states.engaged.count == 0) {
+					EnemyBehavior b;
+					memset(&b, 0, sizeof(b));
+					b.type = ENEMY_BEHAVIOR_RUSH;
+					b.u.rush.speed = ed->move_speed;
+					(void)enemy_behavior_list_push(&ed->states.engaged, &b);
+				}
+				if (ed->states.attack.count == 0) {
+					EnemyBehavior b;
+					memset(&b, 0, sizeof(b));
+					b.type = ENEMY_BEHAVIOR_MELEE;
+					b.u.melee.range = ed->attack_range;
+					b.u.melee.windup_s = ed->attack_windup_s;
+					b.u.melee.cooldown_s = ed->attack_cooldown_s;
+					b.u.melee.damage = ed->attack_damage;
+					(void)enemy_behavior_list_push(&ed->states.attack, &b);
+				}
+				if (ed->states.damaged.count == 0) {
+					EnemyBehavior b;
+					memset(&b, 0, sizeof(b));
+					b.type = ENEMY_BEHAVIOR_WAIT;
+					(void)enemy_behavior_list_push(&ed->states.damaged, &b);
+				}
+				if (ed->states.dying.count == 0) {
+					EnemyBehavior b;
+					memset(&b, 0, sizeof(b));
+					b.type = ENEMY_BEHAVIOR_WAIT;
+					(void)enemy_behavior_list_push(&ed->states.dying, &b);
+				}
+				if (ed->states.dead.count == 0) {
+					EnemyBehavior b;
+					memset(&b, 0, sizeof(b));
+					b.type = ENEMY_BEHAVIOR_WAIT;
+					(void)enemy_behavior_list_push(&ed->states.dead, &b);
+				}
+			}
 		}
 
 		// Require unique names.
@@ -1392,6 +1898,40 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 			json_doc_destroy(&doc);
 			entity_defs_destroy(defs);
 			return false;
+		}
+	}
+
+	// Resolve Shoot.projectile_def references now that we have the full def list.
+	for (uint32_t di = 0; di < defs->count; di++) {
+		EntityDef* d = &defs->defs[di];
+		if (d->kind != ENTITY_KIND_ENEMY) {
+			continue;
+		}
+		EntityDefEnemy* ed = &d->u.enemy;
+		if (!ed->states.enabled) {
+			continue;
+		}
+		EnemyBehaviorList* lists[] = {&ed->states.idle, &ed->states.engaged, &ed->states.attack, &ed->states.damaged, &ed->states.dying, &ed->states.dead};
+		for (int li = 0; li < (int)(sizeof(lists) / sizeof(lists[0])); li++) {
+			EnemyBehaviorList* bl = lists[li];
+			for (uint8_t bi = 0; bi < bl->count; bi++) {
+				EnemyBehavior* b = &bl->behaviors[bi];
+				if (b->type != ENEMY_BEHAVIOR_SHOOT) {
+					continue;
+				}
+				uint32_t pi = entity_defs_find(defs, b->u.shoot.projectile_def);
+				if (pi == UINT32_MAX) {
+					log_warn("entity def '%s' Shoot.projectile_def '%s' not found", d->name, b->u.shoot.projectile_def);
+					b->u.shoot.projectile_def_index = UINT32_MAX;
+					continue;
+				}
+				if (defs->defs[pi].kind != ENTITY_KIND_PROJECTILE) {
+					log_warn("entity def '%s' Shoot.projectile_def '%s' is not a projectile", d->name, b->u.shoot.projectile_def);
+					b->u.shoot.projectile_def_index = UINT32_MAX;
+					continue;
+				}
+				b->u.shoot.projectile_def_index = pi;
+			}
 		}
 	}
 
@@ -1601,6 +2141,17 @@ bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y,
 	e->sprite_frame = 0u;
 	e->owner = entity_id_none();
 	e->attack_has_hit = false;
+	e->enemy_rng_state = 0u;
+	e->enemy_wander_next_turn_s = 0.0f;
+	e->enemy_wander_dir_x = 0.0f;
+	e->enemy_wander_dir_y = 0.0f;
+	e->enemy_pace_dir_x = 0.0f;
+	e->enemy_pace_dir_y = 0.0f;
+	e->enemy_pace_next_switch_s = 0.0f;
+	e->enemy_pace_flip_cooldown_s = 0.0f;
+	e->enemy_last_x = x;
+	e->enemy_last_y = y;
+	e->enemy_shoot_fired_mask = 0u;
 
 	float z = 0.0f;
 	if (es->world && (unsigned)sector < (unsigned)es->world->sector_count) {
@@ -1615,6 +2166,22 @@ bool entity_system_spawn(EntitySystem* es, uint32_t def_index, float x, float y,
 	e->body.sector = sector;
 	e->body.last_valid_sector = sector;
 	spatial_invalidate(es);
+
+	if (def->kind == ENTITY_KIND_ENEMY) {
+		e->enemy_rng_state = hash_u32_2((uint32_t)e->id.index ^ (e->id.gen * 0x9E3779B9u));
+		if (e->enemy_rng_state == 0u) {
+			e->enemy_rng_state = 1u;
+		}
+		// Initialize deterministic movement directions for behaviors that need one.
+		uint32_t r = xorshift32_u32(&e->enemy_rng_state);
+		int dir = (int)(r & 3u);
+		switch (dir) {
+			case 0: e->enemy_pace_dir_x = 1.0f; e->enemy_pace_dir_y = 0.0f; break;
+			case 1: e->enemy_pace_dir_x = -1.0f; e->enemy_pace_dir_y = 0.0f; break;
+			case 2: e->enemy_pace_dir_x = 0.0f; e->enemy_pace_dir_y = 1.0f; break;
+			default: e->enemy_pace_dir_x = 0.0f; e->enemy_pace_dir_y = -1.0f; break;
+		}
+	}
 
 	// Optional per-entity light.
 	if (def->light.enabled) {
@@ -1832,7 +2399,293 @@ void entity_system_flush(EntitySystem* es) {
 	apply_despawns(es);
 }
 
-void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float dt_s) {
+static void vec2_norm2(float* x, float* y) {
+	if (!x || !y) {
+		return;
+	}
+	float vx = *x;
+	float vy = *y;
+	float len2 = vx * vx + vy * vy;
+	if (len2 <= 1e-12f) {
+		*x = 0.0f;
+		*y = 0.0f;
+		return;
+	}
+	float inv = 1.0f / sqrtf(len2);
+	*x = vx * inv;
+	*y = vy * inv;
+}
+
+static const EnemyBehavior* enemy_find_first(const EnemyBehaviorList* list, EnemyBehaviorType type) {
+	if (!list) {
+		return NULL;
+	}
+	for (uint8_t i = 0; i < list->count; i++) {
+		if (list->behaviors[i].type == type) {
+			return &list->behaviors[i];
+		}
+	}
+	return NULL;
+}
+
+static const EnemyBehavior* enemy_find_base_movement(const EnemyBehaviorList* list) {
+	if (!list) {
+		return NULL;
+	}
+	for (uint8_t i = 0; i < list->count; i++) {
+		EnemyBehaviorType t = list->behaviors[i].type;
+		switch (t) {
+			case ENEMY_BEHAVIOR_WAIT:
+			case ENEMY_BEHAVIOR_WANDER:
+			case ENEMY_BEHAVIOR_PACE:
+			case ENEMY_BEHAVIOR_RUSH:
+			case ENEMY_BEHAVIOR_HANG_BACK:
+			case ENEMY_BEHAVIOR_RUN_AWAY: return &list->behaviors[i];
+			default: break;
+		}
+	}
+	return NULL;
+}
+
+static float enemy_fov_dot_from_player(float player_yaw_deg, float player_x, float player_y, float enemy_x, float enemy_y) {
+	float ang = player_yaw_deg * (float)M_PI / 180.0f;
+	float fx = cosf(ang);
+	float fy = sinf(ang);
+	float vx = enemy_x - player_x;
+	float vy = enemy_y - player_y;
+	vec2_norm2(&vx, &vy);
+	return vx * fx + vy * fy;
+}
+
+static void enemy_apply_flank_modifier(
+	const EnemyBehaviorFlank* flank,
+	float player_yaw_deg,
+	float player_x,
+	float player_y,
+	float enemy_x,
+	float enemy_y,
+	float* io_dir_x,
+	float* io_dir_y
+) {
+	if (!flank || !io_dir_x || !io_dir_y) {
+		return;
+	}
+	float to_px = player_x - enemy_x;
+	float to_py = player_y - enemy_y;
+	vec2_norm2(&to_px, &to_py);
+	// Perpendicular around the player.
+	float px = -to_py;
+	float py = to_px;
+
+	float base_x = *io_dir_x;
+	float base_y = *io_dir_y;
+	vec2_norm2(&base_x, &base_y);
+	if (fabsf(base_x) <= 1e-6f && fabsf(base_y) <= 1e-6f) {
+		base_x = px;
+		base_y = py;
+	}
+
+	// Choose the lateral direction that reduces time inside player FoV.
+	float cand1_x = base_x + px;
+	float cand1_y = base_y + py;
+	float cand2_x = base_x - px;
+	float cand2_y = base_y - py;
+	vec2_norm2(&cand1_x, &cand1_y);
+	vec2_norm2(&cand2_x, &cand2_y);
+
+	float step = 0.75f;
+	float dot1 = enemy_fov_dot_from_player(player_yaw_deg, player_x, player_y, enemy_x + cand1_x * step, enemy_y + cand1_y * step);
+	float dot2 = enemy_fov_dot_from_player(player_yaw_deg, player_x, player_y, enemy_x + cand2_x * step, enemy_y + cand2_y * step);
+
+	// Smaller dot => further from player forward => more likely out of FoV.
+	if (dot2 < dot1) {
+		*io_dir_x = cand2_x;
+		*io_dir_y = cand2_y;
+	} else {
+		*io_dir_x = cand1_x;
+		*io_dir_y = cand1_y;
+	}
+}
+
+static void enemy_compute_wish_move(
+	EntitySystem* es,
+	Entity* e,
+	const EnemyBehaviorList* list,
+	const PhysicsBody* player_body,
+	float player_yaw_deg,
+	float dt_s,
+	float* out_wish_vx,
+	float* out_wish_vy
+) {
+	(void)es;
+	if (out_wish_vx) {
+		*out_wish_vx = 0.0f;
+	}
+	if (out_wish_vy) {
+		*out_wish_vy = 0.0f;
+	}
+	if (!e || !list || !player_body || !out_wish_vx || !out_wish_vy) {
+		return;
+	}
+
+	const EnemyBehavior* base = enemy_find_base_movement(list);
+	const EnemyBehavior* flank_b = enemy_find_first(list, ENEMY_BEHAVIOR_FLANK);
+
+	float dir_x = 0.0f;
+	float dir_y = 0.0f;
+	float speed = 0.0f;
+
+	float dxp = player_body->x - e->body.x;
+	float dyp = player_body->y - e->body.y;
+	float dist2 = dxp * dxp + dyp * dyp;
+	float dist = dist2 > 0.0f ? sqrtf(dist2) : 0.0f;
+	float toward_x = 0.0f;
+	float toward_y = 0.0f;
+	if (dist > 1e-4f) {
+		toward_x = dxp / dist;
+		toward_y = dyp / dist;
+	}
+
+	if (!base) {
+		// No base movement => treat as Wait.
+		base = enemy_find_first(list, ENEMY_BEHAVIOR_WAIT);
+	}
+
+	if (base) {
+		switch (base->type) {
+			case ENEMY_BEHAVIOR_WAIT: {
+				dir_x = 0.0f;
+				dir_y = 0.0f;
+				speed = 0.0f;
+			} break;
+			case ENEMY_BEHAVIOR_RUSH: {
+				dir_x = toward_x;
+				dir_y = toward_y;
+				speed = base->u.rush.speed;
+			} break;
+			case ENEMY_BEHAVIOR_HANG_BACK: {
+				float min_d = base->u.hang_back.min_dist;
+				float max_d = base->u.hang_back.max_dist;
+				if (dist < min_d) {
+					dir_x = -toward_x;
+					dir_y = -toward_y;
+					speed = base->u.hang_back.speed;
+				} else if (dist > max_d) {
+					dir_x = toward_x;
+					dir_y = toward_y;
+					speed = base->u.hang_back.speed;
+				} else {
+					dir_x = 0.0f;
+					dir_y = 0.0f;
+					speed = base->u.hang_back.speed;
+				}
+			} break;
+			case ENEMY_BEHAVIOR_RUN_AWAY: {
+				dir_x = -toward_x;
+				dir_y = -toward_y;
+				speed = base->u.run_away.speed;
+				// If currently inside the avoid FoV cone, bias to a lateral direction.
+				float dot = enemy_fov_dot_from_player(player_yaw_deg, player_body->x, player_body->y, e->body.x, e->body.y);
+				float cos_avoid = cosf(0.5f * base->u.run_away.fov_avoid_deg * (float)M_PI / 180.0f);
+				if (dot > cos_avoid) {
+					EnemyBehaviorFlank fb;
+					fb.speed = base->u.run_away.speed;
+					fb.fov_avoid_deg = base->u.run_away.fov_avoid_deg;
+					enemy_apply_flank_modifier(&fb, player_yaw_deg, player_body->x, player_body->y, e->body.x, e->body.y, &dir_x, &dir_y);
+				}
+			} break;
+			case ENEMY_BEHAVIOR_WANDER: {
+				speed = base->u.wander.speed;
+				bool need = (fabsf(e->enemy_wander_dir_x) <= 1e-6f && fabsf(e->enemy_wander_dir_y) <= 1e-6f) || (e->state_time >= e->enemy_wander_next_turn_s);
+				if (need) {
+					uint32_t r = xorshift32_u32(&e->enemy_rng_state);
+					int k = (int)(r & 15u);
+					float a = (float)k * (2.0f * (float)M_PI / 16.0f);
+					e->enemy_wander_dir_x = cosf(a);
+					e->enemy_wander_dir_y = sinf(a);
+					e->enemy_wander_next_turn_s = e->state_time + base->u.wander.turn_interval_s;
+				}
+				dir_x = e->enemy_wander_dir_x;
+				dir_y = e->enemy_wander_dir_y;
+				vec2_norm2(&dir_x, &dir_y);
+			} break;
+			case ENEMY_BEHAVIOR_PACE: {
+				speed = base->u.pace.speed;
+				vec2_norm2(&e->enemy_pace_dir_x, &e->enemy_pace_dir_y);
+				if (fabsf(e->enemy_pace_dir_x) <= 1e-6f && fabsf(e->enemy_pace_dir_y) <= 1e-6f) {
+					e->enemy_pace_dir_x = 1.0f;
+					e->enemy_pace_dir_y = 0.0f;
+				}
+				if (e->enemy_pace_next_switch_s <= 0.0f) {
+					e->enemy_pace_next_switch_s = e->state_time + base->u.pace.switch_interval_s;
+				}
+				// Periodic switch.
+				if (e->state_time >= e->enemy_pace_next_switch_s) {
+					e->enemy_pace_dir_x = -e->enemy_pace_dir_x;
+					e->enemy_pace_dir_y = -e->enemy_pace_dir_y;
+					e->enemy_pace_next_switch_s = e->state_time + base->u.pace.switch_interval_s;
+					e->enemy_pace_flip_cooldown_s = 0.15f;
+				}
+				dir_x = e->enemy_pace_dir_x;
+				dir_y = e->enemy_pace_dir_y;
+			} break;
+			default: break;
+		}
+	}
+
+	// Optional flank modifier (works well with HangBack).
+	if (flank_b && flank_b->type == ENEMY_BEHAVIOR_FLANK) {
+		enemy_apply_flank_modifier(&flank_b->u.flank, player_yaw_deg, player_body->x, player_body->y, e->body.x, e->body.y, &dir_x, &dir_y);
+		// Flank speed can override base speed.
+		speed = fmaxf2(speed, flank_b->u.flank.speed);
+	}
+
+	vec2_norm2(&dir_x, &dir_y);
+	*out_wish_vx = dir_x * speed;
+	*out_wish_vy = dir_y * speed;
+
+	// Track last position for movement-based heuristics.
+	e->enemy_last_x = e->body.x;
+	e->enemy_last_y = e->body.y;
+	(void)dt_s;
+}
+
+static bool enemy_spawn_projectile(
+	EntitySystem* es,
+	Entity* enemy,
+	uint32_t projectile_def_index,
+	float yaw_deg,
+	const PhysicsBody* player_body,
+	bool autoaim
+) {
+	if (!es || !enemy || !es->defs || projectile_def_index == UINT32_MAX) {
+		return false;
+	}
+	if (!player_body) {
+		autoaim = false;
+	}
+	float ang = yaw_deg * (float)M_PI / 180.0f;
+	float fx = cosf(ang);
+	float fy = sinf(ang);
+	float spawn_dist = enemy->body.radius + 0.25f;
+	float sx = enemy->body.x + fx * spawn_dist;
+	float sy = enemy->body.y + fy * spawn_dist;
+	int sector = enemy->body.sector >= 0 ? enemy->body.sector : enemy->body.last_valid_sector;
+	EntityId proj_id;
+	if (!entity_system_spawn(es, projectile_def_index, sx, sy, yaw_deg, sector, &proj_id)) {
+		return false;
+	}
+	Entity* proj = NULL;
+	if (entity_system_resolve(es, proj_id, &proj)) {
+		proj->owner = enemy->id;
+	}
+	if (autoaim) {
+		(void)entity_system_projectile_autoaim(es, proj_id, true, player_body);
+	}
+	return true;
+}
+
+void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float player_yaw_deg, float dt_s) {
 	if (!es || !es->defs || !player_body) {
 		return;
 	}
@@ -1946,6 +2799,7 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 					e->state = ENTITY_STATE_DYING;
 					e->state_time = 0.0f;
 					e->attack_has_hit = false;
+					e->enemy_shoot_fired_mask = 0u;
 				}
 				if (e->state == ENTITY_STATE_DYING && e->state_time >= ed->dying_time_s) {
 					e->state = ENTITY_STATE_DEAD;
@@ -1957,123 +2811,418 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 				continue;
 			}
 
-			if (e->state == ENTITY_STATE_DAMAGED) {
-				if (e->state_time >= ed->damaged_time_s) {
-					// Damage reaction ends by re-engaging (DOOM-style alertness).
-					e->state = ENTITY_STATE_ENGAGED;
-					e->state_time = 0.0f;
-				}
-				continue;
-			}
-
-			if (e->state == ENTITY_STATE_IDLE) {
-				// Still update physics so step-down/falling works.
-				physics_body_update(&e->body, es->world, 0.0f, 0.0f, (double)dt_s, &phys);
-				// Sight-based engagement: keep a sensible minimum so enemies can see the player
-				// across multiple portal-connected sectors.
-				const float min_sight_range = 16.0f;
-				float sight_range = fmaxf2(min_sight_range, fmaxf2(ed->disengage_range, ed->engage_range));
-				if (dist <= sight_range && collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
-					e->state = ENTITY_STATE_ENGAGED;
-					e->state_time = 0.0f;
-				}
-				entity_light_update_pos(es, e);
-				continue;
-			}
-
-			if (e->state == ENTITY_STATE_ENGAGED) {
-				// Only drop back to IDLE if the player is both far away and not visible.
-				// This prevents immediate "wake then sleep" behavior due to LOS jitter.
-				if (dist > ed->disengage_range && !collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
-					e->state = ENTITY_STATE_IDLE;
-					e->state_time = 0.0f;
+			// Legacy AI path (backwards compatible): chase + melee.
+			if (!ed->states.enabled) {
+				if (e->state == ENTITY_STATE_DAMAGED) {
+					if (e->state_time >= ed->damaged_time_s) {
+						// Damage reaction ends by re-engaging (DOOM-style alertness).
+						e->state = ENTITY_STATE_ENGAGED;
+						e->state_time = 0.0f;
+					}
 					continue;
 				}
-				if (dist <= attack_range_eff) {
-					e->state = ENTITY_STATE_ATTACK;
+
+				if (e->state == ENTITY_STATE_IDLE) {
+					// Still update physics so step-down/falling works.
+					physics_body_update(&e->body, es->world, 0.0f, 0.0f, (double)dt_s, &phys);
+					// Sight-based engagement: keep a sensible minimum so enemies can see the player
+					// across multiple portal-connected sectors.
+					const float min_sight_range = 16.0f;
+					float sight_range = fmaxf2(min_sight_range, fmaxf2(ed->disengage_range, ed->engage_range));
+					if (dist <= sight_range && collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
+						e->state = ENTITY_STATE_ENGAGED;
+						e->state_time = 0.0f;
+					}
+					entity_light_update_pos(es, e);
+					continue;
+				}
+
+				if (e->state == ENTITY_STATE_ENGAGED) {
+					// Only drop back to IDLE if the player is both far away and not visible.
+					// This prevents immediate "wake then sleep" behavior due to LOS jitter.
+					if (dist > ed->disengage_range && !collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
+						e->state = ENTITY_STATE_IDLE;
+						e->state_time = 0.0f;
+						continue;
+					}
+					if (dist <= attack_range_eff) {
+						e->state = ENTITY_STATE_ATTACK;
+						e->state_time = 0.0f;
+						e->attack_has_hit = false;
+						e->enemy_shoot_fired_mask = 0u;
+						continue;
+					}
+
+					// Chase
+					float wish_vx = 0.0f;
+					float wish_vy = 0.0f;
+					if (dist > (min_approach + 0.01f) && dist > 1e-4f && ed->move_speed > 0.0f) {
+						float dir_x = dxp / dist;
+						float dir_y = dyp / dist;
+						wish_vx = dir_x * ed->move_speed;
+						wish_vy = dir_y * ed->move_speed;
+					}
+					// When very close to the player, block portal transitions. Otherwise, enemies can
+					// end up in a different sector with a lower floor and appear to "sink".
+					float near_player = fmaxf2(min_approach + 0.25f, attack_range_eff + 0.25f);
+					if (dist <= near_player) {
+						physics_body_update_block_portals(&e->body, es->world, wish_vx, wish_vy, (double)dt_s, &phys);
+					} else {
+						physics_body_update(&e->body, es->world, wish_vx, wish_vy, (double)dt_s, &phys);
+					}
+					// Enforce minimum distance to player to prevent clipping.
+					dxp = player_body->x - e->body.x;
+					dyp = player_body->y - e->body.y;
+					dist2 = dxp * dxp + dyp * dyp;
+					dist = dist2 > 0.0f ? sqrtf(dist2) : 0.0f;
+					if (dist < min_approach) {
+						float nx = 1.0f;
+						float ny = 0.0f;
+						if (dist > 1e-6f) {
+							nx = dxp / dist;
+							ny = dyp / dist;
+						}
+						float push = (min_approach - dist);
+						physics_body_move_delta_block_portals(&e->body, es->world, -nx * push, -ny * push, &phys);
+					}
+					entity_light_update_pos(es, e);
+					continue;
+				}
+
+				if (e->state == ENTITY_STATE_ATTACK) {
+					// During attack, keep physics updated (gravity/grounding) but no intentional movement.
+					physics_body_update(&e->body, es->world, 0.0f, 0.0f, (double)dt_s, &phys);
+					// Keep a minimum separation during attack too.
+					dxp = player_body->x - e->body.x;
+					dyp = player_body->y - e->body.y;
+					dist2 = dxp * dxp + dyp * dyp;
+					dist = dist2 > 0.0f ? sqrtf(dist2) : 0.0f;
+					if (dist < min_approach) {
+						float nx = 1.0f;
+						float ny = 0.0f;
+						if (dist > 1e-6f) {
+							nx = dxp / dist;
+							ny = dyp / dist;
+						}
+						float push = (min_approach - dist);
+						physics_body_move_delta_block_portals(&e->body, es->world, -nx * push, -ny * push, &phys);
+					}
+					if (!e->attack_has_hit && e->state_time >= ed->attack_windup_s) {
+						float hit_range = attack_range_eff + 0.2f;
+						if (dist <= hit_range && ed->attack_damage > 0) {
+							EntityEvent ev;
+							memset(&ev, 0, sizeof(ev));
+							ev.type = ENTITY_EVENT_PLAYER_DAMAGE;
+							ev.entity = e->id;
+							ev.other = entity_id_none();
+							ev.def_id = e->def_id;
+							ev.kind = def->kind;
+							ev.x = player_body->x;
+							ev.y = player_body->y;
+							ev.amount = ed->attack_damage;
+							entity_event_push(es, ev);
+						}
+						e->attack_has_hit = true;
+					}
+					if (e->state_time >= ed->attack_cooldown_s) {
+						e->state = ENTITY_STATE_ENGAGED;
+						e->state_time = 0.0f;
+						e->attack_has_hit = false;
+						e->enemy_shoot_fired_mask = 0u;
+					}
+					entity_light_update_pos(es, e);
+					continue;
+				}
+			} else {
+				// Data-driven AI path.
+				const EnemyBehaviorList* bl = &ed->states.idle;
+				switch (e->state) {
+					case ENTITY_STATE_IDLE: bl = &ed->states.idle; break;
+					case ENTITY_STATE_ENGAGED: bl = &ed->states.engaged; break;
+					case ENTITY_STATE_ATTACK: bl = &ed->states.attack; break;
+					case ENTITY_STATE_DAMAGED: bl = &ed->states.damaged; break;
+					case ENTITY_STATE_DYING: bl = &ed->states.dying; break;
+					case ENTITY_STATE_DEAD: bl = &ed->states.dead; break;
+					default: bl = &ed->states.idle; break;
+				}
+
+				// Damaged timing still gates state transitions, but behaviors may run.
+				if (e->state == ENTITY_STATE_DAMAGED && e->state_time >= ed->damaged_time_s) {
+					e->state = ENTITY_STATE_ENGAGED;
 					e->state_time = 0.0f;
 					e->attack_has_hit = false;
+					e->enemy_shoot_fired_mask = 0u;
 					continue;
 				}
 
-				// Chase
-				float wish_vx = 0.0f;
-				float wish_vy = 0.0f;
-				if (dist > (min_approach + 0.01f) && dist > 1e-4f && ed->move_speed > 0.0f) {
-					float dir_x = dxp / dist;
-					float dir_y = dyp / dist;
-					wish_vx = dir_x * ed->move_speed;
-					wish_vy = dir_y * ed->move_speed;
+				// If state is forced to DYING/DEAD by gameplay code, still advance the pipeline.
+				if (e->state == ENTITY_STATE_DYING) {
+					if (e->state_time >= ed->dying_time_s) {
+						e->state = ENTITY_STATE_DEAD;
+						e->state_time = 0.0f;
+					}
+					entity_light_update_pos(es, e);
+					continue;
 				}
-				// When very close to the player, block portal transitions. Otherwise, enemies can
-				// end up in a different sector with a lower floor and appear to "sink".
-				float near_player = fmaxf2(min_approach + 0.25f, attack_range_eff + 0.25f);
-				if (dist <= near_player) {
-					physics_body_update_block_portals(&e->body, es->world, wish_vx, wish_vy, (double)dt_s, &phys);
-				} else {
+				if (e->state == ENTITY_STATE_DEAD) {
+					if (e->state_time >= ed->dead_time_s) {
+						entity_system_request_despawn(es, e->id);
+					}
+					entity_light_update_pos(es, e);
+					continue;
+				}
+
+				if (e->state == ENTITY_STATE_DAMAGED) {
+					float wish_vx = 0.0f;
+					float wish_vy = 0.0f;
+					enemy_compute_wish_move(es, e, bl, player_body, player_yaw_deg, dt_s, &wish_vx, &wish_vy);
 					physics_body_update(&e->body, es->world, wish_vx, wish_vy, (double)dt_s, &phys);
+					entity_light_update_pos(es, e);
+					continue;
 				}
-				// Enforce minimum distance to player to prevent clipping.
-				dxp = player_body->x - e->body.x;
-				dyp = player_body->y - e->body.y;
-				dist2 = dxp * dxp + dyp * dyp;
-				dist = dist2 > 0.0f ? sqrtf(dist2) : 0.0f;
-				if (dist < min_approach) {
-					float nx = 1.0f;
-					float ny = 0.0f;
-					if (dist > 1e-6f) {
-						nx = dxp / dist;
-						ny = dyp / dist;
-					}
-					float push = (min_approach - dist);
-					physics_body_move_delta_block_portals(&e->body, es->world, -nx * push, -ny * push, &phys);
-				}
-				entity_light_update_pos(es, e);
-				continue;
-			}
 
-			if (e->state == ENTITY_STATE_ATTACK) {
-				// During attack, keep physics updated (gravity/grounding) but no intentional movement.
-				physics_body_update(&e->body, es->world, 0.0f, 0.0f, (double)dt_s, &phys);
-				// Keep a minimum separation during attack too.
-				dxp = player_body->x - e->body.x;
-				dyp = player_body->y - e->body.y;
-				dist2 = dxp * dxp + dyp * dyp;
-				dist = dist2 > 0.0f ? sqrtf(dist2) : 0.0f;
-				if (dist < min_approach) {
-					float nx = 1.0f;
-					float ny = 0.0f;
-					if (dist > 1e-6f) {
-						nx = dxp / dist;
-						ny = dyp / dist;
+				// IDLE engagement remains sight + LOS based.
+				if (e->state == ENTITY_STATE_IDLE) {
+					float wish_vx = 0.0f;
+					float wish_vy = 0.0f;
+					enemy_compute_wish_move(es, e, bl, player_body, player_yaw_deg, dt_s, &wish_vx, &wish_vy);
+					// Keep idle movement in the current sector (block portals).
+					physics_body_update_block_portals(&e->body, es->world, wish_vx, wish_vy, (double)dt_s, &phys);
+					const float min_sight_range = 16.0f;
+					float sight_range = fmaxf2(min_sight_range, fmaxf2(ed->disengage_range, ed->engage_range));
+					if (dist <= sight_range && collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
+						e->state = ENTITY_STATE_ENGAGED;
+						e->state_time = 0.0f;
+						e->attack_has_hit = false;
+						e->enemy_shoot_fired_mask = 0u;
 					}
-					float push = (min_approach - dist);
-					physics_body_move_delta_block_portals(&e->body, es->world, -nx * push, -ny * push, &phys);
+					entity_light_update_pos(es, e);
+					continue;
 				}
-				if (!e->attack_has_hit && e->state_time >= ed->attack_windup_s) {
-					float hit_range = attack_range_eff + 0.2f;
-					if (dist <= hit_range && ed->attack_damage > 0) {
-						EntityEvent ev;
-						memset(&ev, 0, sizeof(ev));
-						ev.type = ENTITY_EVENT_PLAYER_DAMAGE;
-						ev.entity = e->id;
-						ev.other = entity_id_none();
-						ev.def_id = e->def_id;
-						ev.kind = def->kind;
-						ev.x = player_body->x;
-						ev.y = player_body->y;
-						ev.amount = ed->attack_damage;
-						entity_event_push(es, ev);
+
+				if (e->state == ENTITY_STATE_ENGAGED) {
+					if (dist > ed->disengage_range && !collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
+						e->state = ENTITY_STATE_IDLE;
+						e->state_time = 0.0f;
+						e->attack_has_hit = false;
+						e->enemy_shoot_fired_mask = 0u;
+						continue;
 					}
-					e->attack_has_hit = true;
+
+					// Transition to ATTACK depends on configured attack behaviors.
+					const EnemyBehavior* melee_b = enemy_find_first(&ed->states.attack, ENEMY_BEHAVIOR_MELEE);
+					const EnemyBehavior* shoot_b = enemy_find_first(&ed->states.attack, ENEMY_BEHAVIOR_SHOOT);
+					bool can_attack = false;
+					if (melee_b) {
+						float range_eff2 = fmaxf2(melee_b->u.melee.range, min_approach);
+						if (dist <= range_eff2) {
+							can_attack = true;
+						}
+					}
+					if (!can_attack && shoot_b && shoot_b->u.shoot.projectile_def_index != UINT32_MAX) {
+						if (dist <= shoot_b->u.shoot.range && collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
+							can_attack = true;
+						}
+					}
+					if (can_attack) {
+						e->state = ENTITY_STATE_ATTACK;
+						e->state_time = 0.0f;
+						e->attack_has_hit = false;
+						e->enemy_shoot_fired_mask = 0u;
+						continue;
+					}
+
+					float wish_vx = 0.0f;
+					float wish_vy = 0.0f;
+					enemy_compute_wish_move(es, e, bl, player_body, player_yaw_deg, dt_s, &wish_vx, &wish_vy);
+					float near_player = fmaxf2(min_approach + 0.25f, attack_range_eff + 0.25f);
+					if (dist <= near_player) {
+						physics_body_update_block_portals(&e->body, es->world, wish_vx, wish_vy, (double)dt_s, &phys);
+					} else {
+						physics_body_update(&e->body, es->world, wish_vx, wish_vy, (double)dt_s, &phys);
+					}
+					// Minimum player separation.
+					dxp = player_body->x - e->body.x;
+					dyp = player_body->y - e->body.y;
+					dist2 = dxp * dxp + dyp * dyp;
+					dist = dist2 > 0.0f ? sqrtf(dist2) : 0.0f;
+					if (dist < min_approach) {
+						float nx = 1.0f;
+						float ny = 0.0f;
+						if (dist > 1e-6f) {
+							nx = dxp / dist;
+							ny = dyp / dist;
+						}
+						float push = (min_approach - dist);
+						physics_body_move_delta_block_portals(&e->body, es->world, -nx * push, -ny * push, &phys);
+					}
+					entity_light_update_pos(es, e);
+					continue;
 				}
-				if (e->state_time >= ed->attack_cooldown_s) {
-					e->state = ENTITY_STATE_ENGAGED;
-					e->state_time = 0.0f;
-					e->attack_has_hit = false;
+
+				if (e->state == ENTITY_STATE_ATTACK) {
+					const EnemyBehavior* melee_b = enemy_find_first(bl, ENEMY_BEHAVIOR_MELEE);
+					const EnemyBehavior* shoot_b = enemy_find_first(bl, ENEMY_BEHAVIOR_SHOOT);
+					float wish_vx = 0.0f;
+					float wish_vy = 0.0f;
+					enemy_compute_wish_move(es, e, bl, player_body, player_yaw_deg, dt_s, &wish_vx, &wish_vy);
+
+					// Attack behaviors can request halting movement during windup + firing span.
+					float halt_until = 0.0f;
+					if (melee_b) {
+						halt_until = fmaxf2(halt_until, melee_b->u.melee.windup_s);
+					}
+					if (shoot_b) {
+						halt_until = fmaxf2(halt_until, shoot_b->u.shoot.windup_s + enemy_shoot_pattern_duration_s(&shoot_b->u.shoot.pattern));
+					}
+					if (e->state_time <= halt_until) {
+						wish_vx = 0.0f;
+						wish_vy = 0.0f;
+					}
+					physics_body_update(&e->body, es->world, wish_vx, wish_vy, (double)dt_s, &phys);
+
+					// Recompute distance after movement.
+					dxp = player_body->x - e->body.x;
+					dyp = player_body->y - e->body.y;
+					dist2 = dxp * dxp + dyp * dyp;
+					dist = dist2 > 0.0f ? sqrtf(dist2) : 0.0f;
+					if (dist < min_approach) {
+						float nx = 1.0f;
+						float ny = 0.0f;
+						if (dist > 1e-6f) {
+							nx = dxp / dist;
+							ny = dyp / dist;
+						}
+						float push = (min_approach - dist);
+						physics_body_move_delta_block_portals(&e->body, es->world, -nx * push, -ny * push, &phys);
+					}
+
+					// Melee behavior.
+					if (melee_b && !e->attack_has_hit && e->state_time >= melee_b->u.melee.windup_s) {
+						float hit_range = fmaxf2(melee_b->u.melee.range, min_approach) + 0.2f;
+						if (dist <= hit_range && melee_b->u.melee.damage > 0) {
+							EntityEvent ev;
+							memset(&ev, 0, sizeof(ev));
+							ev.type = ENTITY_EVENT_PLAYER_DAMAGE;
+							ev.entity = e->id;
+							ev.other = entity_id_none();
+							ev.def_id = e->def_id;
+							ev.kind = def->kind;
+							ev.x = player_body->x;
+							ev.y = player_body->y;
+							ev.amount = melee_b->u.melee.damage;
+							entity_event_push(es, ev);
+						}
+						e->attack_has_hit = true;
+					}
+
+					// Shoot behavior.
+					if (shoot_b && shoot_b->u.shoot.projectile_def_index != UINT32_MAX) {
+						const EnemyBehaviorShoot* sh = &shoot_b->u.shoot;
+						float t_rel = e->state_time - sh->windup_s;
+						bool aims_at_player = (sh->pattern.type == ENEMY_SHOOT_PATTERN_SINGLE || sh->pattern.type == ENEMY_SHOOT_PATTERN_THREE_SPREAD ||
+							sh->pattern.type == ENEMY_SHOOT_PATTERN_FIVE_OSC_SPREAD || sh->pattern.type == ENEMY_SHOOT_PATTERN_TRIPLE_TAP);
+						bool in_range = dist <= sh->range;
+						bool has_los = !aims_at_player || collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y);
+						if (t_rel >= 0.0f && in_range && has_los) {
+							float aim_yaw = e->yaw_deg;
+							float spread = sh->pattern.spread_deg;
+							switch (sh->pattern.type) {
+								case ENEMY_SHOOT_PATTERN_SINGLE: {
+									uint32_t bit = 1u << 0;
+									if ((e->enemy_shoot_fired_mask & bit) == 0u) {
+										(void)enemy_spawn_projectile(es, e, sh->projectile_def_index, aim_yaw, player_body, sh->autoaim);
+										e->enemy_shoot_fired_mask |= bit;
+									}
+								} break;
+								case ENEMY_SHOOT_PATTERN_THREE_SPREAD: {
+									uint32_t bits = (1u << 0) | (1u << 1) | (1u << 2);
+									if ((e->enemy_shoot_fired_mask & bits) != bits) {
+										(void)enemy_spawn_projectile(es, e, sh->projectile_def_index, aim_yaw, player_body, sh->autoaim);
+										(void)enemy_spawn_projectile(es, e, sh->projectile_def_index, aim_yaw - spread, player_body, sh->autoaim);
+										(void)enemy_spawn_projectile(es, e, sh->projectile_def_index, aim_yaw + spread, player_body, sh->autoaim);
+										e->enemy_shoot_fired_mask |= bits;
+									}
+								} break;
+								case ENEMY_SHOOT_PATTERN_TRIPLE_TAP: {
+									float si = sh->pattern.shot_interval_s;
+									for (int si_i = 0; si_i < 3; si_i++) {
+										float st = (float)si_i * si;
+										uint32_t bit = 1u << (uint32_t)si_i;
+										if (t_rel >= st && (e->enemy_shoot_fired_mask & bit) == 0u) {
+											(void)enemy_spawn_projectile(es, e, sh->projectile_def_index, aim_yaw, player_body, sh->autoaim);
+											e->enemy_shoot_fired_mask |= bit;
+										}
+									}
+								} break;
+								case ENEMY_SHOOT_PATTERN_FIVE_OSC_SPREAD: {
+									float si = sh->pattern.shot_interval_s;
+									const float offs[5] = {-spread, 0.0f, spread, 0.0f, -spread};
+									for (int si_i = 0; si_i < 5; si_i++) {
+										float st = (float)si_i * si;
+										uint32_t bit = 1u << (uint32_t)si_i;
+										if (t_rel >= st && (e->enemy_shoot_fired_mask & bit) == 0u) {
+											(void)enemy_spawn_projectile(es, e, sh->projectile_def_index, aim_yaw + offs[si_i], player_body, sh->autoaim);
+											e->enemy_shoot_fired_mask |= bit;
+										}
+									}
+								} break;
+								case ENEMY_SHOOT_PATTERN_RADIAL: {
+									uint32_t bits = 0u;
+									for (int ri = 0; ri < 6; ri++) {
+										bits |= 1u << (uint32_t)ri;
+									}
+									if ((e->enemy_shoot_fired_mask & bits) != bits) {
+										for (int ri = 0; ri < 6; ri++) {
+											float yaw = e->yaw_deg + (float)ri * (360.0f / 6.0f);
+											(void)enemy_spawn_projectile(es, e, sh->projectile_def_index, yaw, NULL, false);
+										}
+										e->enemy_shoot_fired_mask |= bits;
+									}
+								} break;
+								case ENEMY_SHOOT_PATTERN_RADIAL_OSC: {
+									float gi = sh->pattern.group_interval_s;
+									for (int g = 0; g < 3; g++) {
+										float gt = (float)g * gi;
+										if (t_rel < gt) {
+											continue;
+										}
+										float base_yaw = e->yaw_deg + (float)g * sh->pattern.angle_step_deg;
+										for (int ri = 0; ri < 6; ri++) {
+											int shot_idx = g * 6 + ri;
+											uint32_t bit = 1u << (uint32_t)shot_idx;
+											if ((e->enemy_shoot_fired_mask & bit) != 0u) {
+												continue;
+											}
+											float yaw = base_yaw + (float)ri * (360.0f / 6.0f);
+											(void)enemy_spawn_projectile(es, e, sh->projectile_def_index, yaw, NULL, false);
+											e->enemy_shoot_fired_mask |= bit;
+										}
+									}
+								} break;
+								default: break;
+							}
+						}
+					}
+
+					// Exit ATTACK after the longest configured cooldown.
+					float exit_t = 0.0f;
+					if (melee_b) {
+						exit_t = fmaxf2(exit_t, melee_b->u.melee.cooldown_s);
+					}
+					if (shoot_b) {
+						exit_t = fmaxf2(exit_t, shoot_b->u.shoot.cooldown_s);
+					}
+					exit_t = fmaxf2(exit_t, ed->attack_cooldown_s);
+					if (e->state_time >= exit_t) {
+						e->state = ENTITY_STATE_ENGAGED;
+						e->state_time = 0.0f;
+						e->attack_has_hit = false;
+						e->enemy_shoot_fired_mask = 0u;
+					}
+					entity_light_update_pos(es, e);
+					continue;
 				}
-				entity_light_update_pos(es, e);
-				continue;
 			}
 		}
 	}
