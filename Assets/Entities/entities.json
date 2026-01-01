@@ -82,7 +82,7 @@
       "light": {
         "radius": 8.0,
         "intensity": 1.0,
-        "color": "#FFD24A",
+        "color": "#9f6be4",
         "flicker": "none"
       },
       "particles": {
@@ -93,13 +93,13 @@
         "start": {
           "opacity": 0.8,
           "size": 0.06,
-          "color": {"value": "#FFD24A"},
+          "color": {"value": "#9f6be4"},
           "offset": {"x": 0.0, "y": 0.0, "z": 0.0}
         },
         "end": {
           "opacity": 0.0,
           "size": 0.22,
-          "color": {"value": "#777777"},
+          "color": {"value": "#05c2d5"},
           "offset": {"x": 0.0, "y": 0.0, "z": 0.18}
         }
       },
