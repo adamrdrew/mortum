@@ -625,9 +625,15 @@ Event types and their semantics:
   - `entity = dead target`, `other = source`, `def_id/kind = target’s def/kind`.
 
 - `ENTITY_EVENT_PLAYER_DAMAGE`
-  - Emitted by enemies during the attack state when the windup completes and the player is in range.
-  - `entity = enemy id`, `def_id/kind = enemy def`, `amount = attack_damage`.
-  - `x,y = player position`.
+  - Emitted when the player takes damage.
+  - Sources:
+    - Enemy melee: emitted by enemies during the attack state when the windup completes and the player is in range.
+    - Enemy-fired projectiles: emitted when a projectile owned by an enemy overlaps the player.
+  - Payload:
+    - `entity = source id` (enemy id for melee; projectile id for projectile hits)
+    - `def_id/kind = source def/kind` (enemy or projectile)
+    - `amount = damage`
+    - `x,y = player position`
 
 ## Tick Behavior by Kind (Exact)
 
@@ -652,7 +658,12 @@ Pass 1:
 - On collision, emits `ENTITY_EVENT_PROJECTILE_HIT_WALL` and requests despawn.
 
 Pass 2:
-- If `damage > 0`, checks overlaps against nearby entities:
+- If `damage > 0`, checks overlaps against nearby entities.
+- Additionally, if `owner` resolves to an enemy, checks overlap against the player (the player is not an entity):
+  - Requires both XY circle overlap and Z overlap of the vertical intervals.
+  - If the projectile and player are in different sectors, requires solid-wall line-of-sight (portal walls do not block).
+  - Emits `ENTITY_EVENT_PLAYER_DAMAGE` and requests despawn.
+- Entity overlap checks:
   - Queries nearby candidates using the spatial hash.
   - Skips:
     - itself

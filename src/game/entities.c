@@ -3337,6 +3337,56 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			continue;
 		}
 		if (def->kind == ENTITY_KIND_PROJECTILE && def->u.projectile.damage > 0) {
+			// Enemy-fired projectiles can damage the player (player is not an entity).
+			bool damages_player = false;
+			if (!entity_id_is_none(e->owner)) {
+				Entity* owner = NULL;
+				if (entity_system_resolve(es, e->owner, &owner)) {
+					const EntityDef* odef = &es->defs->defs[owner->def_id];
+					if (odef->kind == ENTITY_KIND_ENEMY) {
+						damages_player = true;
+					}
+				}
+			}
+			if (damages_player) {
+				// Allow cross-sector hits only with LOS (matches entity-vs-entity projectile rules).
+				if (player_body->sector != e->body.sector) {
+					if (player_body->sector >= 0 && e->body.sector >= 0) {
+						if (!collision_line_of_sight(es->world, e->body.x, e->body.y, player_body->x, player_body->y)) {
+							damages_player = false;
+						}
+					} else {
+						damages_player = false;
+					}
+				}
+			}
+			if (damages_player) {
+				float dx = player_body->x - e->body.x;
+				float dy = player_body->y - e->body.y;
+				float rr = player_body->radius + e->body.radius;
+				if (dx * dx + dy * dy <= rr * rr) {
+					float pz0 = player_body->z;
+					float pz1 = player_body->z + player_body->height;
+					float ez0 = e->body.z;
+					float ez1 = e->body.z + e->body.height;
+					if (!(ez1 < pz0 || pz1 < ez0)) {
+						EntityEvent ev;
+						memset(&ev, 0, sizeof(ev));
+						ev.type = ENTITY_EVENT_PLAYER_DAMAGE;
+						ev.entity = e->id;
+						ev.other = entity_id_none();
+						ev.def_id = e->def_id;
+						ev.kind = def->kind;
+						ev.x = player_body->x;
+						ev.y = player_body->y;
+						ev.amount = def->u.projectile.damage;
+						entity_event_push(es, ev);
+						entity_system_request_despawn(es, e->id);
+						continue;
+					}
+				}
+			}
+
 			// Query nearby candidates (2D) and then do exact checks.
 			uint32_t cand[64];
 			uint32_t cand_count = spatial_query_circle_indices(es, e->body.x, e->body.y, e->body.radius + 1.0f, cand, (uint32_t)MORTUM_ARRAY_COUNT(cand));

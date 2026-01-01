@@ -1039,6 +1039,24 @@ int main(int argc, char** argv) {
 							} break;
 
 							case ENTITY_EVENT_PLAYER_DAMAGE: {
+								// If a projectile hit the player, reuse its impact sound at the hit location.
+								if (ev->kind == ENTITY_KIND_PROJECTILE) {
+									const EntityDef* def = &entity_defs.defs[ev->def_id];
+									if (def->u.projectile.impact_sound[0] != '\0') {
+										sound_emitters_play_one_shot_at(
+											&sfx_emitters,
+											def->u.projectile.impact_sound,
+											ev->x,
+											ev->y,
+											true,
+											def->u.projectile.impact_sound_gain,
+											player.body.x,
+											player.body.y
+										);
+									}
+									// Despawn already requested by entity tick, but request again is harmless.
+									entity_system_request_despawn(&entities, ev->entity);
+								}
 								if (ev->amount > 0) {
 									player.health -= ev->amount;
 									if (player.health < 0) {
