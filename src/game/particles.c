@@ -184,10 +184,22 @@ static inline float deg_to_rad2(float deg) {
 }
 
 static float camera_world_z_for_sector_approx2(const World* world, int sector, float z_offset) {
+	// Keep in sync with entity sprite and raycaster camera Z conventions.
+	const float eye_height = 1.5f;
+	const float headroom = 0.1f;
 	if (!world || (unsigned)sector >= (unsigned)world->sector_count) {
-		return z_offset;
+		return eye_height + z_offset;
 	}
-	return world->sectors[sector].floor_z + z_offset;
+	const Sector* s = &world->sectors[sector];
+	float z = s->floor_z + eye_height + z_offset;
+	float z_max = s->ceil_z - headroom;
+	if (z > z_max) {
+		z = z_max;
+	}
+	if (z < s->floor_z + headroom) {
+		z = s->floor_z + headroom;
+	}
+	return z;
 }
 
 void particles_draw(

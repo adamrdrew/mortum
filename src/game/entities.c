@@ -15,6 +15,45 @@
 #include <stdlib.h>
 #include <string.h>
 
+static float entity_sprite_height_world(const EntityDef* def) {
+	if (!def) {
+		return 0.0f;
+	}
+	int frame_h = def->sprite.frames.height > 0 ? def->sprite.frames.height : def->sprite.file.height;
+	if (frame_h <= 0) {
+		frame_h = 64;
+	}
+	float sprite_h_world = ((float)frame_h / 64.0f) * def->sprite.scale;
+	if (sprite_h_world < 0.0f) {
+		sprite_h_world = 0.0f;
+	}
+	return sprite_h_world;
+}
+
+static float entity_particles_anchor_z(const EntitySystem* es, const Entity* e) {
+	if (!e) {
+		return 0.0f;
+	}
+	// Fallback: physical center.
+	float z_center_body = e->body.z + 0.5f * e->body.height;
+	if (!es || !es->defs || !es->defs->defs) {
+		return z_center_body;
+	}
+	uint32_t def_id = (uint32_t)e->def_id;
+	if (def_id >= es->defs->count) {
+		return z_center_body;
+	}
+	const EntityDef* def = &es->defs->defs[def_id];
+
+	// Match sprite draw convention: sprite base is at (feet_z + z_offset_world).
+	float sprite_h_world = entity_sprite_height_world(def);
+	if (sprite_h_world <= 1.0e-6f) {
+		return z_center_body;
+	}
+	float z_offset_world = def->sprite.z_offset / 64.0f;
+	return e->body.z + z_offset_world + 0.5f * sprite_h_world;
+}
+
 static bool json_get_float2(const JsonDoc* doc, int tok, float* out);
 static bool json_get_int2(const JsonDoc* doc, int tok, int* out);
 static bool json_get_bool2(const JsonDoc* doc, int tok, bool* out);
@@ -321,7 +360,7 @@ static void entity_particles_update_pos(EntitySystem* es, const Entity* e) {
 	if (e->particle_emitter.generation == 0u) {
 		return;
 	}
-	float zc = e->body.z + 0.5f * e->body.height;
+	float zc = entity_particles_anchor_z(es, e);
 	particle_emitter_set_pos(es->particle_emitters, es->world, e->particle_emitter, e->body.x, e->body.y, zc);
 }
 
@@ -2305,7 +2344,7 @@ bool entity_system_particles_attach(EntitySystem* es, EntityId id, const Particl
 	// Replace any existing emitter.
 	entity_particles_detach_ptr(es, e);
 
-	float zc = e->body.z + 0.5f * e->body.height;
+	float zc = entity_particles_anchor_z(es, e);
 	ParticleEmitterId pid = particle_emitter_create(es->particle_emitters, es->world, e->body.x, e->body.y, zc, emitter_def);
 	if (pid.generation == 0u) {
 		return false;

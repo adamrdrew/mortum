@@ -402,7 +402,7 @@ Example:
 Entities can optionally own **one** particle emitter that:
 
 - Is **spawned from an entity def** (`Assets/Entities/entities.json`) or attached via code.
-- Is always centered on the entity (position in defs is ignored).
+- Is always centered on the entity sprite's visual center (position in defs is ignored).
 - **Follows the entity** as it moves.
 - Is **destroyed** when the entity dies or is despawned/removed.
 - Does **not** destroy existing particles when removed (particles are world-owned and run to completion).
@@ -419,7 +419,7 @@ Relevant API/data:
 Lifecycle rules (implementation truth):
 
 - Spawn: if the entity def includes a valid `particles` object, an emitter is attached during `entity_system_spawn()`.
-- Tick: any attached particle emitters are re-centered on the entity at the end of `entity_system_tick()`.
+- Tick: any attached particle emitters are re-centered on the entity sprite's visual center at the end of `entity_system_tick()`.
 - Death: `entity_system_tick()` detaches particle emitters when it performs the transition into `ENTITY_STATE_DYING` due to `hp <= 0`.
   - Important edge case: if gameplay code sets `state = ENTITY_STATE_DYING` directly, the tick code will **not** run the “detach on death transition” branch. In that case, attached emitters persist through the dying/dead timers, but will still be cleaned up when the entity is despawned.
 - Despawn/removal/reset/shutdown: emitters are detached/destroyed immediately and also defensively during slot free/reset/shutdown.

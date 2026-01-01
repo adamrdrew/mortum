@@ -522,6 +522,7 @@ Spawn cadence details:
 From [src/game/particles.c](../src/game/particles.c):
 
 - `particles_draw(...)` draws all alive particles as billboard-style sprites/shapes.
+- Camera convention: particle vertical projection uses the same camera world-Z convention as entity sprites/raycaster (eye-height + headroom clamping), so particles don't appear vertically offset relative to sprites.
 - Occlusion matches the entity sprite path:
   - `wall_depth[x]` prevents drawing behind solid walls in a screen column.
   - `depth_pixels[y*width + x]` prevents drawing behind already-rendered world pixels (walls + floors + ceilings).

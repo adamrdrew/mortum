@@ -414,7 +414,7 @@ void entity_system_light_detach(EntitySystem* es, EntityId id);
 bool entity_system_light_set_radius(EntitySystem* es, EntityId id, float radius);
 
 // Entity-attached particle emitter (one per entity).
-// These emitters are owned by a ParticleEmitters pool and automatically track the entity center.
+// These emitters are owned by a ParticleEmitters pool and automatically track the entity sprite's visual center.
 // Attaching replaces any existing entity particle emitter.
 bool entity_system_particles_attach(EntitySystem* es, EntityId id, const ParticleEmitterDef* emitter_def);
 void entity_system_particles_detach(EntitySystem* es, EntityId id);
