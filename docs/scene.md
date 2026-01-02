@@ -91,6 +91,8 @@ A Scene must define at least one end condition. The loader refuses to run a scen
 - `any_key` (bool, optional): if true, any non-repeated keypress triggers exit.
 - `key` (string, optional): specific key to end on, using SDL scancode names (e.g. `"Space"`, `"Return"`, `"Escape"`).
 
+Note: by default, `"Escape"` is also used to release mouse capture. If mouse capture is engaged, the first Escape press releases the mouse and is consumed; press Escape again to trigger a scene end condition that is bound to Escape.
+
 Validation rules:
 
 - At least one of:

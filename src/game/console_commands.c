@@ -545,8 +545,18 @@ static bool cmd_config_reload(Console* con, int argc, const char** argv, void* u
 	}
 	refresh_runtime_audio(ctx);
 	if (ctx->win && ctx->cfg && *ctx->cfg) {
-		SDL_SetWindowGrab(ctx->win->window, (*ctx->cfg)->window.grab_mouse ? SDL_TRUE : SDL_FALSE);
-		SDL_SetRelativeMouseMode((*ctx->cfg)->window.relative_mouse ? SDL_TRUE : SDL_FALSE);
+		bool should_apply = true;
+		if (ctx->mouse_captured) {
+			should_apply = *ctx->mouse_captured;
+		}
+		if (should_apply) {
+			SDL_SetWindowGrab(ctx->win->window, (*ctx->cfg)->window.grab_mouse ? SDL_TRUE : SDL_FALSE);
+			SDL_SetRelativeMouseMode((*ctx->cfg)->window.relative_mouse ? SDL_TRUE : SDL_FALSE);
+			SDL_ShowCursor(SDL_DISABLE);
+		} else {
+			// Keep released state; do not re-capture on reload.
+			SDL_ShowCursor(SDL_ENABLE);
+		}
 	}
 	console_print(con, "OK");
 	console_print(con, "Some config changes are startup-only (window size, internal resolution, vsync, SFX device params, UI font)");

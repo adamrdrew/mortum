@@ -59,6 +59,8 @@ static CoreConfig g_cfg = {
 		},
 	},
 	.input = {
+		.open_main_menu = SDL_SCANCODE_TAB,
+		.release_mouse = SDL_SCANCODE_ESCAPE,
 		.forward_primary = SDL_SCANCODE_W,
 		.forward_secondary = SDL_SCANCODE_UP,
 		.back_primary = SDL_SCANCODE_S,
@@ -869,6 +871,8 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 						ok = false;
 					} else {
 						static const char* const allowed_bind[] = {
+							"open_main_menu",
+							"release_mouse",
 							"forward",
 							"back",
 							"left",
@@ -921,6 +925,8 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 						PARSE_BIND2(dash, "dash");
 						PARSE_BIND2(action, "action");
 						PARSE_BIND2(use, "use");
+						PARSE_BIND1(open_main_menu, "open_main_menu");
+						PARSE_BIND1(release_mouse, "release_mouse");
 						PARSE_BIND1(weapon_slot_1, "weapon_slot_1");
 						PARSE_BIND1(weapon_slot_2, "weapon_slot_2");
 						PARSE_BIND1(weapon_slot_3, "weapon_slot_3");
@@ -1629,6 +1635,8 @@ CoreConfigSetStatus core_config_try_set_by_path(
 		BIND2("dash", dash_primary, dash_secondary);
 		BIND2("action", action_primary, action_secondary);
 		BIND2("use", use_primary, use_secondary);
+		BIND1("open_main_menu", open_main_menu);
+		BIND1("release_mouse", release_mouse);
 		BIND1("weapon_slot_1", weapon_slot_1);
 		BIND1("weapon_slot_2", weapon_slot_2);
 		BIND1("weapon_slot_3", weapon_slot_3);

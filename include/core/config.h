@@ -12,6 +12,14 @@ typedef enum ConfigLoadMode {
 
 typedef struct InputBindingsConfig {
 	// Each action can have a primary/secondary scancode.
+	//
+	// open_main_menu is a single scancode used to open/dismiss the main menu.
+	// (Default: Tab)
+	int open_main_menu;
+	//
+	// release_mouse is a single scancode used to release mouse capture.
+	// (Default: Escape)
+	int release_mouse;
 	int forward_primary;
 	int forward_secondary;
 	int back_primary;

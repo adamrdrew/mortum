@@ -7,7 +7,7 @@ This document describes Mortum’s Menu system as implemented in the engine (C),
 - Loader validation rules and common failure modes
 - Input behavior and screen lifecycle
 - Timeline integration (event kind: `menu`)
-- Pause-menu integration (ESC during gameplay)
+- Pause-menu integration (Escape during gameplay)
 
 Source-of-truth for behavior is the engine code, primarily:
 
@@ -400,6 +400,8 @@ The engine opens `Assets/Menus/pause_menu.json` when:
 - no other screen is active,
 - the console is closed,
 - and Escape is pressed (edge-detected).
+
+Note: by default, Escape is also `input.bindings.release_mouse`. When mouse capture is currently engaged, pressing Escape first releases the mouse; pressing Escape again (with mouse released) will open the pause menu.
 
 This creates a MenuScreen with:
 

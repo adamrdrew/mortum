@@ -217,6 +217,49 @@ static bool key_down2(const Input* in, int primary, int secondary) {
 	return input_key_down(in, primary) || input_key_down(in, secondary);
 }
 
+static bool key_pressed_no_repeat(const Input* in, int scancode) {
+	if (!in) {
+		return false;
+	}
+	for (int i = 0; i < in->key_event_count; i++) {
+		if (in->key_events[i].scancode == scancode && !in->key_events[i].repeat) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void consume_key(Input* in, int scancode) {
+	if (!in || scancode < 0 || scancode >= (int)(sizeof(in->keys_down) / sizeof(in->keys_down[0]))) {
+		return;
+	}
+	// Prevent "held" semantics from leaking into the rest of the frame.
+	in->keys_down[scancode] = false;
+	// Remove any discrete KEYDOWN events for this scancode from this frame.
+	int w = 0;
+	for (int r = 0; r < in->key_event_count; r++) {
+		if (in->key_events[r].scancode != scancode) {
+			in->key_events[w++] = in->key_events[r];
+		}
+	}
+	in->key_event_count = w;
+}
+
+static void set_mouse_capture(Window* win, const CoreConfig* cfg, bool captured) {
+	if (!win || !win->window) {
+		return;
+	}
+	if (captured) {
+		SDL_SetWindowGrab(win->window, (cfg && cfg->window.grab_mouse) ? SDL_TRUE : SDL_FALSE);
+		SDL_SetRelativeMouseMode((cfg && cfg->window.relative_mouse) ? SDL_TRUE : SDL_FALSE);
+		SDL_ShowCursor(SDL_DISABLE);
+	} else {
+		SDL_SetWindowGrab(win->window, SDL_FALSE);
+		SDL_SetRelativeMouseMode(SDL_FALSE);
+		SDL_ShowCursor(SDL_ENABLE);
+	}
+}
+
 static PlayerControllerInput gather_controls(const Input* in, const InputBindingsConfig* bind) {
 	PlayerControllerInput ci;
 	if (!bind) {
@@ -364,8 +407,10 @@ int main(int argc, char** argv) {
 
 	// Capture the mouse for FPS-style turning.
 	// Relative mouse mode keeps the cursor from leaving the window and provides deltas.
-	SDL_SetWindowGrab(win.window, cfg->window.grab_mouse ? SDL_TRUE : SDL_FALSE);
-	SDL_SetRelativeMouseMode(cfg->window.relative_mouse ? SDL_TRUE : SDL_FALSE);
+	set_mouse_capture(&win, cfg, cfg->window.grab_mouse || cfg->window.relative_mouse);
+	bool mouse_captured = cfg->window.grab_mouse || cfg->window.relative_mouse;
+	bool suppress_fire_until_release = false;
+	Screen* tab_menu_screen = NULL;
 
 	Framebuffer fb;
 	if (!framebuffer_init(&fb, cfg->render.internal_width, cfg->render.internal_height)) {
@@ -566,6 +611,7 @@ int main(int argc, char** argv) {
 	console_ctx.config_path = config_path;
 	console_ctx.paths = &paths;
 	console_ctx.win = &win;
+	console_ctx.mouse_captured = &mouse_captured;
 	console_ctx.texreg = &texreg;
 	console_ctx.hud = &hud;
 	console_ctx.cfg = &cfg;
@@ -665,6 +711,7 @@ int main(int argc, char** argv) {
 	bool e_prev_down = false;
 	bool esc_prev_down = false;
 	bool win_prev = false;
+	uint32_t mouse_prev_buttons = 0u;
 	double particle_ms_remainder = 0.0;
 
 
@@ -693,6 +740,8 @@ int main(int argc, char** argv) {
 
 		input_begin_frame(&in);
 		input_poll(&in);
+		uint32_t mouse_pressed = in.mouse_buttons & ~mouse_prev_buttons;
+		mouse_prev_buttons = in.mouse_buttons;
 		// Toggle console with tilde / grave.
 		if (input_key_pressed(&in, SDL_SCANCODE_GRAVE)) {
 			console_set_open(&console, !console_is_open(&console));
@@ -706,6 +755,10 @@ int main(int argc, char** argv) {
 		}
 
 		bool screen_active = screen_runtime_is_active(&screens);
+		if (tab_menu_screen && (!screen_active || screens.active != tab_menu_screen)) {
+			// The screen was closed or replaced (e.g. via menu action).
+			tab_menu_screen = NULL;
+		}
 		if (screen_active) {
 			crash_diag_set_phase(PHASE_BOOT_SCENES_RUNNING);
 			// Post-FX is gameplay-only; never persist into menus/scenes.
@@ -717,11 +770,86 @@ int main(int argc, char** argv) {
 				midi_stop();
 			}
 		}
+		// Mouse capture control:
+		// - When captured: pressing input.bindings.release_mouse releases to the OS.
+		// - When released: clicking in the window recaptures.
+		bool released_this_frame = false;
+		int release_sc = cfg ? cfg->input.release_mouse : (int)SDL_SCANCODE_ESCAPE;
+		if (mouse_captured && release_sc != (int)SDL_SCANCODE_UNKNOWN && key_pressed_no_repeat(&in, release_sc)) {
+			set_mouse_capture(&win, cfg, false);
+			mouse_captured = false;
+			released_this_frame = true;
+			consume_key(&in, release_sc);
+		}
+		bool recaptured_this_frame = false;
+		bool click_pressed = (mouse_pressed & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0u;
+		if (!mouse_captured && click_pressed) {
+			set_mouse_capture(&win, cfg, true);
+			mouse_captured = true;
+			recaptured_this_frame = true;
+			// Consume this click so it never triggers gameplay/UI actions.
+			in.mouse_buttons &= ~SDL_BUTTON(SDL_BUTTON_LEFT);
+			// If the user is holding the button down while capturing, avoid firing until it is released.
+			suppress_fire_until_release = true;
+		}
+		if (suppress_fire_until_release && (in.mouse_buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) == 0u) {
+			suppress_fire_until_release = false;
+		}
+
+		// Main menu toggle: input.bindings.open_main_menu opens/dismisses the main menu.
+		int menu_sc = cfg ? cfg->input.open_main_menu : (int)SDL_SCANCODE_TAB;
+		if (!console_open && menu_sc != (int)SDL_SCANCODE_UNKNOWN && key_pressed_no_repeat(&in, menu_sc)) {
+			if (screen_active && tab_menu_screen && screens.active == tab_menu_screen) {
+				ScreenContext sctx;
+				memset(&sctx, 0, sizeof(sctx));
+				sctx.preserve_midi_on_exit = false;
+				sctx.fb = &fb;
+				sctx.in = &in;
+				sctx.paths = &paths;
+				sctx.allow_input = true;
+				sctx.audio_enabled = audio_enabled;
+				sctx.music_enabled = music_enabled;
+				screen_runtime_set(&screens, NULL, &sctx);
+				tab_menu_screen = NULL;
+				consume_key(&in, menu_sc);
+				// Refresh screen_active after closing.
+				screen_active = screen_runtime_is_active(&screens);
+			} else if (!screen_active) {
+				MenuAsset main_menu;
+				if (!menu_load(&main_menu, &paths, "main_menu.json")) {
+					log_warn("Failed to load main menu: main_menu.json");
+				} else {
+					Screen* scr = menu_screen_create(main_menu, false, &console_ctx);
+					if (!scr) {
+						log_warn("Failed to create main menu screen");
+						menu_asset_destroy(&main_menu);
+					} else {
+						log_info_s("menu", "Opening main menu via TAB");
+						ScreenContext sctx;
+						memset(&sctx, 0, sizeof(sctx));
+						sctx.preserve_midi_on_exit = false;
+						sctx.fb = &fb;
+						sctx.in = &in;
+						sctx.paths = &paths;
+						sctx.allow_input = true;
+						sctx.audio_enabled = audio_enabled;
+						sctx.music_enabled = music_enabled;
+						screen_runtime_set(&screens, scr, &sctx);
+						tab_menu_screen = scr;
+						consume_key(&in, menu_sc);
+					}
+				}
+				// Refresh screen_active after opening.
+				screen_active = screen_runtime_is_active(&screens);
+			}
+		}
+
 		// Pause menu toggle: during gameplay, Escape opens a menu screen.
 		bool esc_down = (!console_open) && input_key_down(&in, SDL_SCANCODE_ESCAPE);
 		bool esc_pressed = esc_down && !esc_prev_down;
 		esc_prev_down = esc_down;
-		if (running && !console_open && !screen_active && map_ok && esc_pressed) {
+		bool suppress_pause_menu = released_this_frame && (release_sc == (int)SDL_SCANCODE_ESCAPE);
+		if (running && !console_open && !screen_active && map_ok && esc_pressed && !suppress_pause_menu) {
 			MenuAsset pause_menu;
 			if (!menu_load(&pause_menu, &paths, "pause_menu.json")) {
 				log_warn("Failed to load pause menu: pause_menu.json");
@@ -750,10 +878,10 @@ int main(int argc, char** argv) {
 
 		bool allow_game_input = !console_open;
 		PlayerControllerInput ci = allow_game_input ? gather_controls(&in, &cfg->input) : (PlayerControllerInput){0};
-		if (!allow_game_input) {
+		if (!allow_game_input || !mouse_captured) {
 			ci.mouse_dx = 0.0f;
 		}
-		bool fire_down = allow_game_input ? gather_fire(&in) : false;
+		bool fire_down = (allow_game_input && mouse_captured && !recaptured_this_frame && !suppress_fire_until_release) ? gather_fire(&in) : false;
 		uint8_t weapon_select_mask = 0;
 		if (allow_game_input && input_key_down(&in, cfg->input.weapon_slot_1)) {
 			weapon_select_mask |= 1u << 0;
@@ -828,6 +956,10 @@ int main(int argc, char** argv) {
 				ui_t0 = update_t1;
 			}
 			screen_runtime_draw(&screens, &sctx);
+			if (completed && tab_menu_screen) {
+				// If the active screen completed (e.g. ESC in menu), clear Tab-toggle state.
+				tab_menu_screen = NULL;
+			}
 			if (show_fps) {
 				char fps_text[32];
 				snprintf(fps_text, sizeof(fps_text), "FPS: %d", fps);

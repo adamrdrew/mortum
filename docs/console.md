@@ -16,7 +16,7 @@ This document describes:
 - Output is a fixed-size ring buffer; old lines drop off.
 - Console opacity is tunable via `console_opacity` in config.json (default 0.9) and can be changed live with the `config_change` command.
 - Gameplay input is disabled while the console is open.
-- Escape does **not** close the console (Escape is reserved for quitting when the console is closed).
+- Escape does **not** close the console (Escape is reserved by default for releasing mouse capture when the console is closed).
 - Close the console via the `exit` command, the `--close` flag, or the toggle key.
 
 Keyboard behavior (when console is open):

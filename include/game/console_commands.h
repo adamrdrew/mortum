@@ -44,6 +44,9 @@ typedef struct ConsoleCommandContext {
 
 	AssetPaths* paths;
 	Window* win;
+	// If non-NULL, indicates whether the main loop currently has mouse capture engaged.
+	// Used to avoid re-capturing the mouse during config reload.
+	bool* mouse_captured;
 	TextureRegistry* texreg;
 	HudSystem* hud;
 

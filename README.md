@@ -65,6 +65,8 @@ Notes:
 | `audio.sfx_device_freq` | int | `48000` | Startup-only | Range: `[8000..192000]` |
 | `audio.sfx_device_buffer_samples` | int | `1024` | Startup-only | Range: `[128..8192]` |
 | `content.boot_timeline` | string | `"boot.json"` | Startup-only | Must exist in `Assets/Timelines/` |
+| `input.bindings.open_main_menu` | key | `"Tab"` | Reloadable | Toggle main menu |
+| `input.bindings.release_mouse` | key | `"Escape"` | Reloadable | Releases mouse capture (recapture by clicking in-window) |
 | `input.bindings.forward` | key or `[key,key]` | `["W","Up"]` | Reloadable | Move forward |
 | `input.bindings.back` | key or `[key,key]` | `["S","Down"]` | Reloadable | Move back |
 | `input.bindings.left` | key or `[key,key]` | `"A"` | Reloadable | Strafe left |

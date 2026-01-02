@@ -46,6 +46,8 @@
   },
   "input": {
     "bindings": {
+      "open_main_menu": "Tab",
+      "release_mouse": "Escape",
       "forward": ["W", "Up"],
       "back": ["S", "Down"],
       "left": "A",

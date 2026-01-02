@@ -70,6 +70,12 @@ Related:
 - `config_reload` attempts to re-load the active config file from disk using `CONFIG_LOAD_RELOAD`.
 - `config_change` mutates a single config key in-memory (validated and type-checked) without re-reading the file.
 
+## Mouse capture + menus
+
+- Mouse capture can be released at runtime via `input.bindings.release_mouse` (default: `"Escape"`).
+- When mouse capture is released, clicking in the window recaptures.
+- The main menu can be toggled via `input.bindings.open_main_menu` (default: `"Tab"`).
+
 ## JSON parsing / tokenization
 
 Mortum uses JSMN via the helper wrapper:
