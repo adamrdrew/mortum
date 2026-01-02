@@ -92,6 +92,18 @@ static bool validate_timeline_content_depth(const AssetPaths* paths, const Entit
 		return false;
 	}
 
+	// Optional root-level pause menu.
+	if (tl.pause_menu && tl.pause_menu[0] != '\0') {
+		MenuAsset menu;
+		log_info("Validating timeline pause_menu: %s", tl.pause_menu);
+		if (!menu_load(&menu, paths, tl.pause_menu)) {
+			log_error("Failed to load timeline pause_menu: %s", tl.pause_menu);
+			timeline_destroy(&tl);
+			return false;
+		}
+		menu_asset_destroy(&menu);
+	}
+
 	bool ok = true;
 	for (int i = 0; i < tl.event_count; i++) {
 		TimelineEvent* ev = &tl.events[i];
