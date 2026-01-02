@@ -158,6 +158,7 @@ Maps are JSON objects. `map_load()` requires specific fields and is strict.
 ### File location and name
 
 - Loaded from `Assets/Levels/<map_filename>` via `asset_path_join(paths, "Levels", map_filename)`.
+- `map_filename` must be a **safe relative path** (no absolute paths, no `..` traversal) and must end with `.json` (case-insensitive); otherwise `map_load()` fails.
 - Many filenames are copied into fixed `char[64]` buffers. In practice, keep filenames **≤ 63 bytes**.
 
 ### Top-level object
@@ -177,6 +178,10 @@ Maps are JSON objects. `map_load()` requires specific fields and is strict.
   - Default if missing: `"hl4mgm.sf2"`.
 - `sky` (string): sky panorama filename under `Assets/Images/Sky/`.
   - Default if missing: empty string.
+
+Type note (optional strings):
+
+- If `bgmusic`/`soundfont`/`sky` are present but not JSON strings, the loader does not fail the map; the value is effectively ignored (so the field behaves like “missing”).
 - `lights` (array): point lights (see below)
 - `sounds` (array): map-authored sound emitters
 - `particles` (array): map-authored particle emitters
@@ -184,7 +189,9 @@ Maps are JSON objects. `map_load()` requires specific fields and is strict.
 
 #### Permitted-but-ignored fields
 
-These may exist in older maps or tools; loader ignores them:
+The loader ignores unknown/unread fields (it only reads the keys it knows about).
+
+These are common examples you may see in older maps or tools; the loader ignores them:
 
 - `version` (number)
 - `name` (string)
@@ -206,8 +213,12 @@ Object fields:
 Rules:
 
 - `(x,y)` must be inside at least one sector.
-- `map_validate()` requires **the spawn sector is reachable** from the portal graph.
+- `map_validate()` requires the start sector exists (contains the point), and then enforces the **contiguity rule**: every sector must be reachable from the start sector via portal adjacency.
 - At runtime spawn selection may choose the “best” sector if multiple overlap (see “Overlapping sectors”).
+
+Note on overlap:
+
+- The validator and most runtime lookups treat “sector at point” as “the first sector index whose containment test matches”. They do **not** require the point to be inside exactly one sector.
 
 ---
 
@@ -341,7 +352,10 @@ Validation behavior:
 Renderer behavior:
 
 - Visibility culling + flicker modulation happens per frame.
-- There is a cap on how many point lights are considered per frame.
+- There is a cap on how many point lights are considered per frame:
+  - Visibility list is capped at 96 (`MAX_VISIBLE_LIGHTS`).
+  - After culling, per-wall shading considers up to 96 lights.
+  - Floor/ceiling shading considers up to 6 lights.
 
 ---
 
@@ -397,7 +411,7 @@ Optional:
 - `offset` (object): `{ "x": number, "y": number, "z": number }`
 - `color` (object):
   - `value` (string hex `RRGGBB` or `#RRGGBB`)
-  - `opacity` (number, optional; used as blend opacity for image particles)
+  - `opacity` (number, optional; used as blend opacity for image particles; default `0.0`)
 
 `rotate` object:
 
@@ -410,6 +424,15 @@ Runtime behavior:
 
 - Map emitters are created with `particle_emitter_create(&particle_emitters, &world, x, y, z, &def)`.
 - Emission can be gated by line-of-sight: emitters in a different sector may only emit if there is solid-wall LOS to the player.
+
+Runtime sanitization (important for authoring):
+
+- The runtime clamps/sanitizes emitter definitions when creating the emitter:
+  - `particle_life_ms` and `emit_interval_ms` are clamped to be at least `1`.
+  - `offset_jitter` is clamped to be non-negative.
+  - Keyframe `opacity` and keyframe `color.opacity` are clamped to `[0,1]`.
+  - Keyframe `size` is clamped to be non-negative.
+  - Keyframe RGB components are clamped to `[0,1]`.
 
 ---
 
@@ -436,12 +459,13 @@ Legacy:
 
 Loader behavior:
 
-- If `def` is missing/unrecognized, the placement is preserved but marked inactive (`def_name=""`, `sector=-1`).
+- If `def` is missing, or if the legacy `type` field is present but not mapped, the placement is preserved but marked inactive (`def_name=""`, `sector=-1`).
+- The loader does not validate that `def` refers to a real entity definition; that lookup happens at runtime.
 - If `def` is present, the loader computes `sector = world_find_sector_at_point(world, x, y)` and fails the map load if the entity is not inside any sector.
 
 Runtime behavior:
 
-- `entity_system_spawn_map()` looks up each `def_name` in loaded defs and spawns entities.
+- `entity_system_spawn_map()` looks up each `def_name` in loaded defs; if the def is missing it logs a warning and skips that placement.
 
 ---
 

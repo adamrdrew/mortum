@@ -42,6 +42,9 @@ The root must be an object.
 - `sky` (string): image filename under `Assets/Images/Sky/` (or fallback locations).
 	- If missing or empty: no custom sky.
 - `lights` (array): optional point lights (see below).
+- `sounds` (array): optional map-authored sound emitters (see below).
+- `particles` (array): optional map-authored particle emitters (see below).
+- `entities` (array): optional entity placements (see below).
 
 ### Permitted-but-ignored fields
 
@@ -63,8 +66,9 @@ Object with:
 
 Hard requirements:
 
-- The point `(x,y)` **must be strictly inside exactly one reachable sector**.
-	- Avoid placing it on a wall/edge/vertex.
+- The point `(x,y)` **must be inside at least one sector**.
+	- Avoid placing it on a wall/edge/vertex (edge cases can be unstable).
+	- The engine does **not** require the point to be inside exactly one sector, but overlap makes behavior ambiguous; avoid overlap unless you understand the consequences.
 
 ## `vertices` (required)
 
@@ -161,6 +165,9 @@ Optional fields (gameplay triggers):
 - `active_tex` (string): optional alternate wall texture to display when the controlled sector is in the toggled position.
 	- When the sector is at origin, the wall displays its normal `tex`.
 
+- `toggle_sound` (string): optional WAV filename under `Assets/Sounds/Effects/`.
+- `toggle_sound_finish` (string): optional WAV filename under `Assets/Sounds/Effects/`.
+
 Hard requirements (validated):
 
 - Must contain at least **1** wall.
@@ -238,6 +245,10 @@ Each light is a **point-light emitter** that affects lighting only (no sprites/p
 - `brightness`/`intensity` must be non-negative.
 - Prefer placing lights inside a sector (the validator may warn if a light is not inside any sector).
 
+Note:
+
+- The loader clamps negative `radius` and `brightness`/`intensity` to `0` (it does not reject the map for those values), but you should still author non-negative values.
+
 ### Example
 
 ```json
@@ -262,6 +273,105 @@ The engine will reject the map if any of these fail:
 - If a wall specifies `toggle_sector_id`, it must match some sector object’s `id`.
 - `player_start` must be inside some sector.
 - **All sectors must be reachable** from the player’s starting sector by traversing portal connectivity (any wall where `back_sector != -1` creates adjacency).
+
+If you include optional arrays, they must match the engine’s expected item schema:
+
+- `lights` (if present) must be an array of objects with required fields as described above.
+- `sounds` (if present) must be an array of objects with required fields as described below.
+- `particles` (if present) must be an array of objects with required fields as described below.
+- `entities` (if present) must be an array of objects with required fields as described below.
+
+## `sounds` (optional)
+
+If present, `sounds` must be an array of objects.
+
+Each sound emitter is a definition that the runtime sound system turns into a live emitter.
+
+### Required fields
+
+- `x` (number)
+- `y` (number)
+- `sound` (string): WAV filename under `Assets/Sounds/Effects/`
+
+### Optional fields
+
+- `loop` (boolean): default `false`
+- `spatial` (boolean): default `true`
+- `gain` (number): default `1.0`, clamped to `[0,1]`
+
+## `particles` (optional)
+
+If present, `particles` must be an array of objects.
+
+Each particle emitter is a definition that the runtime particle system turns into a live emitter.
+
+### Required fields
+
+- `x` (number)
+- `y` (number)
+- `particle_life_ms` (integer)
+- `emit_interval_ms` (integer)
+- `start` (object)
+- `end` (object)
+
+### Optional fields
+
+- `z` (number): default `0`
+- `offset_jitter` (number): default `0`
+- `rotate` (object)
+- `image` (string): filename under `Assets/Images/Particles/` (no path)
+- `shape` (string): `"circle" | "square"` (used when `image` is empty)
+
+### `start` / `end` keyframes
+
+Each keyframe object must contain:
+
+- `opacity` (number)
+- `size` (number)
+- `offset` (object): `{ "x": number, "y": number, "z": number }`
+- `color` (object):
+	- `value` (string): hex `RRGGBB` or `#RRGGBB`
+	- `opacity` (number, optional, default `0.0`): blend opacity for image particles
+
+### `rotate` object
+
+- `enabled` (boolean, default `false`)
+- `tick` (object, optional):
+	- `deg` (number, default `0`)
+	- `time_ms` (integer, default `30`)
+
+Runtime note (sanitization):
+
+- The runtime clamps/sanitizes values when creating the emitter (e.g. `particle_life_ms`/`emit_interval_ms` minimum `1`, opacities clamped to `[0,1]`, sizes clamped non-negative).
+
+## `entities` (optional)
+
+If present, `entities` must be an array of objects.
+
+Each entity placement is a spawn point; the runtime entity system decides what to spawn.
+
+### Required fields
+
+- `x` (number)
+- `y` (number)
+
+### Preferred fields (current system)
+
+- `def` (string): entity definition name (resolved at runtime against `Assets/Entities/entities.json`)
+
+### Optional fields
+
+- `yaw_deg` (number): default `0`
+
+### Legacy field
+
+- `type` (string): legacy pre-entity-system field. Only limited mappings exist (currently `"pickup_health"` → `"health_pickup"`).
+
+Behavior notes:
+
+- If `def` is missing and no legacy `type` mapping applies, the placement is kept but treated as inactive by the runtime spawner.
+- If a placement has a `def`, it must be located inside some sector (otherwise the map load fails).
+- At runtime, if `def` does not exist in the loaded entity defs, it is skipped with a warning (map still loads).
 
 ## Generation checklist (do this internally before output)
 
