@@ -146,6 +146,10 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - `enable_sound_emitters <boolean>` — toggles SFX emitters
 - `enable_music <boolean>` — toggles background music
 - `full_screen <boolean>` — toggles fullscreen/windowed (no-arg form toggles)
+- `inventory_list` — lists inventory items
+- `inventory_add <string>` — adds an inventory item (no duplicates)
+- `inventory_remove <string>` — removes an inventory item
+- `inventory_contains <string>` — checks if an inventory item exists
 
 ## Console Opacity
 

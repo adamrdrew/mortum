@@ -88,7 +88,8 @@ For `kind: "pickup"`, the `pickup` object must specify exactly one of:
 ## Console Commands
 
 - `inventory_list`
-  - Prints inventory items one-per-line. Prints `[]` if empty.
+  - Prints a bracketed list. Prints `[]` if empty.
+  - When non-empty, it prints `[` then each item on its own line, then `]`.
 - `inventory_add <string>`
   - Prints `true` if newly added, else `false`.
 - `inventory_remove <string>`
