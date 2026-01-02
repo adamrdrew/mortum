@@ -5,8 +5,8 @@ This document describes Mortum’s **post-processing** (Post-FX) system as imple
 Scope and design intent:
 
 - **Gameplay-only:** affects the 3D world + sprites + weapon view, but **does not** affect HUD, debug overlays, or menus/screens.
-- **Simple effects:** currently a **single fullscreen color wash** (a tinted overlay).
-- **Data shape:** the system supports **one active effect at a time** (no stacking/blending yet).
+- **Simple effects:** currently **fullscreen color wash overlays** (tinted overlays).
+- **Blending:** the system supports **multiple active overlays** at once (e.g. status tint + damage flash).
 - **Timing:** every effect **always fades in and fades out** (optionally with a hold).
 
 Current implementation:
@@ -18,11 +18,11 @@ Current implementation:
 
 ## 1) Mental model
 
-Think of Post-FX as a tiny state machine that, each frame:
+Think of Post-FX as a tiny set of state machines that, each frame:
 
-1. Advances an internal timer (`t_s`) in `postfx_update(...)`.
-2. Computes the current alpha scale factor `k` in `postfx_draw(...)` based on fade-in/hold/fade-out.
-3. Draws a fullscreen alpha-blended rectangle over the framebuffer.
+1. Advances each effect’s internal timer (`t_s`) in `postfx_update(...)`.
+2. Computes each effect’s current intensity scalar `k` in `postfx_draw(...)` based on fade-in/hold/fade-out.
+3. Draws each active overlay as a fullscreen alpha-blended rectangle over the framebuffer.
 
 The key property is *where* that rectangle is drawn:
 
@@ -66,7 +66,14 @@ Declared in [include/game/postfx.h](../include/game/postfx.h).
 
 `PostFxSystem` is intentionally small and plain:
 
-- `active`: whether an effect is running.
+Internally it holds a small fixed pool (`POSTFX_MAX_EFFECTS`) of `PostFxEffect` slots.
+
+Each `PostFxEffect` stores:
+
+- `active`: whether that slot is running.
+- `tag`: optional semantic identifier (damage flash, status tint, etc.).
+- `priority`: higher numbers draw later (on top).
+- `serial`: monotonic trigger counter for stable ordering.
 - `abgr_max`: the overlay’s color at peak intensity.
 - `fade_in_s`, `hold_s`, `fade_out_s`: effect timing parameters (seconds).
 - `t_s`: elapsed time since trigger.
@@ -87,9 +94,17 @@ Declared in [include/game/postfx.h](../include/game/postfx.h).
 Two entry points exist:
 
 - `postfx_trigger_color_wash(PostFxSystem*, uint32_t abgr_max, float fade_in_s, float hold_s, float fade_out_s)`
-  - General-purpose trigger.
+  - General-purpose trigger. Uses `POSTFX_TAG_NONE` and priority 0.
 - `postfx_trigger_damage_flash(PostFxSystem*)`
   - Convenience preset used by gameplay when the player takes damage.
+
+For effects that should not stack unboundedly (like a long status tint, or a damage flash that can retrigger frequently), use tagged triggers:
+
+- `postfx_trigger_tagged_color_wash(...)`
+  - If a slot with the same tag is already active, it is replaced/restarted.
+  - If the pool is full, the new effect is dropped unless it can evict a lower-priority effect.
+- `postfx_clear_tag(...)`
+  - Stops any active effects with that tag.
 
 
 ## 4) Color format and alpha blending
@@ -218,11 +233,21 @@ Where “dynamic” typically means:
 
 If you find yourself adding many ad-hoc parameters in call sites, prefer adding a small helper function (a named effect trigger) that takes semantic parameters (e.g., `severity`, `duration_s`).
 
-### 7.3 Stacking policy (current behavior)
+### 7.3 Blending + stacking policy (current behavior)
 
-Current behavior is **single-slot**:
+Current behavior is **multi-slot**:
 
-- Triggering a new effect **overwrites** the current one (timer resets to 0).
+- Multiple effects can be active at the same time.
+- Effects are blended by drawing fullscreen alpha rectangles sequentially.
+- Draw order is stable:
+  - lower `priority` first (under)
+  - higher `priority` later (over)
+  - for equal priority, older (`serial` smaller) draws first
+
+In practice:
+
+- A low-priority status tint can be active continuously.
+- A high-priority damage flash can play on top whenever triggered.
 
 If you later want stacking, there are two common approaches:
 
