@@ -798,6 +798,53 @@ static bool cmd_enable_music(Console* con, int argc, const char** argv, void* us
 	return ok;
 }
 
+static bool cmd_full_screen(Console* con, int argc, const char** argv, void* user_ctx) {
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!ctx || !ctx->win) {
+		console_print(con, "Error: No window available.");
+		return false;
+	}
+
+	bool want_fullscreen = false;
+	if (argc >= 1) {
+		char tmp[16];
+		strncpy(tmp, argv[0] ? argv[0] : "", sizeof(tmp) - 1);
+		tmp[sizeof(tmp) - 1] = '\0';
+		lower_inplace(tmp);
+		if (!parse_bool_norm(tmp, &want_fullscreen)) {
+			console_print(con, "Error: Expected boolean");
+			return false;
+		}
+	} else {
+		// Convenience: allow no-arg toggle (used by MenuScreen).
+		want_fullscreen = !window_is_fullscreen(ctx->win);
+	}
+
+	bool cur = window_is_fullscreen(ctx->win);
+	if (cur == want_fullscreen) {
+		console_print(con, want_fullscreen ? "OK (already fullscreen)" : "OK (already windowed)");
+		return true;
+	}
+
+	if (!window_set_fullscreen(ctx->win, want_fullscreen)) {
+		console_print(con, "Error: Failed to change fullscreen mode.");
+		return false;
+	}
+
+	if (!want_fullscreen) {
+		const CoreConfig* cfg = (ctx->cfg) ? (*ctx->cfg) : NULL;
+		int w = (cfg && cfg->window.width > 0) ? cfg->window.width : ctx->win->width;
+		int h = (cfg && cfg->window.height > 0) ? cfg->window.height : ctx->win->height;
+		if (w > 0 && h > 0) {
+			window_set_size(ctx->win, w, h);
+			window_center(ctx->win);
+		}
+	}
+
+	console_print(con, want_fullscreen ? "OK (fullscreen)" : "OK (windowed)");
+	return true;
+}
+
 static bool cmd_noclip(Console* con, int argc, const char** argv, void* user_ctx) {
 	(void)argc;
 	(void)argv;
@@ -940,6 +987,13 @@ void console_commands_register_all(Console* con) {
 		.example = "enable_music true",
 		.syntax = "enable_music boolean",
 		.fn = cmd_enable_music,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "full_screen",
+		.description = "Toggles fullscreen or windowed mode.",
+		.example = "full_screen true",
+		.syntax = "full_screen boolean",
+		.fn = cmd_full_screen,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "help",

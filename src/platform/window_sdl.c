@@ -46,3 +46,42 @@ void window_destroy(Window* self) {
 		self->window = NULL;
 	}
 }
+
+bool window_is_fullscreen(const Window* self) {
+	if (!self || !self->window) {
+		return false;
+	}
+	Uint32 f = SDL_GetWindowFlags(self->window);
+	return (f & SDL_WINDOW_FULLSCREEN) != 0 || (f & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+}
+
+bool window_set_fullscreen(Window* self, bool fullscreen) {
+	if (!self || !self->window) {
+		return false;
+	}
+	Uint32 desired = fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0;
+	if (SDL_SetWindowFullscreen(self->window, desired) != 0) {
+		log_error("SDL_SetWindowFullscreen failed: %s", SDL_GetError());
+		return false;
+	}
+	SDL_GetWindowSize(self->window, &self->width, &self->height);
+	return true;
+}
+
+void window_set_size(Window* self, int width, int height) {
+	if (!self || !self->window) {
+		return;
+	}
+	if (width <= 0 || height <= 0) {
+		return;
+	}
+	SDL_SetWindowSize(self->window, width, height);
+	SDL_GetWindowSize(self->window, &self->width, &self->height);
+}
+
+void window_center(Window* self) {
+	if (!self || !self->window) {
+		return;
+	}
+	SDL_SetWindowPosition(self->window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+}

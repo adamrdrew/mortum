@@ -144,6 +144,7 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - `enable_light_emitters <boolean>` — toggles point light emitters
 - `enable_sound_emitters <boolean>` — toggles SFX emitters
 - `enable_music <boolean>` — toggles background music
+- `full_screen <boolean>` — toggles fullscreen/windowed (no-arg form toggles)
 
 ## Console Opacity
 

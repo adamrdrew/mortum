@@ -22,6 +22,13 @@
           "action": { "kind": "close" }
         },
         {
+          "label": "Toggle Full Screen",
+          "action": {
+            "kind": "command",
+            "command": "full_screen"
+          }
+        },
+        {
           "label": "Quit to Menu",
           "action": {
             "kind": "command",
