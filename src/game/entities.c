@@ -2717,6 +2717,26 @@ static bool enemy_spawn_projectile(
 	Entity* proj = NULL;
 	if (entity_system_resolve(es, proj_id, &proj)) {
 		proj->owner = enemy->id;
+		// Spawn enemy-fired projectiles from roughly chest height, so they appear to travel
+		// toward the player rather than rising up from ground level.
+		if (es->world) {
+			int sec = sector;
+			if (sec < 0) {
+				sec = enemy->body.sector >= 0 ? enemy->body.sector : enemy->body.last_valid_sector;
+			}
+			if ((unsigned)sec < (unsigned)es->world->sector_count) {
+				float floor_z = es->world->sectors[sec].floor_z;
+				float ceil_z = es->world->sectors[sec].ceil_z;
+				float desired_center_z = enemy->body.z + 0.6f * enemy->body.height;
+				float desired_z0 = desired_center_z - 0.5f * proj->body.height;
+				float min_z0 = floor_z + 0.01f;
+				float max_z0 = ceil_z - proj->body.height - 0.01f;
+				if (max_z0 < min_z0) {
+					max_z0 = min_z0;
+				}
+				proj->body.z = clampf3(desired_z0, min_z0, max_z0);
+			}
+		}
 	}
 	if (autoaim) {
 		(void)entity_system_projectile_autoaim(es, proj_id, true, player_body);
