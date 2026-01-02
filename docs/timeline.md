@@ -33,6 +33,7 @@ Primary integration points:
 - **Event**: one of:
   - `scene`: runs a Scene as a Screen (gameplay update/render suspended while active).
   - `map`: loads a map and runs gameplay as usual.
+  - `menu`: runs a Menu as a Screen (gameplay update/render suspended while active).
 
 ---
 
@@ -43,6 +44,7 @@ Primary integration points:
 - Timelines are loaded from `Assets/Timelines/<timeline_filename>`.
 - `scene` events load from `Assets/Scenes/<name>`.
 - `map` events load from `Assets/Levels/<name>`.
+- `menu` events load from `Assets/Menus/<name>`.
 
 ### Required fields
 
@@ -51,9 +53,13 @@ Root object fields:
 - `name` (string, required)
 - `events` (array, required; may be empty)
 
+Optional root object fields:
+
+- `pause_menu` (string, optional): menu filename (safe `.json` filename under `Assets/Menus/`) opened by the pause/menu keybinding (default: Tab). If omitted, the keybinding does nothing.
+
 Each element of `events` is an object with:
 
-- `kind` (string, required): `"scene" | "map"`
+- `kind` (string, required): `"scene" | "map" | "menu"`
 - `name` (string, required)
 - `on_complete` (string, required): `"advance" | "loop" | "load"`
 - `target` (string, required iff `on_complete == "load"`)
@@ -69,7 +75,7 @@ Each element of `events` is an object with:
     { "kind": "scene", "name": "developer.json", "on_complete": "advance" },
     { "kind": "scene", "name": "engine.json", "on_complete": "advance" },
     { "kind": "scene", "name": "title.json", "on_complete": "advance" },
-    { "kind": "map",   "name": "big.json",      "on_complete": "loop" }
+    { "kind": "menu",  "name": "main_menu.json", "on_complete": "loop" }
   ]
 }
 ```
@@ -89,6 +95,10 @@ Timeline uses the same safe-path rule family used elsewhere in Mortum.
 - Scene event `name` must be a **safe relative path** (subfolders allowed) under `Assets/Scenes/`.
 
 - Map event `name` preserves the existing console/map restriction: it must be a **safe filename** (no `/` or `\\`) under `Assets/Levels/`.
+
+- Menu event `name` must be a **safe filename** (no `/` or `\\`) under `Assets/Menus/`.
+
+- `pause_menu` must be a **safe filename** (no `/` or `\\`) under `Assets/Menus/`.
 
 ---
 

@@ -394,14 +394,24 @@ Patterns:
 
 ## 8) Pause Menu Integration
 
-The engine opens `Assets/Menus/pause_menu.json` when:
+The engine can open a pause/menu screen when the active timeline defines a `pause_menu`.
+
+It opens the timeline's `pause_menu` when:
 
 - A map is loaded (`map_ok == true`),
 - no other screen is active,
 - the console is closed,
 - and Escape is pressed (edge-detected).
 
-Note: by default, Escape is also `input.bindings.release_mouse`. When mouse capture is currently engaged, pressing Escape first releases the mouse; pressing Escape again (with mouse released) will open the pause menu.
+It also opens the timeline's `pause_menu` when:
+
+- no other screen is active,
+- the console is closed,
+- and `input.bindings.open_main_menu` is pressed (default: Tab).
+
+If the active timeline does not specify `pause_menu`, these keybindings do nothing.
+
+Note: by default, Escape is also `input.bindings.release_mouse`. When mouse capture is currently engaged, pressing Escape first releases the mouse; pressing Escape again (with mouse released) will open the pause/menu screen (if configured by the active timeline).
 
 This creates a MenuScreen with:
 

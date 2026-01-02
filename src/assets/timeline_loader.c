@@ -75,6 +75,8 @@ void timeline_destroy(Timeline* self) {
 	}
 	free(self->name);
 	self->name = NULL;
+	free(self->pause_menu);
+	self->pause_menu = NULL;
 	if (self->events) {
 		for (int i = 0; i < self->event_count; i++) {
 			timeline_event_destroy(&self->events[i]);
@@ -156,11 +158,13 @@ bool timeline_load(Timeline* out, const AssetPaths* paths, const char* timeline_
 
 	int t_name = -1;
 	int t_events = -1;
+	int t_pause_menu = -1;
 	if (!json_object_get(&doc, 0, "name", &t_name) || !json_object_get(&doc, 0, "events", &t_events)) {
 		log_error("Timeline JSON missing required fields: name, events");
 		json_doc_destroy(&doc);
 		return false;
 	}
+	(void)json_object_get(&doc, 0, "pause_menu", &t_pause_menu);
 
 	StringView sv_name;
 	if (!json_get_string(&doc, t_name, &sv_name) || sv_name.len <= 0) {
@@ -179,6 +183,29 @@ bool timeline_load(Timeline* out, const AssetPaths* paths, const char* timeline_
 		timeline_destroy(out);
 		json_doc_destroy(&doc);
 		return false;
+	}
+
+	// Optional pause_menu.
+	if (t_pause_menu >= 0) {
+		StringView sv_pause;
+		if (!json_get_string(&doc, t_pause_menu, &sv_pause) || sv_pause.len <= 0) {
+			log_error("Timeline pause_menu must be a non-empty string when present");
+			timeline_destroy(out);
+			json_doc_destroy(&doc);
+			return false;
+		}
+		out->pause_menu = sv_dup(sv_pause);
+		if (!out->pause_menu) {
+			timeline_destroy(out);
+			json_doc_destroy(&doc);
+			return false;
+		}
+		if (!name_is_safe_filename(out->pause_menu) || !ends_with_ci(out->pause_menu, ".json")) {
+			log_error("Timeline pause_menu must be a safe .json filename under Assets/Menus (no slashes): %s", out->pause_menu);
+			timeline_destroy(out);
+			json_doc_destroy(&doc);
+			return false;
+		}
 	}
 
 	int n = json_array_size(&doc, t_events);
@@ -332,7 +359,12 @@ bool timeline_load(Timeline* out, const AssetPaths* paths, const char* timeline_
 		}
 	}
 
-	log_info("Timeline loaded: name='%s' events=%d", out->name ? out->name : "(null)", out->event_count);
+	log_info(
+		"Timeline loaded: name='%s' events=%d pause_menu='%s'",
+		out->name ? out->name : "(null)",
+		out->event_count,
+		(out->pause_menu && out->pause_menu[0] != '\0') ? out->pause_menu : "(none)"
+	);
 	json_doc_destroy(&doc);
 	return true;
 }

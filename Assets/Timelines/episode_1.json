@@ -1,5 +1,6 @@
 {
   "name": "Episode 1",
+  "pause_menu": "pause_menu.json",
   "events": [
     { "kind": "map", "name": "big.json", "on_complete": "load", "target": "boot.json" }
   ]

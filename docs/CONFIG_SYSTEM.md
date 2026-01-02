@@ -74,7 +74,7 @@ Related:
 
 - Mouse capture can be released at runtime via `input.bindings.release_mouse` (default: `"Escape"`).
 - When mouse capture is released, clicking in the window recaptures.
-- The main menu can be toggled via `input.bindings.open_main_menu` (default: `"Tab"`).
+- The menu keybinding is `input.bindings.open_main_menu` (default: `"Tab"`). It opens the active timeline's optional `pause_menu`; if the timeline does not specify one, the keybinding does nothing.
 
 ## JSON parsing / tokenization
 

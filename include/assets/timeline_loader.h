@@ -25,6 +25,8 @@ typedef struct TimelineEvent {
 
 typedef struct Timeline {
 	char* name; // owned
+	// Optional menu filename (safe .json filename under Assets/Menus) opened by the pause/menu keybinding.
+	char* pause_menu; // owned; optional
 	TimelineEvent* events; // owned array
 	int event_count;
 } Timeline;

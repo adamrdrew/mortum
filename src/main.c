@@ -815,28 +815,31 @@ int main(int argc, char** argv) {
 				// Refresh screen_active after closing.
 				screen_active = screen_runtime_is_active(&screens);
 			} else if (!screen_active) {
-				MenuAsset main_menu;
-				if (!menu_load(&main_menu, &paths, "main_menu.json")) {
-					log_warn("Failed to load main menu: main_menu.json");
-				} else {
-					Screen* scr = menu_screen_create(main_menu, false, &console_ctx);
-					if (!scr) {
-						log_warn("Failed to create main menu screen");
-						menu_asset_destroy(&main_menu);
+				const char* menu_file = (using_timeline && timeline.pause_menu && timeline.pause_menu[0] != '\0') ? timeline.pause_menu : NULL;
+				if (menu_file) {
+					MenuAsset main_menu;
+					if (!menu_load(&main_menu, &paths, menu_file)) {
+						log_warn("Failed to load menu: %s", menu_file);
 					} else {
-						log_info_s("menu", "Opening main menu via TAB");
-						ScreenContext sctx;
-						memset(&sctx, 0, sizeof(sctx));
-						sctx.preserve_midi_on_exit = false;
-						sctx.fb = &fb;
-						sctx.in = &in;
-						sctx.paths = &paths;
-						sctx.allow_input = true;
-						sctx.audio_enabled = audio_enabled;
-						sctx.music_enabled = music_enabled;
-						screen_runtime_set(&screens, scr, &sctx);
-						tab_menu_screen = scr;
-						consume_key(&in, menu_sc);
+						Screen* scr = menu_screen_create(main_menu, false, &console_ctx);
+						if (!scr) {
+							log_warn("Failed to create menu screen");
+							menu_asset_destroy(&main_menu);
+						} else {
+							log_info_s("menu", "Opening menu via TAB: %s", menu_file);
+							ScreenContext sctx;
+							memset(&sctx, 0, sizeof(sctx));
+							sctx.preserve_midi_on_exit = false;
+							sctx.fb = &fb;
+							sctx.in = &in;
+							sctx.paths = &paths;
+							sctx.allow_input = true;
+							sctx.audio_enabled = audio_enabled;
+							sctx.music_enabled = music_enabled;
+							screen_runtime_set(&screens, scr, &sctx);
+							tab_menu_screen = scr;
+							consume_key(&in, menu_sc);
+						}
 					}
 				}
 				// Refresh screen_active after opening.
@@ -850,30 +853,33 @@ int main(int argc, char** argv) {
 		esc_prev_down = esc_down;
 		bool suppress_pause_menu = released_this_frame && (release_sc == (int)SDL_SCANCODE_ESCAPE);
 		if (running && !console_open && !screen_active && map_ok && esc_pressed && !suppress_pause_menu) {
-			MenuAsset pause_menu;
-			if (!menu_load(&pause_menu, &paths, "pause_menu.json")) {
-				log_warn("Failed to load pause menu: pause_menu.json");
-			} else {
-				Screen* scr = menu_screen_create(pause_menu, false, &console_ctx);
-				if (!scr) {
-					log_warn("Failed to create pause menu screen");
-					menu_asset_destroy(&pause_menu);
+			const char* menu_file = (using_timeline && timeline.pause_menu && timeline.pause_menu[0] != '\0') ? timeline.pause_menu : NULL;
+			if (menu_file) {
+				MenuAsset pause_menu;
+				if (!menu_load(&pause_menu, &paths, menu_file)) {
+					log_warn("Failed to load pause menu: %s", menu_file);
 				} else {
-					log_info_s("menu", "Opening pause menu via ESC");
-					ScreenContext sctx;
-					memset(&sctx, 0, sizeof(sctx));
-					sctx.preserve_midi_on_exit = false;
-					sctx.fb = &fb;
-					sctx.in = &in;
-					sctx.paths = &paths;
-					sctx.allow_input = true;
-					sctx.audio_enabled = audio_enabled;
-					sctx.music_enabled = music_enabled;
-					screen_runtime_set(&screens, scr, &sctx);
+					Screen* scr = menu_screen_create(pause_menu, false, &console_ctx);
+					if (!scr) {
+						log_warn("Failed to create pause menu screen");
+						menu_asset_destroy(&pause_menu);
+					} else {
+						log_info_s("menu", "Opening pause menu via ESC: %s", menu_file);
+						ScreenContext sctx;
+						memset(&sctx, 0, sizeof(sctx));
+						sctx.preserve_midi_on_exit = false;
+						sctx.fb = &fb;
+						sctx.in = &in;
+						sctx.paths = &paths;
+						sctx.allow_input = true;
+						sctx.audio_enabled = audio_enabled;
+						sctx.music_enabled = music_enabled;
+						screen_runtime_set(&screens, scr, &sctx);
+					}
 				}
+				// Refresh screen_active after opening.
+				screen_active = screen_runtime_is_active(&screens);
 			}
-			// Refresh screen_active after opening.
-			screen_active = screen_runtime_is_active(&screens);
 		}
 
 		bool allow_game_input = !console_open;
