@@ -238,6 +238,7 @@ static const char* kind_to_string(TimelineEventKind k) {
 		case TIMELINE_EVENT_SCENE: return "scene";
 		case TIMELINE_EVENT_MAP: return "map";
 		case TIMELINE_EVENT_MENU: return "menu";
+		case TIMELINE_EVENT_COMMAND: return "command";
 		default: return "?";
 	}
 }
@@ -316,6 +317,21 @@ static void flow_step(TimelineFlow* self, TimelineFlowRuntime* rt) {
 				return;
 			}
 			// Load failed: treat as completed immediately.
+			apply_on_complete(self, rt, ev);
+			continue;
+		}
+
+		if (ev->kind == TIMELINE_EVENT_COMMAND) {
+			self->preserve_midi_on_scene_exit = false;
+			bool ok = false;
+			if (rt->con && rt->console_ctx && ev->name && ev->name[0] != '\0') {
+				ok = console_execute_line(rt->con, ev->name, rt->console_ctx);
+			} else {
+				log_warn("Timeline command event missing console/context/name; treating as completed");
+			}
+			if (!ok) {
+				log_warn("Timeline command failed or unknown (treating as completed): %s", ev->name ? ev->name : "");
+			}
 			apply_on_complete(self, rt, ev);
 			continue;
 		}

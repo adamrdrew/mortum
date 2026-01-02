@@ -34,6 +34,7 @@ Primary integration points:
   - `scene`: runs a Scene as a Screen (gameplay update/render suspended while active).
   - `map`: loads a map and runs gameplay as usual.
   - `menu`: runs a Menu as a Screen (gameplay update/render suspended while active).
+  - `command`: executes a console command line immediately (useful for resets/state changes).
 
 ---
 
@@ -45,6 +46,7 @@ Primary integration points:
 - `scene` events load from `Assets/Scenes/<name>`.
 - `map` events load from `Assets/Levels/<name>`.
 - `menu` events load from `Assets/Menus/<name>`.
+- `command` events execute against the registered console commands.
 
 ### Required fields
 
@@ -59,10 +61,15 @@ Optional root object fields:
 
 Each element of `events` is an object with:
 
-- `kind` (string, required): `"scene" | "map" | "menu"`
+- `kind` (string, required): `"scene" | "map" | "menu" | "command"`
 - `name` (string, required)
 - `on_complete` (string, required): `"advance" | "loop" | "load"`
 - `target` (string, required iff `on_complete == "load"`)
+
+For `kind = "command"`:
+
+- `name` is treated as a full console command line (e.g. `"player_reset"`).
+- The command runs immediately when the event starts and is treated as completed right away.
 
 ### Example
 
@@ -97,6 +104,11 @@ Timeline uses the same safe-path rule family used elsewhere in Mortum.
 - Map event `name` preserves the existing console/map restriction: it must be a **safe filename** (no `/` or `\\`) under `Assets/Levels/`.
 
 - Menu event `name` must be a **safe filename** (no `/` or `\\`) under `Assets/Menus/`.
+
+- Command event `name` must be a **safe console command line**:
+  - no newlines (single line)
+  - no control characters (tabs are allowed)
+  - length < 256 characters
 
 - `pause_menu` must be a **safe filename** (no `/` or `\\`) under `Assets/Menus/`.
 

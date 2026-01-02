@@ -141,6 +141,7 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - `show_debug <boolean>` — toggles debug overlay
 - `show_font_test <boolean>` — toggles font smoke test page
 - `noclip` — toggles noclip movement
+- `player_reset` — resets player state to new-game defaults (health, ammo, weapons, keys, etc.)
 - `enable_light_emitters <boolean>` — toggles point light emitters
 - `enable_sound_emitters <boolean>` — toggles SFX emitters
 - `enable_music <boolean>` — toggles background music

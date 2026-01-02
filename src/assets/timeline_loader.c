@@ -103,7 +103,35 @@ static bool parse_event_kind(const char* s, TimelineEventKind* out) {
 		*out = TIMELINE_EVENT_MENU;
 		return true;
 	}
+	if (strcmp(s, "command") == 0) {
+		*out = TIMELINE_EVENT_COMMAND;
+		return true;
+	}
 	return false;
+}
+
+static bool name_is_safe_command_line(const char* s) {
+	if (!s || !s[0]) {
+		return false;
+	}
+	// Keep this aligned with Console's max input size (see include/game/console.h).
+	// We don't include console.h here to keep the assets layer decoupled.
+	if (strlen(s) >= 256) {
+		return false;
+	}
+	for (const unsigned char* p = (const unsigned char*)s; *p; p++) {
+		unsigned char c = *p;
+		if (c == '\n' || c == '\r') {
+			return false;
+		}
+		if (c < 32 && c != '\t') {
+			return false;
+		}
+		if (c == 127) {
+			return false;
+		}
+	}
+	return true;
 }
 
 static bool parse_on_complete(const char* s, TimelineOnComplete* out) {
@@ -280,7 +308,7 @@ bool timeline_load(Timeline* out, const AssetPaths* paths, const char* timeline_
 
 		TimelineEventKind kind;
 		if (!parse_event_kind(kind_buf, &kind)) {
-			log_error("Timeline events[%d].kind must be 'scene', 'map', or 'menu'", i);
+			log_error("Timeline events[%d].kind must be 'scene', 'map', 'menu', or 'command'", i);
 			timeline_destroy(out);
 			json_doc_destroy(&doc);
 			return false;
@@ -321,6 +349,13 @@ bool timeline_load(Timeline* out, const AssetPaths* paths, const char* timeline_
 		} else if (ev->kind == TIMELINE_EVENT_MENU) {
 			if (!name_is_safe_filename(ev->name) || !ends_with_ci(ev->name, ".json")) {
 				log_error("Timeline events[%d].name must be a safe .json filename under Assets/Menus (no slashes): %s", i, ev->name);
+				timeline_destroy(out);
+				json_doc_destroy(&doc);
+				return false;
+			}
+		} else if (ev->kind == TIMELINE_EVENT_COMMAND) {
+			if (!name_is_safe_command_line(ev->name)) {
+				log_error("Timeline events[%d].name must be a safe console command line (no newlines/control chars; <256 chars): %s", i, ev->name);
 				timeline_destroy(out);
 				json_doc_destroy(&doc);
 				return false;

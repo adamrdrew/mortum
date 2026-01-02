@@ -22,6 +22,7 @@
 // Timeline-driven flow: runs one event at a time (scene, map, or menu) and advances/loops/loads on completion.
 
 typedef struct ConsoleCommandContext ConsoleCommandContext;
+typedef struct Console Console;
 
 typedef struct TimelineFlow {
 	bool active;
@@ -35,6 +36,7 @@ bool timeline_flow_preserve_midi_on_scene_exit(const TimelineFlow* self);
 
 typedef struct TimelineFlowRuntime {
 	const AssetPaths* paths;
+	Console* con;
 
 	Timeline* timeline;
 	bool* using_timeline;

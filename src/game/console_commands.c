@@ -343,7 +343,7 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 	return true;
 }
 
-static bool load_timeline_by_name(ConsoleCommandContext* ctx, const char* timeline_name) {
+static bool load_timeline_by_name(Console* con, ConsoleCommandContext* ctx, const char* timeline_name) {
 	if (!ctx || !ctx->timeline || !ctx->tl_flow || !name_is_safe_relpath(timeline_name)) {
 		return false;
 	}
@@ -374,6 +374,7 @@ static bool load_timeline_by_name(ConsoleCommandContext* ctx, const char* timeli
 	TimelineFlowRuntime rt;
 	memset(&rt, 0, sizeof(rt));
 	rt.paths = ctx->paths;
+	rt.con = con;
 	rt.timeline = ctx->timeline;
 	rt.using_timeline = ctx->using_timeline;
 	rt.map = ctx->map;
@@ -650,7 +651,7 @@ static bool cmd_load_timeline(Console* con, int argc, const char** argv, void* u
 		console_print(con, "Error: Unsafe timeline path (must be relative; no '..' or backslashes)");
 		return false;
 	}
-	if (!load_timeline_by_name(ctx, argv[0])) {
+	if (!load_timeline_by_name(con, ctx, argv[0])) {
 		console_print(con, "Error: Failed to load timeline.");
 		return false;
 	}
@@ -857,6 +858,37 @@ static bool cmd_noclip(Console* con, int argc, const char** argv, void* user_ctx
 	return true;
 }
 
+static bool cmd_player_reset(Console* con, int argc, const char** argv, void* user_ctx) {
+	(void)argc;
+	(void)argv;
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!ctx || !ctx->player) {
+		console_print(con, "Error: No player available.");
+		return false;
+	}
+
+	PhysicsBody saved_body;
+	bool preserve_body = false;
+	if (ctx->map_ok && ctx->map && *ctx->map_ok) {
+		saved_body = ctx->player->body;
+		preserve_body = true;
+	}
+
+	player_init(ctx->player);
+	if (preserve_body) {
+		ctx->player->body = saved_body;
+		ctx->player->body.vx = 0.0f;
+		ctx->player->body.vy = 0.0f;
+		ctx->player->body.vz = 0.0f;
+	}
+	if (ctx->gs) {
+		ctx->gs->mode = GAME_MODE_PLAYING;
+	}
+
+	console_print(con, "OK");
+	return true;
+}
+
 void console_commands_register_all(Console* con) {
 	if (!con) {
 		return;
@@ -987,6 +1019,13 @@ void console_commands_register_all(Console* con) {
 		.example = "enable_music true",
 		.syntax = "enable_music boolean",
 		.fn = cmd_enable_music,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "player_reset",
+		.description = "Resets player state (health, ammo, weapons, keys, etc.) to new-game defaults.",
+		.example = "player_reset",
+		.syntax = "player_reset",
+		.fn = cmd_player_reset,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "full_screen",

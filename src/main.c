@@ -653,6 +653,7 @@ int main(int argc, char** argv) {
 		TimelineFlowRuntime rt;
 		memset(&rt, 0, sizeof(rt));
 		rt.paths = &paths;
+		rt.con = &console;
 		rt.timeline = &timeline;
 		rt.using_timeline = &using_timeline;
 		rt.map = &map;
@@ -1009,6 +1010,7 @@ int main(int argc, char** argv) {
 				TimelineFlowRuntime rt;
 				memset(&rt, 0, sizeof(rt));
 				rt.paths = &paths;
+				rt.con = &console;
 				rt.timeline = &timeline;
 				rt.using_timeline = &using_timeline;
 				rt.map = &map;
@@ -1297,6 +1299,7 @@ int main(int argc, char** argv) {
 			TimelineFlowRuntime rt;
 			memset(&rt, 0, sizeof(rt));
 			rt.paths = &paths;
+			rt.con = &console;
 			rt.timeline = &timeline;
 			rt.using_timeline = &using_timeline;
 			rt.map = &map;
