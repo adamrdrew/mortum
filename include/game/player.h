@@ -3,6 +3,7 @@
 #include "core/base.h"
 
 #include "game/ammo.h"
+#include "game/inventory.h"
 #include "game/weapon_defs.h"
 #include "game/physics_body.h"
 
@@ -23,6 +24,7 @@ typedef struct Player {
 	int mortum_pct;
 	int keys;
 	int purge_items;
+	Inventory inventory;
 	bool use_prev_down;
 	bool undead_active;
 	int undead_shards_required;

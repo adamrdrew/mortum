@@ -14,6 +14,8 @@
 
 #include "game/level_start.h"
 
+#include "game/inventory.h"
+
 #include "render/camera.h"
 #include "render/raycast.h"
 
@@ -427,6 +429,11 @@ static bool cmd_enable_sound_emitters(Console* con, int argc, const char** argv,
 static bool cmd_enable_music(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_help(Console* con, int argc, const char** argv, void* user_ctx);
 
+static bool cmd_inventory_list(Console* con, int argc, const char** argv, void* user_ctx);
+static bool cmd_inventory_add(Console* con, int argc, const char** argv, void* user_ctx);
+static bool cmd_inventory_remove(Console* con, int argc, const char** argv, void* user_ctx);
+static bool cmd_inventory_contains(Console* con, int argc, const char** argv, void* user_ctx);
+
 static bool cmd_clear(Console* con, int argc, const char** argv, void* user_ctx) {
 	(void)argc;
 	(void)argv;
@@ -516,6 +523,71 @@ static bool cmd_help(Console* con, int argc, const char** argv, void* user_ctx) 
 	}
 	console_print(con, "Error: Unknown command.");
 	return false;
+}
+
+static bool cmd_inventory_list(Console* con, int argc, const char** argv, void* user_ctx) {
+	(void)argc;
+	(void)argv;
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!con || !ctx || !ctx->player) {
+		return false;
+	}
+	uint32_t n = inventory_count(&ctx->player->inventory);
+	if (n == 0u) {
+		console_print(con, "[]");
+		return true;
+	}
+	console_print(con, "[");
+	for (uint32_t i = 0u; i < n; i++) {
+		const char* item = inventory_get(&ctx->player->inventory, i);
+		if (item && item[0] != '\0') {
+			console_print(con, item);
+		}
+	}
+	console_print(con, "]");
+	return true;
+}
+
+static bool cmd_inventory_add(Console* con, int argc, const char** argv, void* user_ctx) {
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!con || !ctx || !ctx->player) {
+		return false;
+	}
+	if (argc < 1) {
+		console_print(con, "Error: Expected item name");
+		return false;
+	}
+	bool ok = inventory_add_item(&ctx->player->inventory, argv[0]);
+	console_print(con, ok ? "true" : "false");
+	return ok;
+}
+
+static bool cmd_inventory_remove(Console* con, int argc, const char** argv, void* user_ctx) {
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!con || !ctx || !ctx->player) {
+		return false;
+	}
+	if (argc < 1) {
+		console_print(con, "Error: Expected item name");
+		return false;
+	}
+	bool ok = inventory_remove_item(&ctx->player->inventory, argv[0]);
+	console_print(con, ok ? "true" : "false");
+	return ok;
+}
+
+static bool cmd_inventory_contains(Console* con, int argc, const char** argv, void* user_ctx) {
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!con || !ctx || !ctx->player) {
+		return false;
+	}
+	if (argc < 1) {
+		console_print(con, "Error: Expected item name");
+		return false;
+	}
+	bool ok = inventory_contains(&ctx->player->inventory, argv[0]);
+	console_print(con, ok ? "true" : "false");
+	return ok;
 }
 
 static bool cmd_config_reload(Console* con, int argc, const char** argv, void* user_ctx) {
@@ -1026,6 +1098,34 @@ void console_commands_register_all(Console* con) {
 		.example = "player_reset",
 		.syntax = "player_reset",
 		.fn = cmd_player_reset,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "inventory_list",
+		.description = "Lists inventory items (one per line).",
+		.example = "inventory_list",
+		.syntax = "inventory_list",
+		.fn = cmd_inventory_list,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "inventory_add",
+		.description = "Adds an inventory item by name (set semantics).",
+		.example = "inventory_add red_key",
+		.syntax = "inventory_add <string>",
+		.fn = cmd_inventory_add,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "inventory_remove",
+		.description = "Removes an inventory item by name.",
+		.example = "inventory_remove red_key",
+		.syntax = "inventory_remove <string>",
+		.fn = cmd_inventory_remove,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "inventory_contains",
+		.description = "Checks if an inventory item exists.",
+		.example = "inventory_contains red_key",
+		.syntax = "inventory_contains <string>",
+		.fn = cmd_inventory_contains,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "full_screen",

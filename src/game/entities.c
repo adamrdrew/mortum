@@ -1576,25 +1576,51 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 			}
 			int t_heal = -1, t_tr = -1;
 			int t_ammo_type = -1, t_ammo_amount = -1;
+			int t_add_inv = -1;
 			(void)json_object_get(&doc, t_pickup, "heal_amount", &t_heal);
 			(void)json_object_get(&doc, t_pickup, "ammo_type", &t_ammo_type);
 			(void)json_object_get(&doc, t_pickup, "ammo_amount", &t_ammo_amount);
+			(void)json_object_get(&doc, t_pickup, "add_to_inventory", &t_add_inv);
 
 			def.u.pickup.type = PICKUP_TYPE_HEALTH;
 			def.u.pickup.heal_amount = 0;
 			def.u.pickup.ammo_type = AMMO_BULLETS;
 			def.u.pickup.ammo_amount = 0;
+			def.u.pickup.add_to_inventory[0] = '\0';
 
 			bool has_heal = (t_heal >= 0);
 			bool has_ammo = (t_ammo_type >= 0 && t_ammo_amount >= 0);
-			if (!has_heal && !has_ammo) {
-				log_error("entity def '%s' pickup must specify heal_amount or (ammo_type + ammo_amount)", def.name);
+			bool has_inv = (t_add_inv >= 0);
+			if (has_inv && (has_heal || has_ammo)) {
+				log_error("entity def '%s' pickup add_to_inventory cannot be combined with heal_amount/ammo", def.name);
+				json_doc_destroy(&doc);
+				entity_defs_destroy(defs);
+				return false;
+			}
+			if (!has_heal && !has_ammo && !has_inv) {
+				log_error("entity def '%s' pickup must specify heal_amount or (ammo_type + ammo_amount) or add_to_inventory", def.name);
 				json_doc_destroy(&doc);
 				entity_defs_destroy(defs);
 				return false;
 			}
 
-			if (has_heal) {
+			if (has_inv) {
+				if (!json_token_is_string(&doc, t_add_inv)) {
+					log_error("entity def '%s' pickup add_to_inventory must be string", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+				StringView sv_item;
+				if (!json_get_string(&doc, t_add_inv, &sv_item) || sv_item.len <= 0 || sv_item.len >= (int)sizeof(def.u.pickup.add_to_inventory)) {
+					log_error("entity def '%s' pickup add_to_inventory invalid", def.name);
+					json_doc_destroy(&doc);
+					entity_defs_destroy(defs);
+					return false;
+				}
+				def.u.pickup.type = PICKUP_TYPE_INVENTORY_ITEM;
+				snprintf(def.u.pickup.add_to_inventory, sizeof(def.u.pickup.add_to_inventory), "%.*s", (int)sv_item.len, sv_item.data);
+			} else if (has_heal) {
 				double heal_d = 0.0;
 				if (!json_get_double(&doc, t_heal, &heal_d)) {
 					log_error("entity def '%s' pickup heal_amount invalid", def.name);

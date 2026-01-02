@@ -56,6 +56,7 @@ typedef enum EntityKind {
 typedef enum PickupType {
 	PICKUP_TYPE_HEALTH = 0,
 	PICKUP_TYPE_AMMO = 1,
+	PICKUP_TYPE_INVENTORY_ITEM = 2,
 } PickupType;
 
 typedef struct EntityDefPickup {
@@ -65,6 +66,8 @@ typedef struct EntityDefPickup {
 	// Ammo pickup payload
 	AmmoType ammo_type;
 	int ammo_amount;
+	// Inventory pickup payload (empty string means none)
+	char add_to_inventory[64];
 
 	float trigger_radius;
 	char pickup_sound[64];

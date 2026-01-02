@@ -28,6 +28,7 @@ void player_init(Player* p) {
 	p->mortum_pct = 0;
 	p->keys = 0;
 	p->purge_items = 0;
+	inventory_init(&p->inventory);
 	p->weapon_cooldown_s = 0.0f;
 	p->noclip = false;
 	p->noclip_prev_down = false;

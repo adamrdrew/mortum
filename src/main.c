@@ -49,6 +49,8 @@
 
 #include "game/entities.h"
 
+#include "game/inventory.h"
+
 #include "game/particle_emitters.h"
 
 #include "game/sound_emitters.h"
@@ -1090,6 +1092,8 @@ int main(int argc, char** argv) {
 									player.health = after;
 								} else if (def->u.pickup.type == PICKUP_TYPE_AMMO) {
 									(void)ammo_add(&player.ammo, def->u.pickup.ammo_type, def->u.pickup.ammo_amount);
+								} else if (def->u.pickup.type == PICKUP_TYPE_INVENTORY_ITEM) {
+									(void)inventory_add_item(&player.inventory, def->u.pickup.add_to_inventory);
 								}
 
 								// Pickups are consumed on touch (even if already full).

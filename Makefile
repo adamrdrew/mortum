@@ -84,6 +84,7 @@ SRC := \
   src/game/postfx.c \
   src/game/upgrades.c \
   src/game/mortum.c \
+  src/game/inventory.c \
   src/game/purge_item.c \
   src/game/rules.c \
   src/game/tuning.c \
