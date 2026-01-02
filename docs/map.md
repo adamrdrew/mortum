@@ -181,7 +181,9 @@ Maps are JSON objects. `map_load()` requires specific fields and is strict.
 
 Type note (optional strings):
 
-- If `bgmusic`/`soundfont`/`sky` are present but not JSON strings, the loader does not fail the map; the value is effectively ignored (so the field behaves like “missing”).
+- If `bgmusic` is present but not a JSON string, the loader does not fail the map; it effectively behaves like empty/disabled.
+- If `sky` is present but not a JSON string, the loader does not fail the map; it effectively behaves like empty (no custom sky).
+- If `soundfont` is present but not a JSON string, the loader does not fail the map; however, the default (`"hl4mgm.sf2"`) is **not** applied in that case and the value ends up empty.
 - `lights` (array): point lights (see below)
 - `sounds` (array): map-authored sound emitters
 - `particles` (array): map-authored particle emitters

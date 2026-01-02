@@ -39,6 +39,7 @@ The root must be an object.
 	- If present but empty string: disabled.
 - `soundfont` (string): SoundFont filename under `Assets/Sounds/SoundFonts/`.
 	- If missing: defaults to `"hl4mgm.sf2"`.
+	- If present but not a JSON string: the engine does not fail the map, but the value ends up empty (the default is not applied).
 - `sky` (string): image filename under `Assets/Images/Sky/` (or fallback locations).
 	- If missing or empty: no custom sky.
 - `lights` (array): optional point lights (see below).
