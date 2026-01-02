@@ -2717,18 +2717,27 @@ static bool enemy_spawn_projectile(
 	Entity* proj = NULL;
 	if (entity_system_resolve(es, proj_id, &proj)) {
 		proj->owner = enemy->id;
-		// Spawn enemy-fired projectiles from roughly chest height, so they appear to travel
-		// toward the player rather than rising up from ground level.
-		if (es->world) {
+		// Spawn enemy-fired projectiles at the enemy's *physical* center (collision body),
+		// not the sprite center (which can be skewed upward by z_offset / transparent pixels).
+		// We still account for the projectile sprite's own z_offset/height so the projectile
+		// appears centered at that physical point.
+		if (es->world && es->defs && proj->def_id < es->defs->count) {
 			int sec = sector;
 			if (sec < 0) {
 				sec = enemy->body.sector >= 0 ? enemy->body.sector : enemy->body.last_valid_sector;
 			}
 			if ((unsigned)sec < (unsigned)es->world->sector_count) {
+				const EntityDef* proj_def = &es->defs->defs[(uint32_t)proj->def_id];
+				float proj_sprite_h = entity_sprite_height_world(proj_def);
+				float proj_zoff = proj_def->sprite.z_offset / 64.0f;
+				float enemy_center_z = enemy->body.z + 0.5f * enemy->body.height;
+				float proj_center_offset = 0.5f * proj->body.height;
+				if (proj_sprite_h > 1.0e-6f) {
+					proj_center_offset = proj_zoff + 0.5f * proj_sprite_h;
+				}
+				float desired_z0 = enemy_center_z - proj_center_offset;
 				float floor_z = es->world->sectors[sec].floor_z;
 				float ceil_z = es->world->sectors[sec].ceil_z;
-				float desired_center_z = enemy->body.z + 0.6f * enemy->body.height;
-				float desired_z0 = desired_center_z - 0.5f * proj->body.height;
 				float min_z0 = floor_z + 0.01f;
 				float max_z0 = ceil_z - proj->body.height - 0.01f;
 				if (max_z0 < min_z0) {
