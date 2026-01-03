@@ -679,6 +679,7 @@ int main(int argc, char** argv) {
 		rt.screens = &screens;
 		rt.fb = &fb;
 		rt.console_ctx = &console_ctx;
+		rt.notifications = &notifications;
 		rt.in = NULL;
 		rt.allow_scene_input = true;
 		rt.audio_enabled = audio_enabled;
@@ -1037,6 +1038,7 @@ int main(int argc, char** argv) {
 				rt.screens = &screens;
 				rt.fb = &fb;
 				rt.console_ctx = &console_ctx;
+				rt.notifications = &notifications;
 				rt.in = &in;
 				rt.allow_scene_input = !console_open;
 				rt.audio_enabled = audio_enabled;
@@ -1341,6 +1343,7 @@ int main(int argc, char** argv) {
 			rt.screens = &screens;
 			rt.fb = &fb;
 			rt.console_ctx = &console_ctx;
+			rt.notifications = &notifications;
 			rt.in = &in;
 			rt.allow_scene_input = true;
 			rt.audio_enabled = audio_enabled;

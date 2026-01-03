@@ -51,6 +51,10 @@ typedef struct Notifications {
 void notifications_init(Notifications* self);
 void notifications_reset(Notifications* self);
 
+// Clears any active toast and drops all queued notifications.
+// Safe to call even when no toast is active and the queue is empty.
+void notifications_clear_queue(Notifications* self);
+
 // Enqueue a text-only toast. Returns false if the queue is full or text is invalid.
 bool notifications_push_text(Notifications* self, const char* text);
 

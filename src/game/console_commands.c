@@ -401,6 +401,7 @@ static bool load_timeline_by_name(Console* con, ConsoleCommandContext* ctx, cons
 	rt.screens = ctx->screens;
 	rt.fb = ctx->fb;
 	rt.console_ctx = ctx;
+	rt.notifications = ctx->notifications;
 	rt.in = NULL;
 	rt.allow_scene_input = false;
 	rt.audio_enabled = (ctx->audio_enabled && *ctx->audio_enabled);

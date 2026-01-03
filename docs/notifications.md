@@ -35,6 +35,11 @@ Declared in [include/game/notifications.h](../include/game/notifications.h).
   - Clears queue and the active toast.
   - Intended to be called on map/world transitions (load/unload).
 
+- `void notifications_clear_queue(Notifications* self)`
+  - Clears any active toast and drops all queued notifications.
+  - Safe no-op if nothing is queued.
+  - Used by TimelineFlow to ensure old messages don't bleed across timeline event transitions.
+
 ### Enqueue
 
 - `bool notifications_push_text(Notifications* self, const char* text)`

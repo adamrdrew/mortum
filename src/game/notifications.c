@@ -64,6 +64,20 @@ void notifications_reset(Notifications* self) {
 	notification_item_clear(&self->cur);
 }
 
+void notifications_clear_queue(Notifications* self) {
+	if (!self) {
+		return;
+	}
+	self->head = 0u;
+	self->count = 0u;
+	self->active = false;
+	self->phase = NOTIFY_PHASE_IN;
+	self->phase_t_s = 0.0f;
+	self->hold_t_s = 0.0f;
+	self->hold_target_s = 0.0f;
+	notification_item_clear(&self->cur);
+}
+
 static bool safe_copy_str(char* dst, size_t dst_cap, const char* src) {
 	if (!dst || dst_cap == 0) {
 		return false;

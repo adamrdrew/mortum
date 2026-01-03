@@ -23,6 +23,7 @@
 
 typedef struct ConsoleCommandContext ConsoleCommandContext;
 typedef struct Console Console;
+typedef struct Notifications Notifications;
 
 typedef struct TimelineFlow {
 	bool active;
@@ -58,6 +59,9 @@ typedef struct TimelineFlowRuntime {
 	ScreenRuntime* screens;
 	Framebuffer* fb;
 	ConsoleCommandContext* console_ctx;
+
+	// Optional toast notifications (cleared on timeline event transitions).
+	Notifications* notifications;
 
 	// For ScreenContext (update-time input comes from main; for on_enter it may be NULL).
 	const Input* in;

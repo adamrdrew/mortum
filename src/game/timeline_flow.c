@@ -10,6 +10,8 @@
 #include "game/scene_screen.h"
 #include "game/level_start.h"
 
+#include "game/notifications.h"
+
 #include "game/console_commands.h"
 
 #include <string.h>
@@ -225,6 +227,9 @@ static void apply_on_complete(TimelineFlow* self, TimelineFlowRuntime* rt, const
 			timeline_destroy(rt->timeline);
 			*rt->timeline = next; // struct copy; takes ownership of allocations
 			self->index = 0;
+			if (rt->notifications) {
+				notifications_clear_queue(rt->notifications);
+			}
 			log_info_s("timeline", "Loaded new timeline: name='%s' events=%d", rt->timeline->name ? rt->timeline->name : "(null)", rt->timeline->event_count);
 		} break;
 		default:
@@ -274,6 +279,9 @@ static void flow_step(TimelineFlow* self, TimelineFlowRuntime* rt) {
 		}
 
 		TimelineEvent* ev = &rt->timeline->events[self->index];
+		if (rt->notifications) {
+			notifications_clear_queue(rt->notifications);
+		}
 		log_info_s(
 			"timeline",
 			"Starting event: idx=%d kind=%s name='%s' on_complete=%s",
