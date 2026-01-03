@@ -292,6 +292,9 @@ static void flow_step(TimelineFlow* self, TimelineFlowRuntime* rt) {
 		if (rt->notifications) {
 			notifications_clear_queue(rt->notifications);
 		}
+		if (rt->player) {
+			inventory_clear(&rt->player->inventory);
+		}
 		log_info_s(
 			"timeline",
 			"Starting event: idx=%d kind=%s name='%s' on_complete=%s",

@@ -118,6 +118,11 @@ Timeline uses the same safe-path rule family used elsewhere in Mortum.
 
 A timeline runs **one event at a time**.
 
+Per-event state reset:
+
+- On starting each new timeline event (scene/map/menu/command), the player's inventory is cleared via `inventory_clear()`.
+  - This makes inventory suitable for **ephemeral per-event flags** during timeline-driven progression.
+
 Completion edges:
 
 - **Scene completion**: when the active Screen completes, TimelineFlow applies the current event’s `on_complete`.

@@ -15,6 +15,7 @@ Source of truth:
 - **Memory safe**: fixed-size storage, no allocations, no frees.
 - **Set semantics**: no duplicates.
 - **Capacity**: max 64 items.
+- **Timeline semantics**: when running under TimelineFlow, inventory is treated as a store of **ephemeral flags** and is cleared between timeline events.
 
 ## Data Model
 
@@ -40,6 +41,12 @@ Declared in [include/game/inventory.h](../include/game/inventory.h):
 
 - Inventory is stored on `Player` as `player.inventory`.
 - It is reset as part of `player_init()` (new-game defaults).
+
+## Timeline interaction (ephemeral flags)
+
+When the game is running timeline-driven progression (TimelineFlow), the player's inventory is cleared whenever a new timeline event starts.
+
+In this mode, inventory is best thought of as a deterministic set of **ephemeral flags** that can be set by pickups (or console commands) and consumed by logic during the current event, but which do not persist across event boundaries.
 
 ## Pickups: add_to_inventory
 
