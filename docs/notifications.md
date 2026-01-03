@@ -77,9 +77,12 @@ If the toast text is wider than the available content area:
 - After an initial delay, the display **scrolls horizontally** to reveal more of the text.
 
 Defaults:
-- Initial delay before scroll: `1.0s`
-- Scroll speed: `30 px/s`
-- End pause before looping back: `0.6s`
+- Initial delay before scroll: `0.35s`
+- Scroll speed: `95 px/s`
+- End pause at end: `0.50s`
+
+Dismissal rule:
+- If scrolling is needed, the toast's hold duration is automatically extended so it will not dismiss until it has scrolled to the end (plus the end pause).
 
 Implementation note:
 - The toast system does not rely on framebuffer clipping; instead it constructs a substring window that fits the available width.

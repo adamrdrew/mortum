@@ -45,6 +45,7 @@ typedef struct Notifications {
 
 	// Text overflow scrolling (computed deterministically from time).
 	float hold_t_s;
+	float hold_target_s;
 } Notifications;
 
 void notifications_init(Notifications* self);

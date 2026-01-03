@@ -57,6 +57,7 @@ void notifications_reset(Notifications* self) {
 	self->phase = NOTIFY_PHASE_IN;
 	self->phase_t_s = 0.0f;
 	self->hold_t_s = 0.0f;
+	self->hold_target_s = 0.0f;
 	for (uint32_t i = 0u; i < NOTIFICATIONS_QUEUE_CAP; i++) {
 		notification_item_clear(&self->queue[i]);
 	}
@@ -142,6 +143,7 @@ static void notifications_start_next(Notifications* self) {
 	self->phase = NOTIFY_PHASE_IN;
 	self->phase_t_s = 0.0f;
 	self->hold_t_s = 0.0f;
+	self->hold_target_s = 0.0f;
 }
 
 void notifications_tick(Notifications* self, float dt_s) {
@@ -164,7 +166,7 @@ void notifications_tick(Notifications* self, float dt_s) {
 
 	// Sane defaults (tweak later).
 	const float in_s = 0.25f;
-	const float hold_s = 2.0f;
+	const float base_hold_s = 2.0f;
 	const float out_s = 0.25f;
 
 	self->phase_t_s += dt_s;
@@ -178,6 +180,10 @@ void notifications_tick(Notifications* self, float dt_s) {
 	}
 	if (self->phase == NOTIFY_PHASE_HOLD) {
 		self->hold_t_s += dt_s;
+		float hold_s = self->hold_target_s;
+		if (hold_s <= 0.0f) {
+			hold_s = base_hold_s;
+		}
 		if (self->phase_t_s >= hold_s) {
 			self->phase = NOTIFY_PHASE_OUT;
 			self->phase_t_s = 0.0f;
@@ -345,6 +351,7 @@ void notifications_draw(
 	const int icon_sz = 24;
 	const int gap = 8;
 	const float text_scale = 1.0f;
+	const float base_hold_s = 2.0f;
 
 	int line_h = font_line_height(font, text_scale);
 	if (line_h < icon_sz) {
@@ -419,12 +426,23 @@ void notifications_draw(
 		safe_copy_str(render, sizeof(render), text);
 	} else {
 		// Initial delay before scrolling so the user can read the start.
-		const float scroll_delay_s = 1.0f;
-		const float scroll_speed_px_s = 30.0f;
-		const float end_pause_s = 0.6f;
+		const float scroll_delay_s = 0.35f;
+		const float scroll_speed_px_s = 95.0f;
+		const float end_pause_s = 0.50f;
 		int overflow_px = full_w - avail_w;
 		if (overflow_px < 0) {
 			overflow_px = 0;
+		}
+
+		// Ensure we don't dismiss before the scroll has reached the end.
+		// We set the hold target dynamically based on measured overflow.
+		float needed = scroll_delay_s + ((float)overflow_px / scroll_speed_px_s) + end_pause_s;
+		if (needed < base_hold_s) {
+			needed = base_hold_s;
+		}
+		// Only ever extend; never shrink mid-toast.
+		if (self->hold_target_s <= 0.0f || self->hold_target_s < needed) {
+			self->hold_target_s = needed;
 		}
 
 		float t = 0.0f;
@@ -436,14 +454,9 @@ void notifications_draw(
 		} else {
 			float scroll_t = t - scroll_delay_s;
 			float scroll_px_f = scroll_t * scroll_speed_px_s;
-			// If we reach the end, pause, then loop.
-			if ((int)scroll_px_f > overflow_px) {
-				float over = scroll_px_f - (float)overflow_px;
-				if (over >= end_pause_s * scroll_speed_px_s) {
-					scroll_px_f = 0.0f;
-				} else {
-					scroll_px_f = (float)overflow_px;
-				}
+			// Clamp at end (no looping). We rely on hold_target to keep the toast visible.
+			if (scroll_px_f > (float)overflow_px) {
+				scroll_px_f = (float)overflow_px;
 			}
 			int start = find_start_index_for_scroll(font, text, text_scale, (int)scroll_px_f);
 			build_window_text(font, text, text_scale, start, avail_w, false, render, sizeof(render));
