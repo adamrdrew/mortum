@@ -163,7 +163,7 @@ typedef enum DoorsOpenResult {
 
 Meaning:
 
-- `DOORS_OPENED`: transitioned from closed → open
+- `DOORS_OPENED`: door opening was accepted/initiated (may animate before the portal becomes passable)
 - `DOORS_ALREADY_OPEN`: target door is already open
 - `DOORS_NOT_FOUND`: requested ID not present
 - `DOORS_ON_COOLDOWN`: open attempt ignored due to debounce
