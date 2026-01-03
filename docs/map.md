@@ -142,6 +142,8 @@ Defined in `include/game/world.h`:
 - Doors (runtime):
   - `door_blocked` (bool): when true, this wall behaves as solid even if it is a portal
   - `door_open_t` (float in `[0,1]`): opening animation fraction (used by renderer while blocked)
+- Level completion (runtime):
+  - `end_level` (bool): when true, pressing the action key while touching this wall completes the current level (sets `GameState.mode = GAME_MODE_WIN`)
 - Textures:
   - `tex[64]`: current wall texture (may change at runtime)
   - `base_tex[64]`: original map texture
@@ -298,6 +300,7 @@ Required fields per wall:
 
 Optional fields (toggle floors)
 
+- `end_level` (boolean)
 - `toggle_sector` (boolean)
 - `toggle_sector_id` (integer): refers to a **sector `id`**, not a sector index
 - `toggle_sector_oneshot` (boolean)
@@ -311,6 +314,13 @@ Optional fields (inventory gating)
 - `required_item_missing_message` (string): optional toast message when the item is missing
 
 Semantics:
+
+- **End-level wall**: `end_level == true`
+  - Pressing the action key while touching the wall completes the current level.
+  - This is implemented by setting `GameState.mode = GAME_MODE_WIN`, which TimelineFlow interprets as “map completed” via the existing `GAME_MODE_WIN` rising edge.
+  - **Precedence**: end-level takes precedence over all other action interactions.
+    - If a wall has `end_level=true`, it completes the level and does not toggle floors or open doors.
+  - Authoring note: end-level can be placed on solid or portal walls. Portal end-level walls may be interactable from either adjacent sector depending on wall winding and player position.
 
 - **Solid wall**: `back_sector == -1`
   - Blocks collision (`collision_move_circle`) and blocks LOS (`collision_line_of_sight`).
@@ -331,6 +341,7 @@ Validation rules:
 - `front_sector` must be in range.
 - `back_sector` must be `-1` or in range.
 - `tex` must be non-empty.
+- If `end_level` is true, `toggle_sector` must be false.
 - If `toggle_sector` is true and `toggle_sector_id != -1`, that `toggle_sector_id` must match some sector’s `id`.
 
 ---
@@ -649,6 +660,8 @@ Safety behavior:
   - has valid sector indices,
   - has non-empty `tex`.
 - Toggle walls with `toggle_sector_id` must reference an existing sector `id`.
+- End-level walls must not also be toggle walls (`end_level=true` and `toggle_sector=true` is a load failure).
+- Doors must not bind to an end-level wall (a `doors[].wall_index` referencing a wall with `end_level=true` is a load failure).
 - Player start must be inside some sector.
 - **Contiguity rule**: every sector must be reachable from the player’s start sector via the portal adjacency graph.
   - Any wall with `back_sector != -1` contributes an undirected edge between `front_sector` and `back_sector`.

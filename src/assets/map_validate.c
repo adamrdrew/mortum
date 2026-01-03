@@ -462,6 +462,16 @@ bool map_validate(const World* world, float player_start_x, float player_start_y
 			log_error("Wall %d missing tex", i);
 			return false;
 		}
+		if (w.end_level) {
+			// end_level takes precedence over everything; disallow combinations that would be unreachable/ambiguous.
+			if (w.toggle_sector) {
+				log_error("Wall %d has both end_level=true and toggle_sector=true (end_level takes precedence)", i);
+				return false;
+			}
+			if (w.back_sector != -1) {
+				log_warn("Wall %d has end_level=true on a portal wall (back_sector != -1); interaction may be possible from either side", i);
+			}
+		}
 		if (w.toggle_sector) {
 			if (w.toggle_sector_id != -1) {
 				bool found = false;
@@ -504,6 +514,10 @@ bool map_validate(const World* world, float player_start_x, float player_start_y
 				return false;
 			}
 			const Wall* w = &world->walls[d->wall_index];
+			if (w->end_level) {
+				log_error("Door '%s' wall_index=%d refers to a wall with end_level=true (end_level takes precedence)", d->id, d->wall_index);
+				return false;
+			}
 			if (w->back_sector == -1) {
 				log_error("Door '%s' wall_index=%d must refer to a portal wall (back_sector != -1)", d->id, d->wall_index);
 				return false;

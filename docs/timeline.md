@@ -122,6 +122,7 @@ Completion edges:
 
 - **Scene completion**: when the active Screen completes, TimelineFlow applies the current event’s `on_complete`.
 - **Map completion**: the existing win edge (`GAME_MODE_WIN` rising edge) is treated as “map completed” and `on_complete` is applied.
+  - Common sources of `GAME_MODE_WIN` include map-authored triggers like wall `end_level=true` (press the action key while touching the wall).
 
 `on_complete` actions:
 

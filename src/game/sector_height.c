@@ -180,6 +180,68 @@ static bool sector_step_is_safe_for_player(const Sector* s, const Player* player
 	return sector_can_fit_body_at_floor(s, b, candidate_feet_z, params);
 }
 
+bool sector_height_try_end_level_touching_wall(World* world, Player* player, float now_s) {
+	if (!world || !player) {
+		return false;
+	}
+	if (!world->walls || world->wall_count <= 0 || world->vertex_count <= 0) {
+		return false;
+	}
+	if (!world->wall_interact_next_allowed_s) {
+		return false;
+	}
+	if (player->noclip) {
+		return false;
+	}
+	if ((unsigned)player->body.sector >= (unsigned)world->sector_count) {
+		return false;
+	}
+
+	const float interaction_radius = 1.0f;
+	float best_dist2 = 1e30f;
+	int best_wall = -1;
+
+	for (int i = 0; i < world->wall_count; i++) {
+		const Wall* w = &world->walls[i];
+		if (!w->end_level) {
+			continue;
+		}
+		if (!wall_has_valid_vertices(world, w)) {
+			continue;
+		}
+		int side_sector = wall_sector_for_point(world, w, player->body.x, player->body.y);
+		if (side_sector != player->body.sector) {
+			continue;
+		}
+		Vertex a = world->vertices[w->v0];
+		Vertex b = world->vertices[w->v1];
+		float cx = 0.0f;
+		float cy = 0.0f;
+		closest_point_on_segment(a.x, a.y, b.x, b.y, player->body.x, player->body.y, &cx, &cy);
+		float dx = player->body.x - cx;
+		float dy = player->body.y - cy;
+		float dist2 = dx * dx + dy * dy;
+		if (dist2 > interaction_radius * interaction_radius) {
+			continue;
+		}
+		if (dist2 < best_dist2) {
+			best_dist2 = dist2;
+			best_wall = i;
+		}
+	}
+
+	if (best_wall < 0) {
+		return false;
+	}
+
+	// Debounce: prevent repeat triggers on the same wall.
+	if (now_s < world->wall_interact_next_allowed_s[best_wall]) {
+		return false;
+	}
+	world->wall_interact_next_allowed_s[best_wall] = now_s + 0.25f;
+	return true;
+}
+
 bool sector_height_try_toggle_touching_wall(
 	World* world,
 	Player* player,

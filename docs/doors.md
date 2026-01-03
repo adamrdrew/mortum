@@ -95,6 +95,7 @@ Enforced by `map_validate(...)` in [src/assets/map_validate.c](../src/assets/map
 - Door IDs must be unique within the map.
 - `wall_index` must be in range.
 - The referenced wall must be a **portal wall** (`back_sector != -1`).
+- The referenced wall must not have `end_level=true` (end-level takes precedence over door interaction).
 - `tex` must be non-empty.
 
 ---

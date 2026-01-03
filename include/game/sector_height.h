@@ -7,6 +7,10 @@
 #include "game/sound_emitters.h"
 #include "game/notifications.h"
 
+// Attempts to complete the level when the player is touching a wall with
+// end_level=true. Returns true if the trigger fired.
+bool sector_height_try_end_level_touching_wall(World* world, Player* player, float now_s);
+
 // Attempts to toggle a movable sector when the player is touching a wall with
 // toggle_sector=true. Returns true if a toggle was started.
 bool sector_height_try_toggle_touching_wall(

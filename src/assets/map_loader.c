@@ -957,6 +957,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	for (int i = 0; i < wcount; i++) {
 		int tw = json_array_nth(&doc, t_walls, i);
 		int tv0=-1,tv1=-1,tfs=-1,tbs=-1,ttex=-1;
+		int t_end_level = -1;
 		int t_toggle_sector = -1;
 		int t_toggle_sector_id = -1;
 		int t_toggle_sector_oneshot = -1;
@@ -971,6 +972,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 			map_load_result_destroy(out);
 			return false;
 		}
+		(void)json_object_get(&doc, tw, "end_level", &t_end_level);
 		(void)json_object_get(&doc, tw, "toggle_sector", &t_toggle_sector);
 		(void)json_object_get(&doc, tw, "toggle_sector_id", &t_toggle_sector_id);
 		(void)json_object_get(&doc, tw, "toggle_sector_oneshot", &t_toggle_sector_oneshot);
@@ -986,6 +988,15 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 			json_doc_destroy(&doc);
 			map_load_result_destroy(out);
 			return false;
+		}
+		bool end_level = false;
+		if (t_end_level != -1) {
+			if (!json_get_bool(&doc, t_end_level, &end_level)) {
+				log_error("wall %d end_level invalid (must be true/false)", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
 		}
 		bool toggle_sector = false;
 		int toggle_sector_id = -1;
@@ -1029,6 +1040,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		out->world.walls[i].v1 = v1;
 		out->world.walls[i].front_sector = fs;
 		out->world.walls[i].back_sector = bs;
+		out->world.walls[i].end_level = end_level;
 		out->world.walls[i].toggle_sector = toggle_sector;
 		out->world.walls[i].toggle_sector_id = toggle_sector_id;
 		out->world.walls[i].toggle_sector_oneshot = toggle_sector_oneshot;

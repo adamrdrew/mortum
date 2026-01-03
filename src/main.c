@@ -1088,6 +1088,9 @@ int main(int argc, char** argv) {
 				bool action_pressed = action_down && !player.action_prev_down;
 				player.action_prev_down = action_down;
 				if (action_pressed) {
+					if (map_ok && sector_height_try_end_level_touching_wall(&map.world, &player, now_s)) {
+						gs.mode = GAME_MODE_WIN;
+					} else {
 					bool opened_door = false;
 					if (map_ok) {
 						opened_door = doors_try_open_near_player(
@@ -1111,6 +1114,7 @@ int main(int argc, char** argv) {
 						player.body.y,
 						now_s
 					);
+					}
 					}
 				}
 				sector_height_update(map_ok ? &map.world : NULL, &player, &sfx_emitters, player.body.x, player.body.y, loop.fixed_dt_s);

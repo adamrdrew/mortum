@@ -1,0 +1,7 @@
+{
+  "name": "End Level Test",
+  "events": [
+    {"kind": "map", "name": "end_level_a.json", "on_complete": "advance"},
+    {"kind": "map", "name": "end_level_b.json", "on_complete": "loop"}
+  ]
+}

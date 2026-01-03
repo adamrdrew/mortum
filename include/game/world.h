@@ -36,6 +36,8 @@ typedef struct Wall {
 	int v1;
 	int front_sector;
 	int back_sector; // -1 for solid
+	// If true, pressing the action key while touching this wall completes the level.
+	bool end_level;
 	// Runtime door state: when true, this wall behaves as solid even if back_sector is a portal.
 	bool door_blocked;
 	// Door open animation fraction in [0,1].

@@ -152,6 +152,12 @@ Array of wall objects. Each wall has required fields:
 
 Optional fields (gameplay triggers):
 
+- `end_level` (boolean): if `true`, this wall completes the level when used.
+	- Triggering is done in-game by pressing the action key while touching the wall.
+	- Implementation detail: this sets `GameState.mode = GAME_MODE_WIN`, which TimelineFlow interprets as “map completed”.
+	- **Precedence**: if `end_level` is true, it takes precedence over all other action interactions on that press.
+	- If omitted: treated as `false`.
+
 - `toggle_sector` (boolean): if `true`, this wall can be used as an action-trigger.
 	- Triggering is done in-game by pressing the action key while touching the wall.
 	- If omitted: treated as `false`.
@@ -178,6 +184,8 @@ Hard requirements (validated):
 	- `front_sector` must be within `0..sectors.length-1`.
 	- `back_sector` must be either **exactly** `-1` or within `0..sectors.length-1`.
 	- `tex` must be a **non-empty** string.
+	- `end_level=true` must not be combined with `toggle_sector=true` on the same wall (end_level takes precedence).
+	- A door (`doors[].wall_index`) must not refer to a wall with `end_level=true` (end_level takes precedence over door interaction).
 
 ### How to build valid sector boundaries (CRITICAL)
 

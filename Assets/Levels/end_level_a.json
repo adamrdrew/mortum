@@ -1,0 +1,19 @@
+{
+  "name": "END_LEVEL_A",
+  "player_start": {"x": 1.0, "y": 1.0, "angle_deg": 180},
+  "vertices": [
+    {"x": 0, "y": 0},
+    {"x": 4, "y": 0},
+    {"x": 4, "y": 4},
+    {"x": 0, "y": 4}
+  ],
+  "sectors": [
+    {"id": 0, "floor_z": 0, "ceil_z": 4, "floor_tex": "FLOOR_2A.PNG", "ceil_tex": "TECH_1A.PNG", "light": 1.0}
+  ],
+  "walls": [
+    {"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG", "end_level": true},
+    {"v0": 1, "v1": 2, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG"},
+    {"v0": 2, "v1": 3, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG"},
+    {"v0": 3, "v1": 0, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG"}
+  ]
+}
