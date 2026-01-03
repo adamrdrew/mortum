@@ -21,6 +21,8 @@ typedef struct Door {
 	char id[64];
 	int wall_index;
 	bool is_open;
+	bool is_opening;
+	float open_start_s;
 	char closed_tex[64];
 	char sound_open[64];
 	char required_item[64];
@@ -67,3 +69,5 @@ DoorsOpenResult doors_try_open_by_id(
 	float listener_y,
 	float now_s,
 	const char* door_id);
+// Advance door opening animations. Should be called once per gameplay tick.
+void doors_update(Doors* self, World* world, float now_s);

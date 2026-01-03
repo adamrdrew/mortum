@@ -1114,6 +1114,9 @@ int main(int argc, char** argv) {
 					}
 				}
 				sector_height_update(map_ok ? &map.world : NULL, &player, &sfx_emitters, player.body.x, player.body.y, loop.fixed_dt_s);
+					if (map_ok) {
+						doors_update(&doors, &map.world, now_s);
+					}
 
 				player_controller_update(&player, map_ok ? &map.world : NULL, &ci, loop.fixed_dt_s);
 				entity_system_resolve_player_collisions(&entities, &player.body);

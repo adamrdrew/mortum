@@ -7,6 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Visual door raise duration (seconds). Fast but readable.
+#define DOOR_OPEN_DURATION_S 0.55f
+
 static float clampf(float v, float lo, float hi) {
 	if (v < lo) {
 		return lo;
@@ -59,6 +62,31 @@ static int find_twin_portal_wall_index(const World* world, int wall_index) {
 		}
 	}
 	return -1;
+}
+
+static void door_apply_wall_state(World* world, int wall_index, bool blocked, float open_t, const char* tex_override) {
+	if (!world || wall_index < 0 || wall_index >= world->wall_count) {
+		return;
+	}
+	int twin = find_twin_portal_wall_index(world, wall_index);
+	Wall* w = &world->walls[wall_index];
+	Wall* wt = (twin >= 0) ? &world->walls[twin] : NULL;
+
+	w->door_blocked = blocked;
+	w->door_open_t = open_t;
+	if (wt) {
+		wt->door_blocked = blocked;
+		wt->door_open_t = open_t;
+	}
+
+	if (tex_override && tex_override[0] != '\0') {
+		strncpy(w->tex, tex_override, sizeof(w->tex) - 1u);
+		w->tex[sizeof(w->tex) - 1u] = '\0';
+		if (wt) {
+			strncpy(wt->tex, tex_override, sizeof(wt->tex) - 1u);
+			wt->tex[sizeof(wt->tex) - 1u] = '\0';
+		}
+	}
 }
 
 static float player_dist2_to_wall_segment(const World* world, const Wall* w, float px, float py) {
@@ -125,6 +153,8 @@ bool doors_build_from_map(Doors* self, World* world, const MapDoor* defs, int de
 		safe_copy(out->id, sizeof(out->id), d->id);
 		out->wall_index = d->wall_index;
 		out->is_open = !d->starts_closed;
+		out->is_opening = false;
+		out->open_start_s = 0.0f;
 		safe_copy(out->closed_tex, sizeof(out->closed_tex), d->tex);
 		safe_copy(out->sound_open, sizeof(out->sound_open), d->sound_open);
 		safe_copy(out->required_item, sizeof(out->required_item), d->required_item);
@@ -132,31 +162,11 @@ bool doors_build_from_map(Doors* self, World* world, const MapDoor* defs, int de
 		out->next_allowed_s = 0.0f;
 		out->next_deny_toast_s = 0.0f;
 
-		// Apply initial closed state to the bound wall.
-		if (out->wall_index >= 0 && out->wall_index < world->wall_count) {
-			int twin = find_twin_portal_wall_index(world, out->wall_index);
-			Wall* w = &world->walls[out->wall_index];
-			Wall* wt = (twin >= 0) ? &world->walls[twin] : NULL;
-			if (!out->is_open) {
-				w->door_blocked = true;
-				if (wt) {
-					wt->door_blocked = true;
-				}
-				if (out->closed_tex[0] != '\0') {
-					strncpy(w->tex, out->closed_tex, sizeof(w->tex) - 1u);
-					w->tex[sizeof(w->tex) - 1u] = '\0';
-					if (wt) {
-						strncpy(wt->tex, out->closed_tex, sizeof(wt->tex) - 1u);
-						wt->tex[sizeof(wt->tex) - 1u] = '\0';
-					}
-				}
-			} else {
-				w->door_blocked = false;
-				if (wt) {
-					wt->door_blocked = false;
-				}
-				// Keep authored base tex (already in w->tex).
-			}
+		// Apply initial wall state.
+		if (!out->is_open) {
+			door_apply_wall_state(world, out->wall_index, true, 0.0f, out->closed_tex);
+		} else {
+			door_apply_wall_state(world, out->wall_index, false, 1.0f, NULL);
 		}
 	}
 
@@ -192,6 +202,9 @@ static DoorsOpenResult door_try_open_index(
 	if (d->is_open) {
 		return DOORS_ALREADY_OPEN;
 	}
+	if (d->is_opening) {
+		return DOORS_ON_COOLDOWN;
+	}
 	if (now_s < d->next_allowed_s) {
 		return DOORS_ON_COOLDOWN;
 	}
@@ -214,37 +227,72 @@ static DoorsOpenResult door_try_open_index(
 		return DOORS_INVALID;
 	}
 
-	Wall* w = &world->walls[d->wall_index];
-	int twin = find_twin_portal_wall_index(world, d->wall_index);
-	Wall* wt = (twin >= 0) ? &world->walls[twin] : NULL;
-	w->door_blocked = false;
-	if (wt) {
-		wt->door_blocked = false;
-	}
-	strncpy(w->tex, w->base_tex, sizeof(w->tex) - 1u);
-	w->tex[sizeof(w->tex) - 1u] = '\0';
-	if (wt) {
-		strncpy(wt->tex, wt->base_tex, sizeof(wt->tex) - 1u);
-		wt->tex[sizeof(wt->tex) - 1u] = '\0';
-	}
-
-	d->is_open = true;
-	d->next_allowed_s = now_s + 15.0f;
+	// Start opening animation (keeps blocking until completion).
+	d->is_opening = true;
+	d->open_start_s = now_s;
+	// Prevent repeated attempts while opening.
+	d->next_allowed_s = now_s + DOOR_OPEN_DURATION_S;
+	// Ensure door is in a consistent closed state at animation start.
+	door_apply_wall_state(world, d->wall_index, true, 0.0f, d->closed_tex);
 
 	if (sfx && d->sound_open[0] != '\0') {
 		// Play from door midpoint.
-		float wx = 0.0f;
-		float wy = 0.0f;
+		const Wall* w = &world->walls[d->wall_index];
 		if (wall_has_valid_vertices(world, w)) {
 			Vertex a = world->vertices[w->v0];
 			Vertex b = world->vertices[w->v1];
-			wx = (a.x + b.x) * 0.5f;
-			wy = (a.y + b.y) * 0.5f;
+			float wx = (a.x + b.x) * 0.5f;
+			float wy = (a.y + b.y) * 0.5f;
 			sound_emitters_play_one_shot_at(sfx, d->sound_open, wx, wy, true, 1.0f, listener_x, listener_y);
 		}
 	}
 
 	return DOORS_OPENED;
+}
+
+void doors_update(Doors* self, World* world, float now_s) {
+	if (!self || !world) {
+		return;
+	}
+	for (int i = 0; i < self->door_count; i++) {
+		Door* d = &self->doors[i];
+		if (!d->is_opening) {
+			continue;
+		}
+		float t = (now_s - d->open_start_s) / DOOR_OPEN_DURATION_S;
+		if (t < 0.0f) {
+			t = 0.0f;
+		}
+		if (t > 1.0f) {
+			t = 1.0f;
+		}
+		// Smooth for nicer feel.
+		float tt = t * t * (3.0f - 2.0f * t);
+		door_apply_wall_state(world, d->wall_index, true, tt, d->closed_tex);
+		if (t >= 1.0f - 1e-4f) {
+			// Finalize: make portal open and restore base tex.
+			int wall_index = d->wall_index;
+			if (wall_index >= 0 && wall_index < world->wall_count) {
+				int twin = find_twin_portal_wall_index(world, wall_index);
+				Wall* w = &world->walls[wall_index];
+				Wall* wt = (twin >= 0) ? &world->walls[twin] : NULL;
+				w->door_blocked = false;
+				w->door_open_t = 1.0f;
+				strncpy(w->tex, w->base_tex, sizeof(w->tex) - 1u);
+				w->tex[sizeof(w->tex) - 1u] = '\0';
+				if (wt) {
+					wt->door_blocked = false;
+					wt->door_open_t = 1.0f;
+					strncpy(wt->tex, wt->base_tex, sizeof(wt->tex) - 1u);
+					wt->tex[sizeof(wt->tex) - 1u] = '\0';
+				}
+			}
+			d->is_opening = false;
+			d->is_open = true;
+			// Long cooldown isn't meaningful once open-only, but keep behavior consistent.
+			d->next_allowed_s = now_s + 15.0f;
+		}
+	}
 }
 
 bool doors_try_open_near_player(

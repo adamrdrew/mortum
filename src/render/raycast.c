@@ -871,6 +871,7 @@ static void render_wall_span_textured(
 	int y_clip_bot,
 	float z_top,
 	float z_bot,
+	float tex_v_origin_z,
 	float half_h,
 	float proj_dist,
 	float cam_z,
@@ -947,7 +948,7 @@ static void render_wall_span_textured(
 
 	for (int y = y_top; y < y_bot; y++) {
 		depth_pixels_write_min(out_depth_pixels, fb->width, x, y, dist);
-		float vv = fractf(z0 * wall_uv_scale_v);
+		float vv = fractf((z0 - tex_v_origin_z) * wall_uv_scale_v);
 		uint32_t c = tex ? texture_sample_nearest(tex, uu, vv) : base;
 		uint8_t a = (uint8_t)((c >> 24) & 0xFF);
 		uint8_t r = (uint8_t)((c >> 16) & 0xFF);
@@ -1206,8 +1207,205 @@ static void render_column_textured_recursive(
 	} else if (w->back_sector == sector) {
 		other = w->front_sector;
 	}
-	if (w->door_blocked) {
+	bool is_blocked_door = (w->door_blocked && w->back_sector >= 0);
+	float door_t = clampf(w->door_open_t, 0.0f, 1.0f);
+	// Fully-closed blocked doors behave as solid walls.
+	if (is_blocked_door && door_t <= 1e-4f) {
 		other = -1;
+	}
+
+	// Blocked door with opening animation: render as a rising slab with a growing portal gap.
+	if (is_blocked_door && (unsigned)other < (unsigned)world->sector_count && door_t > 1e-4f && door_t < 1.0f - 1e-4f) {
+		const Sector* so = &world->sectors[other];
+		bool other_ceil_is_sky = is_sky_sentinel(so->ceil_tex);
+		float z_open_top = s->ceil_z < so->ceil_z ? s->ceil_z : so->ceil_z;
+		float z_open_bot = s->floor_z > so->floor_z ? s->floor_z : so->floor_z;
+		float door_bottom_z = z_open_bot + (z_open_top - z_open_bot) * door_t;
+
+		// Recurse through the open gap below the door.
+		int y_open0 = 0;
+		int y_open1 = 0;
+		bool has_open = false;
+		float z_gap_top = door_bottom_z;
+		if (z_gap_top > z_open_bot + 1e-4f) {
+			int y_open_top = project_y(half_h, proj_dist, cam_z, z_gap_top, dist);
+			int y_open_bot = project_y(half_h, proj_dist, cam_z, z_open_bot, dist);
+			y_open0 = y_open_top;
+			y_open1 = y_open_bot;
+			if (y_open0 < y_clip_top) {
+				y_open0 = y_clip_top;
+			}
+			if (y_open1 > y_clip_bot) {
+				y_open1 = y_clip_bot;
+			}
+			if (y_open0 < 0) {
+				y_open0 = 0;
+			}
+			if (y_open1 > fb->height) {
+				y_open1 = fb->height;
+			}
+			has_open = (y_open0 < y_open1);
+		}
+		if (has_open) {
+			render_column_textured_recursive(
+				fb,
+				world,
+				cam,
+				texreg,
+				paths,
+				sky_tex,
+				plane_lights,
+				plane_light_count,
+				wall_lights,
+				wall_light_count,
+				x,
+				half_h,
+				proj_dist,
+				cam_z,
+				ray_dx,
+				ray_dy,
+				corr,
+				other,
+				y_open0,
+				y_open1,
+				hit_t + 1e-4f,
+				hit_wall,
+				depth + 1,
+				out_depth,
+				out_depth_pixels,
+				perf
+			);
+		}
+
+		// Planes outside open gap (same approach as portal walls).
+		double planes_t0 = 0.0;
+		if (perf) {
+			planes_t0 = platform_time_seconds();
+		}
+		if (has_open) {
+			if (y_clip_top < y_open0) {
+				draw_sector_planes_column(
+					fb,
+					out_depth_pixels,
+					x,
+					y_clip_top,
+					y_open0,
+					half_h,
+					proj_dist,
+					cam->x,
+					cam->y,
+					cam_z,
+					ray_dx,
+					ray_dy,
+					corr,
+					s->floor_z,
+					s->ceil_z,
+					floor_tex,
+					ceil_tex,
+					(ceil_is_sky ? sky_tex : NULL),
+					sector_intensity,
+					sector_tint,
+					plane_lights,
+					plane_light_count,
+					perf
+				);
+			}
+			if (y_open1 < y_clip_bot) {
+				draw_sector_planes_column(
+					fb,
+					out_depth_pixels,
+					x,
+					y_open1,
+					y_clip_bot,
+					half_h,
+					proj_dist,
+					cam->x,
+					cam->y,
+					cam_z,
+					ray_dx,
+					ray_dy,
+					corr,
+					s->floor_z,
+					s->ceil_z,
+					floor_tex,
+					ceil_tex,
+					(ceil_is_sky ? sky_tex : NULL),
+					sector_intensity,
+					sector_tint,
+					plane_lights,
+					plane_light_count,
+					perf
+				);
+			}
+		} else {
+			draw_sector_planes_column(
+				fb,
+				out_depth_pixels,
+				x,
+				y_clip_top,
+				y_clip_bot,
+				half_h,
+				proj_dist,
+				cam->x,
+				cam->y,
+				cam_z,
+				ray_dx,
+				ray_dy,
+				corr,
+				s->floor_z,
+				s->ceil_z,
+				floor_tex,
+				ceil_tex,
+				(ceil_is_sky ? sky_tex : NULL),
+				sector_intensity,
+				sector_tint,
+				plane_lights,
+				plane_light_count,
+				perf
+			);
+		}
+		if (perf) {
+			perf->planes_ms += (platform_time_seconds() - planes_t0) * 1000.0;
+		}
+
+		// Draw the door slab occupying the upper portion of the portal opening.
+		if (z_open_top > door_bottom_z + 1e-4f) {
+			double walls_t0 = 0.0;
+			if (perf) {
+				walls_t0 = platform_time_seconds();
+			}
+			int y_top = project_y(half_h, proj_dist, cam_z, z_open_top, dist);
+			int y_bot = project_y(half_h, proj_dist, cam_z, door_bottom_z, dist);
+			render_wall_span_textured(
+				fb,
+				out_depth_pixels,
+				x,
+				y_top,
+				y_bot,
+				y_clip_top,
+				y_clip_bot,
+				z_open_top,
+				door_bottom_z,
+				door_bottom_z,
+				half_h,
+				proj_dist,
+				cam_z,
+				u,
+				u_tex,
+				wall_tex,
+				base,
+				dist,
+				wall_mul_v0,
+				wall_mul_v1,
+				perf
+			);
+			if (perf) {
+				perf->walls_ms += (platform_time_seconds() - walls_t0) * 1000.0;
+			}
+		}
+
+		(void)other_ceil_is_sky;
+		return;
 	}
 
 	// Solid wall
@@ -1341,6 +1539,7 @@ static void render_column_textured_recursive(
 			y_clip_bot,
 			s->ceil_z,
 			s->floor_z,
+			0.0f,
 			half_h,
 			proj_dist,
 			cam_z,
@@ -1537,6 +1736,7 @@ static void render_column_textured_recursive(
 			y_clip_bot,
 			s->ceil_z,
 			so->ceil_z,
+			0.0f,
 			half_h,
 			proj_dist,
 			cam_z,
@@ -1572,6 +1772,7 @@ static void render_column_textured_recursive(
 			y_clip_bot,
 			so->floor_z,
 			s->floor_z,
+			0.0f,
 			half_h,
 			proj_dist,
 			cam_z,

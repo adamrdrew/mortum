@@ -38,6 +38,10 @@ typedef struct Wall {
 	int back_sector; // -1 for solid
 	// Runtime door state: when true, this wall behaves as solid even if back_sector is a portal.
 	bool door_blocked;
+	// Door open animation fraction in [0,1].
+	// 0 = fully closed (blocks portal), 1 = fully open (raised through ceiling).
+	// Meaningful only when door_blocked is true.
+	float door_open_t;
 	// Current wall texture (may change at runtime).
 	char tex[64];
 	// Inactive/base texture from the map file.
