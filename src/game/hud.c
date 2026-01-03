@@ -452,7 +452,7 @@ void hud_draw(HudSystem* hud, Framebuffer* fb, const Player* player, const GameS
 		x += pw + gap;
 	}
 
-	// Top-left status for win/lose (kept for now).
+	// Top-left status for lose only (win draws no banner).
 	if (state && state->mode == GAME_MODE_WIN) {
 		// Intentionally no win-mode banner text.
 	}

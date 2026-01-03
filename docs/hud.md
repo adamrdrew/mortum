@@ -535,11 +535,9 @@ Note: In the current entity/pickup system (`include/game/entities.h`), there is 
 
 ### Win/Lose message (top-left)
 
-Independent of the bottom bar, the HUD draws one of these at `(8, 8)`:
+The HUD does not draw any win/lose banner text.
 
-- `"YOU DIED"` when `GameState.mode == GAME_MODE_LOSE`
-
-Win mode intentionally draws no banner text.
+Lose state feedback is provided via the toast notification system (see `docs/notifications.md`), which triggers a one-shot `"YOU DIED"` toast on the transition into `GAME_MODE_LOSE`.
 
 ## Font system (how HUD text is rendered)
 
