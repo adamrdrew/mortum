@@ -11,9 +11,9 @@
     {"x": 0.0, "y": 10.0}
   ],
   "sectors": [
-    {"id": 0, "floor_z": 0.0, "ceil_z": 4.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0},
+    {"id": 0, "floor_z": 1.0, "ceil_z": 8.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0},
     {"id": 1, "floor_z": 0.0, "ceil_z": 4.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0},
-    {"id": 2, "floor_z": 0.0, "ceil_z": 4.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0}
+    {"id": 2, "floor_z": -1.0, "ceil_z": 3.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0}
   ],
   "walls": [
     {"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG"},

@@ -6,6 +6,7 @@ Core constraints:
 
 - Doors are **open-only**: once opened, they never close in gameplay.
 - Door “closure” is represented without changing world topology: the wall remains a portal (`back_sector != -1`) but is treated as solid via a runtime flag.
+- Doors visually **animate open by rising upward through the ceiling** (fast, readable lift), rather than disappearing.
 
 ---
 
@@ -38,10 +39,11 @@ A door is authored on a wall that is already a portal (`Wall.back_sector != -1`)
 
 - When the door is **closed**, the engine sets:
   - `Wall.door_blocked = true`
+  - `Wall.door_open_t = 0.0f`
   - `Wall.tex = Door.closed_tex` (the map-authored door slab texture)
 - When the door is **opened**, the engine sets:
-  - `Wall.door_blocked = false`
-  - `Wall.tex = Wall.base_tex` (restores the authored wall texture)
+  - during the opening animation: `Wall.door_blocked` remains `true` while `Wall.door_open_t` ramps from `0 → 1`
+  - at the end of the animation: `Wall.door_blocked = false`, `Wall.door_open_t = 1.0f`, and `Wall.tex = Wall.base_tex` (restores the authored wall texture)
 
 Important: portal edges are typically represented by **two directed walls** (one per sector). The door system applies the blocked flag and texture swap to both the bound wall and its “twin” (reversed vertices + swapped sectors) when present. This avoids one-sided rendering where the raycaster hits the opposite-directed wall and draws an “open portal span” (fully see-through when floor/ceil match).
 
@@ -113,6 +115,20 @@ Meaning:
   - renderer portal recursion
 
 The wall still remains a portal in topology (it still has a `back_sector`), which is important for renderer/visibility structure.
+
+### `Wall.door_open_t`
+
+Declared in [include/game/world.h](../include/game/world.h):
+
+- `float door_open_t;`
+
+Meaning:
+
+- Door open animation fraction in `[0,1]`.
+  - `0.0` = fully closed (door slab spans the full open height)
+  - `1.0` = fully open (door has risen through the ceiling)
+- While `door_blocked == true` and `door_open_t > 0`, the **renderer** draws the door as a slab that is lifted upward, leaving an **increasing portal gap below**.
+- Collision/LOS/physics continue to treat the portal as solid as long as `door_blocked == true` (door remains blocking until the animation completes).
 
 ### Door runtime structs
 
@@ -200,6 +216,20 @@ Behavior:
 - Uses the same gating/cooldown/toast behavior as a nearby interaction.
 - Does not apply proximity/sector-adjacency checks (intended for developer tooling/console).
 
+### Per-tick animation update
+
+- `void doors_update(Doors* self, World* world, float now_s)`
+
+Behavior:
+
+- Advances opening animations for any doors currently opening.
+- Updates the bound wall(s) `door_open_t` while keeping `door_blocked = true`.
+- When the animation completes, clears `door_blocked` and restores `base_tex`.
+
+Integration requirement:
+
+- Call this once per gameplay tick using the same deterministic gameplay time base as the interaction calls (see [src/main.c](../src/main.c)).
+
 ---
 
 ## Interaction rules and tuning constants
@@ -209,6 +239,7 @@ These are implemented in [src/game/doors.c](../src/game/doors.c).
 - Interaction radius: `1.0` world units (player distance to closest point on wall segment)
 - “Missing required item” toast cooldown: `0.75s` per door
 - Successful open debounce: `15.0s` per door
+- Door open animation duration: `DOOR_OPEN_DURATION_S` in [src/game/doors.c](../src/game/doors.c)
 
 Time base:
 
@@ -253,6 +284,11 @@ When closed, the physics body will not traverse the portal between sectors.
 
 When closed, the raycaster treats the wall as an occluder and does not recurse through it as a portal.
 
+While opening (animated):
+
+- The raycaster renders a **door slab** that rises upward, exposing an **open portal gap below**, using `Wall.door_open_t`.
+- Collision/LOS/physics remain blocked until the opening animation completes.
+
 ---
 
 ## Extending the door system
@@ -262,8 +298,9 @@ Common extensions and where to implement them:
 - Add “close” support:
   - Add a `doors_try_close_*` API and teach engine systems to respect a closed state (they already do via `door_blocked`).
   - Decide how to restore textures and whether to play different SFX.
-- Add animations:
-  - Introduce a door open progress value and either animate wall textures or integrate a separate render primitive.
+- Change animation timing/feel:
+  - Tune `DOOR_OPEN_DURATION_S` in [src/game/doors.c](../src/game/doors.c).
+  - If you change easing, keep the `[0,1]` semantics of `Wall.door_open_t` consistent.
 - Add per-door interaction distance or sound gain:
   - Extend `MapDoor` and parsing/validation; store in `Door`; use in `doors_try_open_*`.
 

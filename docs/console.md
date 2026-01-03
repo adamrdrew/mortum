@@ -152,7 +152,7 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - `inventory_contains <string>` — checks if an inventory item exists
 - `notify <string>` — shows a toast notification (upper-right)
 - `door_list` — lists door IDs in the current map
-- `door_open <id>` — opens a door by ID (developer command; requires an active map)
+- `door_open <id>` — opens a door by ID (developer command; requires an active map; opening is animated)
 
 ## Console Opacity
 

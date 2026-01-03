@@ -139,6 +139,9 @@ Defined in `include/game/world.h`:
   - `v0`, `v1` (vertex indices)
   - `front_sector` (index)
   - `back_sector` (index or `-1` for solid)
+- Doors (runtime):
+  - `door_blocked` (bool): when true, this wall behaves as solid even if it is a portal
+  - `door_open_t` (float in `[0,1]`): opening animation fraction (used by renderer while blocked)
 - Textures:
   - `tex[64]`: current wall texture (may change at runtime)
   - `base_tex[64]`: original map texture
@@ -320,6 +323,7 @@ Runtime note (doors):
 
 - A portal wall can be made to behave as solid at runtime by setting `Wall.door_blocked = true`.
   - This is how first-class doors are implemented: the wall remains a portal in topology (`back_sector` is unchanged), but collision/LOS/raycast treat it as solid while blocked.
+  - While a door is animating open, the wall may also have `Wall.door_open_t` in `(0,1)` so the renderer can show a rising slab and a growing portal gap.
 
 Validation rules:
 
@@ -352,7 +356,9 @@ Semantics:
 
 - Doors are **open-only**: once opened they do not close in gameplay.
 - When a door starts closed, the engine sets the bound wall’s runtime `door_blocked` flag and applies `tex` as the wall’s current texture.
-- When opened, the engine clears `door_blocked` and restores the wall’s authored base texture.
+- When opened, the engine plays a short “raise” animation:
+  - while animating: `door_blocked` stays true and `door_open_t` ramps from `0 → 1` (render-only; collision/LOS remain blocked)
+  - when complete: clears `door_blocked` and restores the wall’s authored base texture
 
 Validation rules:
 
