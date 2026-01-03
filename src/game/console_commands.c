@@ -14,6 +14,8 @@
 
 #include "game/level_start.h"
 
+#include "game/doors.h"
+
 #include "game/inventory.h"
 
 #include "game/notifications.h"
@@ -278,6 +280,9 @@ static void unload_map_and_world(ConsoleCommandContext* ctx) {
 
 	// Unload map assets.
 	if (ctx->map_ok && ctx->map && *ctx->map_ok) {
+		if (ctx->doors) {
+			doors_destroy(ctx->doors);
+		}
 		map_load_result_destroy(ctx->map);
 		*ctx->map_ok = false;
 	}
@@ -322,6 +327,9 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 	}
 	// map_load() overwrites the MapLoadResult struct; destroy prior owned allocations first.
 	if (*ctx->map_ok) {
+		if (ctx->doors) {
+			doors_destroy(ctx->doors);
+		}
 		map_load_result_destroy(ctx->map);
 		*ctx->map_ok = false;
 	}
@@ -341,6 +349,11 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 		timeline_flow_abort(ctx->tl_flow);
 	}
 
+	if (ctx->doors) {
+		if (!doors_build_from_map(ctx->doors, &ctx->map->world, ctx->map->doors, ctx->map->door_count)) {
+			log_error("Doors failed to build (continuing without doors)");
+		}
+	}
 	level_mesh_build(ctx->mesh, &ctx->map->world);
 	level_start_apply(ctx->player, ctx->map);
 	ctx->player->footstep_timer_s = 0.0f;
@@ -398,6 +411,7 @@ static bool load_timeline_by_name(Console* con, ConsoleCommandContext* ctx, cons
 	rt.entity_defs = ctx->entity_defs;
 	rt.sfx_emitters = ctx->sfx_emitters;
 	rt.particle_emitters = ctx->particle_emitters;
+	rt.doors = ctx->doors;
 	rt.screens = ctx->screens;
 	rt.fb = ctx->fb;
 	rt.console_ctx = ctx;
@@ -985,6 +999,75 @@ static bool cmd_player_reset(Console* con, int argc, const char** argv, void* us
 	return true;
 }
 
+static bool cmd_door_list(Console* con, int argc, const char** argv, void* user_ctx) {
+	(void)argc;
+	(void)argv;
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!ctx || !ctx->doors) {
+		console_print(con, "Error: Doors system unavailable.");
+		return false;
+	}
+	int n = doors_count(ctx->doors);
+	if (n <= 0) {
+		console_print(con, "(no doors)");
+		return true;
+	}
+	for (int i = 0; i < n; i++) {
+		const char* id = doors_id_at(ctx->doors, i);
+		if (id && id[0] != '\0') {
+			console_print(con, id);
+		}
+	}
+	return true;
+}
+
+static bool cmd_door_open(Console* con, int argc, const char** argv, void* user_ctx) {
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!ctx || !ctx->doors || !ctx->player || !ctx->map_ok || !ctx->map || !*ctx->map_ok) {
+		console_print(con, "Error: No active map/doors/player.");
+		return false;
+	}
+	if (argc < 2 || !argv[1] || argv[1][0] == '\0') {
+		console_print(con, "Usage: door_open <id>");
+		return false;
+	}
+	float now_s = 0.0f;
+	if (ctx->gameplay_time_s) {
+		now_s = *ctx->gameplay_time_s;
+	}
+	DoorsOpenResult r = doors_try_open_by_id(
+		ctx->doors,
+		&ctx->map->world,
+		ctx->player,
+		ctx->notifications,
+		ctx->sfx_emitters,
+		ctx->player->body.x,
+		ctx->player->body.y,
+		now_s,
+		argv[1]
+	);
+	switch (r) {
+		case DOORS_OPENED:
+			console_print(con, "OK");
+			return true;
+		case DOORS_ALREADY_OPEN:
+			console_print(con, "OK (already open)");
+			return true;
+		case DOORS_NOT_FOUND:
+			console_print(con, "Error: Door not found.");
+			return false;
+		case DOORS_ON_COOLDOWN:
+			console_print(con, "Error: Door is on cooldown.");
+			return false;
+		case DOORS_MISSING_REQUIRED_ITEM:
+			console_print(con, "Error: Missing required item.");
+			return false;
+		default:
+			console_print(con, "Error: Door open failed.");
+			return false;
+	}
+}
+
 void console_commands_register_all(Console* con) {
 	if (!con) {
 		return;
@@ -1150,6 +1233,20 @@ void console_commands_register_all(Console* con) {
 		.example = "inventory_contains red_key",
 		.syntax = "inventory_contains <string>",
 		.fn = cmd_inventory_contains,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "door_list",
+		.description = "Lists door IDs in the current map.",
+		.example = "door_list",
+		.syntax = "door_list",
+		.fn = cmd_door_list,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "door_open",
+		.description = "Opens a door by ID (obeys required_item gating).",
+		.example = "door_open lab_door",
+		.syntax = "door_open <id>",
+		.fn = cmd_door_open,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "notify",

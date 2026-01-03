@@ -10,6 +10,8 @@
 #include "game/scene_screen.h"
 #include "game/level_start.h"
 
+#include "game/doors.h"
+
 #include "game/notifications.h"
 
 #include "game/console_commands.h"
@@ -98,6 +100,9 @@ static bool try_load_map(TimelineFlowRuntime* rt, const char* map_name) {
 	// map_load() overwrites the MapLoadResult struct; destroy prior owned allocations first.
 	if (*rt->map_ok) {
 		log_info_s("transition", "Timeline destroying previous map");
+		if (rt->doors) {
+			doors_destroy(rt->doors);
+		}
 		map_load_result_destroy(rt->map);
 		*rt->map_ok = false;
 		if (rt->mesh) {
@@ -122,6 +127,11 @@ static bool try_load_map(TimelineFlowRuntime* rt, const char* map_name) {
 	}
 
 	level_mesh_build(rt->mesh, &rt->map->world);
+	if (rt->doors) {
+		if (!doors_build_from_map(rt->doors, &rt->map->world, rt->map->doors, rt->map->door_count)) {
+			log_error("Timeline doors failed to build (continuing without doors)");
+		}
+	}
 	level_start_apply(rt->player, rt->map);
 	rt->player->footstep_timer_s = 0.0f;
 

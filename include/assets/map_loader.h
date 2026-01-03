@@ -18,6 +18,18 @@ typedef struct MapEntityPlacement {
 	char def_name[64];
 } MapEntityPlacement;
 
+// Map-authored door definitions (first-class primitive).
+// Doors bind to an existing portal wall by index but have their own IDs, gating, and visuals.
+typedef struct MapDoor {
+	char id[64];
+	int wall_index; // index into world.walls[]; must refer to a portal wall (back_sector != -1)
+	bool starts_closed; // default true
+	char tex[64]; // door slab texture when closed
+	char sound_open[64]; // optional WAV filename under Assets/Sounds/Effects/
+	char required_item[64]; // optional inventory item required to open
+	char required_item_missing_message[128]; // optional toast message when missing
+} MapDoor;
+
 typedef struct MapLoadResult {
 	World world;
 	float player_start_x;
@@ -42,6 +54,10 @@ typedef struct MapLoadResult {
 	// Optional: map-authored entities.
 	MapEntityPlacement* entities; // owned
 	int entity_count;
+
+	// Optional: map-authored doors.
+	MapDoor* doors; // owned
+	int door_count;
 } MapLoadResult;
 
 typedef struct MapSoundEmitter {

@@ -335,7 +335,7 @@ void map_load_result_destroy(MapLoadResult* self) {
 	}
 	log_info_s(
 		"map",
-		"map_load_result_destroy: self=%p world={v=%p vc=%d s=%p sc=%d w=%p wc=%d} sounds=%p sc=%d particles=%p pc=%d entities=%p ec=%d",
+		"map_load_result_destroy: self=%p world={v=%p vc=%d s=%p sc=%d w=%p wc=%d} sounds=%p sc=%d particles=%p pc=%d entities=%p ec=%d doors=%p dc=%d",
 		(void*)self,
 		(void*)self->world.vertices,
 		self->world.vertex_count,
@@ -348,7 +348,9 @@ void map_load_result_destroy(MapLoadResult* self) {
 		(void*)self->particles,
 		self->particle_count,
 		(void*)self->entities,
-		self->entity_count
+		self->entity_count,
+		(void*)self->doors,
+		self->door_count
 	);
 	free(self->sounds);
 	self->sounds = NULL;
@@ -359,6 +361,9 @@ void map_load_result_destroy(MapLoadResult* self) {
 	free(self->entities);
 	self->entities = NULL;
 	self->entity_count = 0;
+	free(self->doors);
+	self->doors = NULL;
+	self->door_count = 0;
 	world_destroy(&self->world);
 	memset(self, 0, sizeof(*self));
 	log_info_s("map", "map_load_result_destroy: done self=%p", (void*)self);
@@ -432,6 +437,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	int t_sounds = -1;
 	int t_particles = -1;
 	int t_entities = -1;
+	int t_doors = -1;
 	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls)) {
 		log_error("Map JSON missing required fields");
 		json_doc_destroy(&doc);
@@ -441,6 +447,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	(void)json_object_get(&doc, 0, "sounds", &t_sounds);
 	(void)json_object_get(&doc, 0, "particles", &t_particles);
 	(void)json_object_get(&doc, 0, "entities", &t_entities);
+	(void)json_object_get(&doc, 0, "doors", &t_doors);
 
 	// player_start
 	if (!json_token_is_object(&doc, t_player)) {
@@ -954,6 +961,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		int t_toggle_sector_id = -1;
 		int t_toggle_sector_oneshot = -1;
 		int t_active_tex = -1;
+		int t_required_item = -1;
+		int t_required_item_missing_message = -1;
 		int t_toggle_sound = -1;
 		int t_toggle_sound_finish = -1;
 		if (!json_object_get(&doc, tw, "v0", &tv0) || !json_object_get(&doc, tw, "v1", &tv1) || !json_object_get(&doc, tw, "front_sector", &tfs) || !json_object_get(&doc, tw, "back_sector", &tbs) || !json_object_get(&doc, tw, "tex", &ttex)) {
@@ -966,6 +975,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		(void)json_object_get(&doc, tw, "toggle_sector_id", &t_toggle_sector_id);
 		(void)json_object_get(&doc, tw, "toggle_sector_oneshot", &t_toggle_sector_oneshot);
 		(void)json_object_get(&doc, tw, "active_tex", &t_active_tex);
+		(void)json_object_get(&doc, tw, "required_item", &t_required_item);
+		(void)json_object_get(&doc, tw, "required_item_missing_message", &t_required_item_missing_message);
 		(void)json_object_get(&doc, tw, "toggle_sound", &t_toggle_sound);
 		(void)json_object_get(&doc, tw, "toggle_sound_finish", &t_toggle_sound_finish);
 		int v0=0,v1=0,fs=0,bs=-1;
@@ -1022,6 +1033,8 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		out->world.walls[i].toggle_sector_id = toggle_sector_id;
 		out->world.walls[i].toggle_sector_oneshot = toggle_sector_oneshot;
 		out->world.walls[i].active_tex[0] = '\0';
+		out->world.walls[i].required_item[0] = '\0';
+		out->world.walls[i].required_item_missing_message[0] = '\0';
 		out->world.walls[i].toggle_sound[0] = '\0';
 		out->world.walls[i].toggle_sound_finish[0] = '\0';
 		world_set_wall_tex(&out->world.walls[i], sv_tex);
@@ -1029,6 +1042,42 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 			size_t n = sv_active_tex.len < 63 ? sv_active_tex.len : 63;
 			memcpy(out->world.walls[i].active_tex, sv_active_tex.data, n);
 			out->world.walls[i].active_tex[n] = '\0';
+		}
+		if (t_required_item != -1) {
+			StringView sv;
+			if (!json_get_string(&doc, t_required_item, &sv)) {
+				log_error("wall %d required_item invalid", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			if (sv.len >= sizeof(out->world.walls[i].required_item)) {
+				log_error("wall %d required_item too long (max %zu)", i, sizeof(out->world.walls[i].required_item) - 1u);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			size_t n = sv.len;
+			memcpy(out->world.walls[i].required_item, sv.data, n);
+			out->world.walls[i].required_item[n] = '\0';
+		}
+		if (t_required_item_missing_message != -1) {
+			StringView sv;
+			if (!json_get_string(&doc, t_required_item_missing_message, &sv)) {
+				log_error("wall %d required_item_missing_message invalid", i);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			if (sv.len >= sizeof(out->world.walls[i].required_item_missing_message)) {
+				log_error("wall %d required_item_missing_message too long (max %zu)", i, sizeof(out->world.walls[i].required_item_missing_message) - 1u);
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			size_t n = sv.len;
+			memcpy(out->world.walls[i].required_item_missing_message, sv.data, n);
+			out->world.walls[i].required_item_missing_message[n] = '\0';
 		}
 		if (t_toggle_sound != -1) {
 			StringView sv;
@@ -1053,6 +1102,145 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 			size_t n = sv.len < 63 ? sv.len : 63;
 			memcpy(out->world.walls[i].toggle_sound_finish, sv.data, n);
 			out->world.walls[i].toggle_sound_finish[n] = '\0';
+		}
+	}
+
+	// optional doors
+	if (t_doors != -1) {
+		if (!json_token_is_array(&doc, t_doors)) {
+			log_error("doors must be an array");
+			json_doc_destroy(&doc);
+			map_load_result_destroy(out);
+			return false;
+		}
+		int dcount = json_array_size(&doc, t_doors);
+		if (dcount > 0) {
+			out->doors = (MapDoor*)calloc((size_t)dcount, sizeof(MapDoor));
+			if (!out->doors) {
+				log_error("Out of memory allocating doors");
+				json_doc_destroy(&doc);
+				map_load_result_destroy(out);
+				return false;
+			}
+			out->door_count = dcount;
+			for (int i = 0; i < dcount; i++) {
+				int td = json_array_nth(&doc, t_doors, i);
+				if (!json_token_is_object(&doc, td)) {
+					log_error("door %d must be an object", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				int t_id = -1;
+				int t_wall_index = -1;
+				int t_tex = -1;
+				int t_starts_closed = -1;
+				int t_sound_open = -1;
+				int t_required_item = -1;
+				int t_required_item_missing_message = -1;
+				if (!json_object_get(&doc, td, "id", &t_id) || !json_object_get(&doc, td, "wall_index", &t_wall_index) || !json_object_get(&doc, td, "tex", &t_tex)) {
+					log_error("door %d missing required fields (id, wall_index, tex)", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				(void)json_object_get(&doc, td, "starts_closed", &t_starts_closed);
+				(void)json_object_get(&doc, td, "sound_open", &t_sound_open);
+				(void)json_object_get(&doc, td, "required_item", &t_required_item);
+				(void)json_object_get(&doc, td, "required_item_missing_message", &t_required_item_missing_message);
+
+				StringView sv_id;
+				StringView sv_tex;
+				int wall_index = -1;
+				if (!json_get_string(&doc, t_id, &sv_id) || !json_get_int(&doc, t_wall_index, &wall_index) || !json_get_string(&doc, t_tex, &sv_tex)) {
+					log_error("door %d fields invalid", i);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				if (sv_id.len == 0 || sv_id.len >= sizeof(out->doors[i].id)) {
+					log_error("door %d id invalid length (max %zu)", i, sizeof(out->doors[i].id) - 1u);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				if (sv_tex.len == 0 || sv_tex.len >= sizeof(out->doors[i].tex)) {
+					log_error("door %d tex invalid length (max %zu)", i, sizeof(out->doors[i].tex) - 1u);
+					json_doc_destroy(&doc);
+					map_load_result_destroy(out);
+					return false;
+				}
+				memcpy(out->doors[i].id, sv_id.data, sv_id.len);
+				out->doors[i].id[sv_id.len] = '\0';
+				memcpy(out->doors[i].tex, sv_tex.data, sv_tex.len);
+				out->doors[i].tex[sv_tex.len] = '\0';
+				out->doors[i].wall_index = wall_index;
+				out->doors[i].starts_closed = true;
+				out->doors[i].sound_open[0] = '\0';
+				out->doors[i].required_item[0] = '\0';
+				out->doors[i].required_item_missing_message[0] = '\0';
+				if (t_starts_closed != -1) {
+					bool b = true;
+					if (!json_get_bool(&doc, t_starts_closed, &b)) {
+						log_error("door %d starts_closed invalid (must be true/false)", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					out->doors[i].starts_closed = b;
+				}
+				if (t_sound_open != -1) {
+					StringView sv;
+					if (!json_get_string(&doc, t_sound_open, &sv)) {
+						log_error("door %d sound_open invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					if (sv.len >= sizeof(out->doors[i].sound_open)) {
+						log_error("door %d sound_open too long (max %zu)", i, sizeof(out->doors[i].sound_open) - 1u);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					memcpy(out->doors[i].sound_open, sv.data, sv.len);
+					out->doors[i].sound_open[sv.len] = '\0';
+				}
+				if (t_required_item != -1) {
+					StringView sv;
+					if (!json_get_string(&doc, t_required_item, &sv)) {
+						log_error("door %d required_item invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					if (sv.len >= sizeof(out->doors[i].required_item)) {
+						log_error("door %d required_item too long (max %zu)", i, sizeof(out->doors[i].required_item) - 1u);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					memcpy(out->doors[i].required_item, sv.data, sv.len);
+					out->doors[i].required_item[sv.len] = '\0';
+				}
+				if (t_required_item_missing_message != -1) {
+					StringView sv;
+					if (!json_get_string(&doc, t_required_item_missing_message, &sv)) {
+						log_error("door %d required_item_missing_message invalid", i);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					if (sv.len >= sizeof(out->doors[i].required_item_missing_message)) {
+						log_error("door %d required_item_missing_message too long (max %zu)", i, sizeof(out->doors[i].required_item_missing_message) - 1u);
+						json_doc_destroy(&doc);
+						map_load_result_destroy(out);
+						return false;
+					}
+					memcpy(out->doors[i].required_item_missing_message, sv.data, sv.len);
+					out->doors[i].required_item_missing_message[sv.len] = '\0';
+				}
+			}
 		}
 	}
 
@@ -1146,7 +1334,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 
 	json_doc_destroy(&doc);
 
-	if (!map_validate(&out->world, out->player_start_x, out->player_start_y)) {
+	if (!map_validate(&out->world, out->player_start_x, out->player_start_y, out->doors, out->door_count)) {
 		map_load_result_destroy(out);
 		return false;
 	}

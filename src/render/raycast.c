@@ -1206,6 +1206,9 @@ static void render_column_textured_recursive(
 	} else if (w->back_sector == sector) {
 		other = w->front_sector;
 	}
+	if (w->door_blocked) {
+		other = -1;
+	}
 
 	// Solid wall
 	if ((unsigned)other >= (unsigned)world->sector_count) {

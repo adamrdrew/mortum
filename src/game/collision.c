@@ -32,7 +32,7 @@ static void closest_point_on_segment(float ax, float ay, float bx, float by, flo
 }
 
 static bool wall_is_solid(const Wall* w) {
-	return w->back_sector < 0;
+	return w->back_sector < 0 || w->door_blocked;
 }
 
 

@@ -27,6 +27,7 @@
 typedef struct TextureRegistry TextureRegistry;
 typedef struct HudSystem HudSystem;
 typedef struct Notifications Notifications;
+typedef struct Doors Doors;
 
 // Command wiring context. Commands call into engine systems through pointers here.
 // Keep this POD and owned by main.
@@ -81,9 +82,11 @@ typedef struct ConsoleCommandContext {
 	EntityDefs* entity_defs;
 	SoundEmitters* sfx_emitters;
 	ParticleEmitters* particle_emitters;
+	Doors* doors;
 	PerfTrace* perf;
 	Framebuffer* fb;
 	float* wall_depth;
+	float* gameplay_time_s;
 
 	// Music bookkeeping.
 	char* prev_bgmusic;

@@ -47,6 +47,8 @@
 #include "game/sector_height.h"
 #include "game/map_music.h"
 
+#include "game/doors.h"
+
 #include "game/entities.h"
 
 #include "game/inventory.h"
@@ -446,6 +448,8 @@ int main(int argc, char** argv) {
 	timeline_flow_init(&tl_flow);
 	MapLoadResult map;
 	memset(&map, 0, sizeof(map));
+	Doors doors;
+	doors_init(&doors);
 	bool map_ok = false;
 	char map_name_buf[64] = "";
 	bool using_timeline = false;
@@ -485,6 +489,11 @@ int main(int argc, char** argv) {
 				);
 			}
 		}
+		if (map_ok) {
+			if (!doors_build_from_map(&doors, &map.world, map.doors, map.door_count)) {
+				log_error("Doors failed to build (continuing without doors)");
+			}
+		}
 		// Validate MIDI and SoundFont existence for background music
 		crash_diag_set_phase(PHASE_AUDIO_TRACK_SWITCH_BEGIN);
 		game_map_music_maybe_start(&paths, &map, map_ok, audio_enabled, music_enabled, prev_bgmusic, sizeof(prev_bgmusic), prev_soundfont, sizeof(prev_soundfont));
@@ -509,6 +518,11 @@ int main(int argc, char** argv) {
 		log_error("HUD init failed; aborting startup");
 		texture_registry_destroy(&texreg);
 		level_mesh_destroy(&mesh);
+		doors_destroy(&doors);
+		if (map_ok) {
+			map_load_result_destroy(&map);
+			map_ok = false;
+		}
 		free(wall_depth);
 		free(depth_pixels);
 		present_shutdown(&presenter);
@@ -532,6 +546,7 @@ int main(int argc, char** argv) {
 
 	Notifications notifications;
 	notifications_init(&notifications);
+	float gameplay_time_s = 0.0f;
 	notifications_reset(&notifications);
 
 	Player player;
@@ -652,6 +667,8 @@ int main(int argc, char** argv) {
 	console_ctx.prev_soundfont = prev_soundfont;
 	console_ctx.prev_soundfont_cap = sizeof(prev_soundfont);
 	console_ctx.notifications = &notifications;
+	console_ctx.doors = &doors;
+	console_ctx.gameplay_time_s = &gameplay_time_s;
 
 	ScreenRuntime screens;
 	screen_runtime_init(&screens);
@@ -676,6 +693,7 @@ int main(int argc, char** argv) {
 		rt.entity_defs = &entity_defs;
 		rt.sfx_emitters = &sfx_emitters;
 		rt.particle_emitters = &particle_emitters;
+		rt.doors = &doors;
 		rt.screens = &screens;
 		rt.fb = &fb;
 		rt.console_ctx = &console_ctx;
@@ -1035,6 +1053,7 @@ int main(int argc, char** argv) {
 				rt.entity_defs = &entity_defs;
 				rt.sfx_emitters = &sfx_emitters;
 				rt.particle_emitters = &particle_emitters;
+				rt.doors = &doors;
 				rt.screens = &screens;
 				rt.fb = &fb;
 				rt.console_ctx = &console_ctx;
@@ -1064,11 +1083,35 @@ int main(int argc, char** argv) {
 		for (int i = 0; i < steps; i++) {
 			if (gs.mode == GAME_MODE_PLAYING) {
 				crash_diag_set_phase(PHASE_GAMEPLAY_UPDATE_TICK);
+				float now_s = gameplay_time_s;
 				bool action_down = key_down2(&in, cfg->input.action_primary, cfg->input.action_secondary);
 				bool action_pressed = action_down && !player.action_prev_down;
 				player.action_prev_down = action_down;
 				if (action_pressed) {
-					(void)sector_height_try_toggle_touching_wall(map_ok ? &map.world : NULL, &player, &sfx_emitters, player.body.x, player.body.y);
+					bool opened_door = false;
+					if (map_ok) {
+						opened_door = doors_try_open_near_player(
+							&doors,
+							&map.world,
+							&player,
+							&notifications,
+							&sfx_emitters,
+							player.body.x,
+							player.body.y,
+							now_s
+						);
+					}
+					if (!opened_door) {
+					(void)sector_height_try_toggle_touching_wall(
+						map_ok ? &map.world : NULL,
+						&player,
+						&sfx_emitters,
+						&notifications,
+						player.body.x,
+						player.body.y,
+						now_s
+					);
+					}
 				}
 				sector_height_update(map_ok ? &map.world : NULL, &player, &sfx_emitters, player.body.x, player.body.y, loop.fixed_dt_s);
 
@@ -1076,6 +1119,7 @@ int main(int argc, char** argv) {
 				entity_system_resolve_player_collisions(&entities, &player.body);
 
 				entity_system_tick(&entities, &player.body, player.angle_deg, (float)loop.fixed_dt_s);
+				gameplay_time_s += (float)loop.fixed_dt_s;
 				{
 					uint32_t ei = 0u;
 					for (;;) {
@@ -1593,6 +1637,7 @@ int main(int argc, char** argv) {
 		screen_runtime_shutdown(&screens, &sctx);
 	}
 
+	doors_destroy(&doors);
 	if (map_ok) {
 		map_load_result_destroy(&map);
 	}

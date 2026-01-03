@@ -24,6 +24,7 @@
 typedef struct ConsoleCommandContext ConsoleCommandContext;
 typedef struct Console Console;
 typedef struct Notifications Notifications;
+typedef struct Doors Doors;
 
 typedef struct TimelineFlow {
 	bool active;
@@ -54,6 +55,7 @@ typedef struct TimelineFlowRuntime {
 	EntityDefs* entity_defs;
 	SoundEmitters* sfx_emitters;
 	ParticleEmitters* particle_emitters;
+	Doors* doors;
 
 	// Screen system for Scenes.
 	ScreenRuntime* screens;

@@ -1,9 +1,13 @@
 #include "assets/map_validate.h"
 
+#include "assets/map_loader.h"
+
 #include "core/log.h"
 
 #include <math.h>
 #include <stdlib.h>
+
+#include <string.h>
 
 static float polygon_area2(const World* world, const int* loop_verts, int loop_len) {
 	// Twice signed area (shoelace). loop_len >= 3.
@@ -387,8 +391,16 @@ static bool validate_sector_boundary(const World* world, int sector) {
 	return true;
 }
 
-bool map_validate(const World* world, float player_start_x, float player_start_y) {
+bool map_validate(const World* world, float player_start_x, float player_start_y, const MapDoor* doors, int door_count) {
 	if (!world) {
+		return false;
+	}
+	if (door_count < 0) {
+		log_error("door_count < 0");
+		return false;
+	}
+	if (door_count > 0 && !doors) {
+		log_error("doors missing (door_count=%d)", door_count);
 		return false;
 	}
 	if (world->sector_count <= 0) {
@@ -469,6 +481,36 @@ bool map_validate(const World* world, float player_start_x, float player_start_y
 				// Allowed: empty means "no alternate texture".
 			} else {
 				// ok
+			}
+		}
+	}
+
+	// Doors: validate schema invariants that depend on world geometry.
+	if (door_count > 0) {
+		for (int i = 0; i < door_count; i++) {
+			const MapDoor* d = &doors[i];
+			if (!d->id[0]) {
+				log_error("Door %d missing id", i);
+				return false;
+			}
+			for (int j = 0; j < i; j++) {
+				if (strcmp(doors[j].id, d->id) == 0) {
+					log_error("Door %d id duplicates prior id '%s'", i, d->id);
+					return false;
+				}
+			}
+			if (d->wall_index < 0 || d->wall_index >= world->wall_count) {
+				log_error("Door '%s' wall_index out of range: %d", d->id, d->wall_index);
+				return false;
+			}
+			const Wall* w = &world->walls[d->wall_index];
+			if (w->back_sector == -1) {
+				log_error("Door '%s' wall_index=%d must refer to a portal wall (back_sector != -1)", d->id, d->wall_index);
+				return false;
+			}
+			if (d->tex[0] == '\0') {
+				log_error("Door '%s' missing tex", d->id);
+				return false;
 			}
 		}
 	}

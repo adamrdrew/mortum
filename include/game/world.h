@@ -36,12 +36,18 @@ typedef struct Wall {
 	int v1;
 	int front_sector;
 	int back_sector; // -1 for solid
+	// Runtime door state: when true, this wall behaves as solid even if back_sector is a portal.
+	bool door_blocked;
 	// Current wall texture (may change at runtime).
 	char tex[64];
 	// Inactive/base texture from the map file.
 	char base_tex[64];
 	// Optional active texture for toggle walls.
 	char active_tex[64];
+	// Optional inventory gating for toggle walls.
+	char required_item[64];
+	// Optional message when required_item is missing.
+	char required_item_missing_message[128];
 	// Optional toggle sounds (WAV under Assets/Sounds/Effects/).
 	char toggle_sound[64];
 	char toggle_sound_finish[64];
@@ -57,6 +63,10 @@ typedef struct World {
 	int sector_count;
 	Wall* walls;      // owned
 	int wall_count;
+	// Per-wall interaction debounce state (owned). Indexed by wall index.
+	// Used for deterministic interaction cooldowns (e.g., toggle walls).
+	float* wall_interact_next_allowed_s; // length wall_count
+	float* wall_interact_next_deny_toast_s; // length wall_count
 	// Optional acceleration structure: for each sector, a packed list of wall indices
 	// that reference that sector (front and/or back). Built by world_build_sector_wall_index.
 	int* sector_wall_offsets;      // owned, length sector_count+1

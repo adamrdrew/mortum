@@ -3,8 +3,12 @@
 #include "game/physics_body.h"
 #include "game/tuning.h"
 
+#include "game/inventory.h"
+#include "game/notifications.h"
+
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 
 static bool wall_has_valid_vertices(const World* world, const Wall* w);
 
@@ -176,11 +180,22 @@ static bool sector_step_is_safe_for_player(const Sector* s, const Player* player
 	return sector_can_fit_body_at_floor(s, b, candidate_feet_z, params);
 }
 
-bool sector_height_try_toggle_touching_wall(World* world, Player* player, SoundEmitters* sfx, float listener_x, float listener_y) {
+bool sector_height_try_toggle_touching_wall(
+	World* world,
+	Player* player,
+	SoundEmitters* sfx,
+	Notifications* notifications,
+	float listener_x,
+	float listener_y,
+	float now_s
+) {
 	if (!world || !player) {
 		return false;
 	}
 	if (!world->walls || world->wall_count <= 0 || world->vertex_count <= 0) {
+		return false;
+	}
+	if (!world->wall_interact_next_allowed_s || !world->wall_interact_next_deny_toast_s) {
 		return false;
 	}
 	if (any_sector_moving(world)) {
@@ -193,7 +208,7 @@ bool sector_height_try_toggle_touching_wall(World* world, Player* player, SoundE
 		return false;
 	}
 
-	const float touch_eps = 0.03f;
+	const float interaction_radius = 1.0f;
 	float best_dist2 = 1e30f;
 	int best_wall = -1;
 
@@ -217,8 +232,7 @@ bool sector_height_try_toggle_touching_wall(World* world, Player* player, SoundE
 		float dx = player->body.x - cx;
 		float dy = player->body.y - cy;
 		float dist2 = dx * dx + dy * dy;
-		float r = player->body.radius + touch_eps;
-		if (dist2 > r * r) {
+		if (dist2 > interaction_radius * interaction_radius) {
 			continue;
 		}
 		if (dist2 < best_dist2) {
@@ -231,7 +245,30 @@ bool sector_height_try_toggle_touching_wall(World* world, Player* player, SoundE
 		return false;
 	}
 
+	// Debounce: prevent repeat triggers on the same wall.
+	if (now_s < world->wall_interact_next_allowed_s[best_wall]) {
+		return false;
+	}
+
 	Wall* w = &world->walls[best_wall];
+
+	// Inventory gating (optional).
+	if (w->required_item[0] != '\0' && !inventory_contains(&player->inventory, w->required_item)) {
+		// Avoid spamming toasts while the player repeatedly presses action.
+		const float deny_toast_cooldown_s = 0.75f;
+		if (notifications && now_s >= world->wall_interact_next_deny_toast_s[best_wall]) {
+			if (w->required_item_missing_message[0] != '\0') {
+				(void)notifications_push_text(notifications, w->required_item_missing_message);
+			} else {
+				char msg[192];
+				(void)snprintf(msg, sizeof(msg), "Missing required item: %s", w->required_item);
+				msg[sizeof(msg) - 1] = '\0';
+				(void)notifications_push_text(notifications, msg);
+			}
+			world->wall_interact_next_deny_toast_s[best_wall] = now_s + deny_toast_cooldown_s;
+		}
+		return false;
+	}
 	int target_sector = -1;
 	if (w->toggle_sector_id != -1) {
 		target_sector = world_find_sector_index_by_id(world, w->toggle_sector_id);
@@ -269,6 +306,7 @@ bool sector_height_try_toggle_touching_wall(World* world, Player* player, SoundE
 	s->floor_z_target = dest;
 	s->floor_moving = true;
 	s->floor_toggle_wall_index = best_wall;
+	world->wall_interact_next_allowed_s[best_wall] = now_s + 15.0f;
 
 	// Trigger optional toggle start sound from wall midpoint.
 	if (sfx && w->toggle_sound[0] != '\0') {

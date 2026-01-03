@@ -79,7 +79,7 @@ static bool wall_blocks_body(const World* world, const Wall* w, const PhysicsBod
 	if (!world || !w || !body || !params) {
 		return true;
 	}
-	if (w->back_sector < 0) {
+	if (w->back_sector < 0 || w->door_blocked) {
 		return true; // solid wall
 	}
 

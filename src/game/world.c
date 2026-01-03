@@ -13,6 +13,8 @@ void world_destroy(World* self) {
 	free(self->vertices);
 	free(self->sectors);
 	free(self->walls);
+	free(self->wall_interact_next_allowed_s);
+	free(self->wall_interact_next_deny_toast_s);
 	free(self->sector_wall_offsets);
 	free(self->sector_wall_counts);
 	free(self->sector_wall_indices);
@@ -62,8 +64,26 @@ bool world_alloc_sectors(World* self, int count) {
 
 bool world_alloc_walls(World* self, int count) {
 	world_free_sector_wall_index(self);
+	free(self->walls);
+	free(self->wall_interact_next_allowed_s);
+	free(self->wall_interact_next_deny_toast_s);
+	self->walls = NULL;
+	self->wall_interact_next_allowed_s = NULL;
+	self->wall_interact_next_deny_toast_s = NULL;
 	self->walls = (Wall*)calloc((size_t)count, sizeof(Wall));
 	if (!self->walls) {
+		self->wall_count = 0;
+		return false;
+	}
+	self->wall_interact_next_allowed_s = (float*)calloc((size_t)count, sizeof(float));
+	self->wall_interact_next_deny_toast_s = (float*)calloc((size_t)count, sizeof(float));
+	if (!self->wall_interact_next_allowed_s || !self->wall_interact_next_deny_toast_s) {
+		free(self->walls);
+		free(self->wall_interact_next_allowed_s);
+		free(self->wall_interact_next_deny_toast_s);
+		self->walls = NULL;
+		self->wall_interact_next_allowed_s = NULL;
+		self->wall_interact_next_deny_toast_s = NULL;
 		self->wall_count = 0;
 		return false;
 	}
