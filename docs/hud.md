@@ -537,8 +537,9 @@ Note: In the current entity/pickup system (`include/game/entities.h`), there is 
 
 Independent of the bottom bar, the HUD draws one of these at `(8, 8)`:
 
-- `"YOU ESCAPED"` when `GameState.mode == GAME_MODE_WIN`
 - `"YOU DIED"` when `GameState.mode == GAME_MODE_LOSE`
+
+Win mode intentionally draws no banner text.
 
 ## Font system (how HUD text is rendered)
 
