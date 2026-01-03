@@ -43,6 +43,8 @@ A door is authored on a wall that is already a portal (`Wall.back_sector != -1`)
   - `Wall.door_blocked = false`
   - `Wall.tex = Wall.base_tex` (restores the authored wall texture)
 
+Important: portal edges are typically represented by **two directed walls** (one per sector). The door system applies the blocked flag and texture swap to both the bound wall and its “twin” (reversed vertices + swapped sectors) when present. This avoids one-sided rendering where the raycaster hits the opposite-directed wall and draws an “open portal span” (fully see-through when floor/ceil match).
+
 This preserves renderer assumptions about portal graphs and sector-wall indices (the wall remains a portal wall in data), while still allowing gameplay systems to treat it as solid.
 
 ---

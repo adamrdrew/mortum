@@ -40,6 +40,27 @@ static bool wall_has_valid_vertices(const World* world, const Wall* w) {
 	return world && w && w->v0 >= 0 && w->v0 < world->vertex_count && w->v1 >= 0 && w->v1 < world->vertex_count;
 }
 
+static int find_twin_portal_wall_index(const World* world, int wall_index) {
+	if (!world || wall_index < 0 || wall_index >= world->wall_count) {
+		return -1;
+	}
+	const Wall* w = &world->walls[wall_index];
+	if (w->back_sector == -1) {
+		return -1;
+	}
+	// Twin wall is the opposite-directed portal edge between the same two sectors.
+	for (int i = 0; i < world->wall_count; i++) {
+		if (i == wall_index) {
+			continue;
+		}
+		const Wall* o = &world->walls[i];
+		if (o->v0 == w->v1 && o->v1 == w->v0 && o->front_sector == w->back_sector && o->back_sector == w->front_sector) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 static float player_dist2_to_wall_segment(const World* world, const Wall* w, float px, float py) {
 	if (!wall_has_valid_vertices(world, w)) {
 		return 1e30f;
@@ -113,15 +134,27 @@ bool doors_build_from_map(Doors* self, World* world, const MapDoor* defs, int de
 
 		// Apply initial closed state to the bound wall.
 		if (out->wall_index >= 0 && out->wall_index < world->wall_count) {
+			int twin = find_twin_portal_wall_index(world, out->wall_index);
 			Wall* w = &world->walls[out->wall_index];
+			Wall* wt = (twin >= 0) ? &world->walls[twin] : NULL;
 			if (!out->is_open) {
 				w->door_blocked = true;
+				if (wt) {
+					wt->door_blocked = true;
+				}
 				if (out->closed_tex[0] != '\0') {
 					strncpy(w->tex, out->closed_tex, sizeof(w->tex) - 1u);
 					w->tex[sizeof(w->tex) - 1u] = '\0';
+					if (wt) {
+						strncpy(wt->tex, out->closed_tex, sizeof(wt->tex) - 1u);
+						wt->tex[sizeof(wt->tex) - 1u] = '\0';
+					}
 				}
 			} else {
 				w->door_blocked = false;
+				if (wt) {
+					wt->door_blocked = false;
+				}
 				// Keep authored base tex (already in w->tex).
 			}
 		}
@@ -182,9 +215,18 @@ static DoorsOpenResult door_try_open_index(
 	}
 
 	Wall* w = &world->walls[d->wall_index];
+	int twin = find_twin_portal_wall_index(world, d->wall_index);
+	Wall* wt = (twin >= 0) ? &world->walls[twin] : NULL;
 	w->door_blocked = false;
+	if (wt) {
+		wt->door_blocked = false;
+	}
 	strncpy(w->tex, w->base_tex, sizeof(w->tex) - 1u);
 	w->tex[sizeof(w->tex) - 1u] = '\0';
+	if (wt) {
+		strncpy(wt->tex, wt->base_tex, sizeof(wt->tex) - 1u);
+		wt->tex[sizeof(wt->tex) - 1u] = '\0';
+	}
 
 	d->is_open = true;
 	d->next_allowed_s = now_s + 15.0f;
