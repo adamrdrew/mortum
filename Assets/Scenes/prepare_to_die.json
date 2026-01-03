@@ -3,7 +3,7 @@
   "music": { "midi": "DESOLATE.MID" },
   "sfx": { "enter_wav": "Enemy_Robot_Death-001.wav", "exit_wav": "Enemy_Robot_Death-002.wav" },
   "text": {
-    "value": "Press Space to exit (music + sfx)",
+    "value": "Prepare to die...",
     "align": "center",
     "font": "ProggyClean.ttf",
     "size_px": 16,

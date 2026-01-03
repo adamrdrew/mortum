@@ -8,12 +8,18 @@
     {"x": 30.0, "y": 10.0},
     {"x": 20.0, "y": 10.0},
     {"x": 10.0, "y": 10.0},
-    {"x": 0.0, "y": 10.0}
+    {"x": 0.0, "y": 10.0},
+
+    {"x": 24.0, "y": 4.0},
+    {"x": 24.0, "y": 6.0},
+    {"x": 26.0, "y": 6.0},
+    {"x": 26.0, "y": 4.0}
   ],
   "sectors": [
     {"id": 0, "floor_z": 1.0, "ceil_z": 8.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0},
     {"id": 1, "floor_z": 0.0, "ceil_z": 4.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0},
-    {"id": 2, "floor_z": -1.0, "ceil_z": 3.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0}
+    {"id": 2, "floor_z": -1.0, "ceil_z": 3.0, "floor_tex": "FLOOR_4C.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0},
+    {"id": 3, "floor_z": 3.0, "ceil_z": 8.0, "floor_tex": "PANEL_2A.PNG", "ceil_tex": "PANEL_2A.PNG", "light": 1.0}
   ],
   "walls": [
     {"v0": 0, "v1": 1, "front_sector": 0, "back_sector": -1, "tex": "BRICK_3A.PNG"},
@@ -29,7 +35,17 @@
     {"v0": 2, "v1": 3, "front_sector": 2, "back_sector": -1, "tex": "BRICK_3A.PNG"},
     {"v0": 3, "v1": 4, "front_sector": 2, "back_sector": -1, "tex": "BRICK_3A.PNG"},
     {"v0": 4, "v1": 5, "front_sector": 2, "back_sector": -1, "tex": "BRICK_3A.PNG"},
-    {"v0": 5, "v1": 2, "front_sector": 2, "back_sector": 1,  "tex": "BRICK_3A.PNG"}
+    {"v0": 5, "v1": 2, "front_sector": 2, "back_sector": 1,  "tex": "BRICK_3A.PNG"},
+
+    {"v0": 8, "v1": 9,  "front_sector": 2, "back_sector": 3, "tex": "SWITCH_1A.PNG", "end_level": true},
+    {"v0": 9, "v1": 10, "front_sector": 2, "back_sector": 3, "tex": "STEEL_2A.PNG"},
+    {"v0": 10, "v1": 11, "front_sector": 2, "back_sector": 3, "tex": "STEEL_2A.PNG"},
+    {"v0": 11, "v1": 8,  "front_sector": 2, "back_sector": 3, "tex": "STEEL_2A.PNG"},
+
+    {"v0": 9,  "v1": 8,  "front_sector": 3, "back_sector": 2, "tex": "STEEL_2A.PNG"},
+    {"v0": 10, "v1": 9,  "front_sector": 3, "back_sector": 2, "tex": "STEEL_2A.PNG"},
+    {"v0": 11, "v1": 10, "front_sector": 3, "back_sector": 2, "tex": "STEEL_2A.PNG"},
+    {"v0": 8,  "v1": 11, "front_sector": 3, "back_sector": 2, "tex": "STEEL_2A.PNG"}
   ],
   "doors": [
     {"id": "left_door", "wall_index": 7, "tex": "DOOR_1A.PNG", "starts_closed": true},

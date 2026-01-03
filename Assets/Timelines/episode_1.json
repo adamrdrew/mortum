@@ -3,6 +3,9 @@
   "pause_menu": "pause_menu.json",
   "events": [
     { "kind": "command", "name": "player_reset", "on_complete": "advance" },
+    { "kind": "scene", "name": "prepare_to_die.json", "on_complete": "advance"},
+    { "kind": "map", "name": "doors.json", "on_complete": "advance"},
+    { "kind": "scene", "name": "prepare_to_die.json", "on_complete": "advance"},
     { "kind": "map", "name": "big.json", "on_complete": "load", "target": "boot.json" }
   ]
 }
