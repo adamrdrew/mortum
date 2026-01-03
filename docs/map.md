@@ -449,7 +449,7 @@ Required:
 
 Preferred (current system):
 
-- `def` (string): entity definition name (looked up in `Assets/Entities/entities.json`)
+- `def` (string): entity definition name (looked up in the loaded entity defs from `Assets/Entities/entities_manifest.json`)
 
 Optional:
 

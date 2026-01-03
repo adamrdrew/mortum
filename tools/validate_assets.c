@@ -20,7 +20,7 @@ static bool validate_entity_defs(const AssetPaths* paths, EntityDefs* out_defs) 
 	}
 	entity_defs_init(out_defs);
 	if (!entity_defs_load(out_defs, paths)) {
-		log_error("Failed to load entity defs (Assets/Entities/entities.json)");
+		log_error("Failed to load entity defs (Assets/Entities/entities_manifest.json)");
 		entity_defs_destroy(out_defs);
 		return false;
 	}

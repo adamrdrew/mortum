@@ -358,7 +358,7 @@ Each entity placement is a spawn point; the runtime entity system decides what t
 
 ### Preferred fields (current system)
 
-- `def` (string): entity definition name (resolved at runtime against `Assets/Entities/entities.json`)
+- `def` (string): entity definition name (resolved at runtime against the loaded entity defs from `Assets/Entities/entities_manifest.json`)
 
 ### Optional fields
 

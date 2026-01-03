@@ -37,7 +37,7 @@ Public headers live in `include/` mirroring the module names.
 
 ## Entity definitions
 
-- Entity definitions live in `Assets/Entities/entities.json` and are loaded by the gameplay module (`src/game/entities.c`).
+- Entity definitions are loaded from `Assets/Entities/entities_manifest.json` (which lists per-entity JSON files under `Assets/Entities/defs/`) by the gameplay module (`src/game/entities.c`).
 - Each entry in `defs[]` has common fields:
 	- `name` (string, unique)
 	- `kind` (string: `pickup`, `projectile`, ...)

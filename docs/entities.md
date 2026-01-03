@@ -18,7 +18,7 @@ Source of truth:
   - The public `entity_system_query_circle()` output order is deterministic but **not guaranteed to be sorted**.
   - Sorting for sprite rendering is stable.
 - **Deferred destruction**: despawns are requested during gameplay but applied via `entity_system_flush()`.
-- **Data-driven**: entity definitions come from `Assets/Entities/entities.json`, and maps reference defs by name.
+- **Data-driven**: entity definitions come from `Assets/Entities/entities_manifest.json` (listing per-entity files under `Assets/Entities/defs/`), and maps reference defs by name.
 
 ## Concepts
 
@@ -254,7 +254,7 @@ All declarations are in [include/game/entities.h](../include/game/entities.h).
   - Frees the container memory and zeroes it.
 
 - `bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths)`
-  - Loads definitions from `Assets/Entities/entities.json`.
+  - Loads definitions from `Assets/Entities/entities_manifest.json` (and the per-entity files it lists).
   - Returns `false` on load/parse failure; the container is left empty.
 
 - `uint32_t entity_defs_find(const EntityDefs* defs, const char* name)`
@@ -340,7 +340,7 @@ Introspection:
 
 Entities can optionally own **one** point light that:
 
-- Is **spawned from an entity def** (`Assets/Entities/entities.json`) or attached via code.
+- Is **spawned from an entity def** (loaded from `Assets/Entities/entities_manifest.json`) or attached via code.
 - Is always centered on the entity (position in defs is ignored).
 - **Follows the entity** as it moves.
 - Is **destroyed** when the entity dies or is despawned/removed.
@@ -401,7 +401,7 @@ Example:
 
 Entities can optionally own **one** particle emitter that:
 
-- Is **spawned from an entity def** (`Assets/Entities/entities.json`) or attached via code.
+- Is **spawned from an entity def** (loaded from `Assets/Entities/entities_manifest.json`) or attached via code.
 - Is always centered on the entity sprite's visual center (position in defs is ignored).
 - **Follows the entity** as it moves.
 - Is **destroyed** when the entity dies or is despawned/removed.
@@ -764,7 +764,7 @@ The asset validator is built/run via:
 - `make validate` (builds `build/validate_assets` and runs it)
 
 What it validates (high level):
-- Always loads and validates entity defs from `Assets/Entities/entities.json`.
+- Always loads and validates entity defs from `Assets/Entities/entities_manifest.json`.
   - Hard-fails on JSON/IO errors.
   - For data-driven enemies (`enemy.states`), validates that every `Shoot.projectile_def` resolves to a real entity def of `kind: "projectile"`.
 
@@ -785,15 +785,20 @@ Notes:
 
 ## Data Formats
 
-### Entity Definitions: Assets/Entities/entities.json
+### Entity Definitions: Assets/Entities/entities_manifest.json
 
-File path: [Assets/Entities/entities.json](../Assets/Entities/entities.json)
+File path: [Assets/Entities/entities_manifest.json](../Assets/Entities/entities_manifest.json)
 
 Root object:
 
 ```json
-{ "defs": [ /* EntityDef objects */ ] }
+{ "files": [ "defs/<name>.json", "defs/<other>.json" ] }
 ```
+
+Each file listed in `files[]` is loaded (in order) and must contain a single `EntityDef` JSON object as its root.
+
+Per-entity definition file paths:
+- `Assets/Entities/defs/<name>.json`
 
 Each definition object has:
 
@@ -1088,7 +1093,7 @@ Pattern behavior:
 
 ###### Complete examples (enemy defs)
 
-These are complete `EntityDef` objects intended to be placed in `Assets/Entities/entities.json` under the root `"defs"` array.
+These are complete `EntityDef` objects intended to be placed in individual files under `Assets/Entities/defs/` and listed by `Assets/Entities/entities_manifest.json`.
 
 Example 1: melee rusher (legacy tuning expressed via `enemy.states`)
 

@@ -314,7 +314,7 @@ typedef struct EntityDefs {
 void entity_defs_init(EntityDefs* defs);
 void entity_defs_destroy(EntityDefs* defs);
 
-// Loads entity definitions from Assets/Entities/entities.json.
+// Loads entity definitions from Assets/Entities/entities_manifest.json (and the per-entity files it lists).
 // Returns false on hard failure (parse/IO). On failure, defs are left empty.
 bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths);
 
