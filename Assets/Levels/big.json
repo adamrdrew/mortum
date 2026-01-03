@@ -25,6 +25,22 @@
 
         {"def": "ammo_pickup", "x": 3.0, "y": 15.0, "yaw_deg": 0.0}
     ],
+    "doors": [
+        {
+            "id": "east_connector_orange",
+            "wall_index": 4,
+            "tex": "DOOR_1A.PNG",
+            "starts_closed": true,
+            "required_item": "orange_key",
+            "required_item_missing_message": "The door is locked."
+        },
+        {
+            "id": "south_connector",
+            "wall_index": 1,
+            "tex": "DOOR_1A.PNG",
+            "starts_closed": true
+        }
+    ],
     "vertices": [
         {
             "x": 10,
