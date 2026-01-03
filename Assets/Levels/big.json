@@ -31,6 +31,7 @@
             "wall_index": 4,
             "tex": "DOOR_1A.PNG",
             "starts_closed": true,
+            "sound_open": "Player_Jump.wav",
             "required_item": "orange_key",
             "required_item_missing_message": "The door is locked."
         },
@@ -38,7 +39,8 @@
             "id": "south_connector",
             "wall_index": 1,
             "tex": "DOOR_1A.PNG",
-            "starts_closed": true
+            "starts_closed": true,
+            "sound_open": "Player_Jump.wav"
         }
     ],
     "vertices": [
