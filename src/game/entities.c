@@ -1113,6 +1113,724 @@ uint32_t entity_defs_find(const EntityDefs* defs, const char* name) {
 	return UINT32_MAX;
 }
 
+static bool entity_defs_parse_def_object_and_push(EntityDefs* defs, const JsonDoc* doc, int t_def, const char* src_name, int src_index) {
+	if (!defs || !doc || t_def < 0 || !src_name) {
+		return false;
+	}
+	if (!json_token_is_object(doc, t_def)) {
+		log_error("entity def must be an object (%s)", src_name);
+		return false;
+	}
+
+	EntityDef def;
+	memset(&def, 0, sizeof(def));
+	def.kind = ENTITY_KIND_INVALID;
+	def.radius = 0.35f;
+	def.height = 1.0f;
+	def.max_hp = 0;
+	def.react_to_world_lights = true;
+	def.light.enabled = false;
+	memset(&def.light.light, 0, sizeof(def.light.light));
+	def.light.light.color = light_color_white();
+	def.light.light.flicker = LIGHT_FLICKER_NONE;
+	def.light.light.seed = 0u;
+	def.particles.enabled = false;
+	memset(&def.particles.emitter, 0, sizeof(def.particles.emitter));
+	def.particles.emitter.shape = PARTICLE_SHAPE_CIRCLE;
+	def.particles.emitter.start.opacity = 1.0f;
+	def.particles.emitter.end.opacity = 0.0f;
+	def.particles.emitter.start.size = 1.0f;
+	def.particles.emitter.end.size = 1.0f;
+	def.particles.emitter.start.color.r = 1.0f;
+	def.particles.emitter.start.color.g = 1.0f;
+	def.particles.emitter.start.color.b = 1.0f;
+	def.particles.emitter.end.color = def.particles.emitter.start.color;
+	def.particles.emitter.rotate.enabled = false;
+	def.particles.emitter.rotate.tick.deg = 0.0f;
+	def.particles.emitter.rotate.tick.time_ms = 30;
+
+	int t_name = -1;
+	int t_kind = -1;
+	(void)json_object_get(doc, t_def, "name", &t_name);
+	(void)json_object_get(doc, t_def, "kind", &t_kind);
+	if (t_name < 0 || t_kind < 0) {
+		if (src_name && src_name[0]) {
+			log_error("entity def (%s) missing name/kind", src_name);
+		} else {
+			log_error("entity def missing name/kind");
+		}
+		return false;
+	}
+	StringView sv_name;
+	if (!json_get_string(doc, t_name, &sv_name) || sv_name.len == 0 || sv_name.len >= sizeof(def.name)) {
+		if (src_name && src_name[0]) {
+			log_error("entity def (%s) invalid name", src_name);
+		} else {
+			log_error("entity def invalid name");
+		}
+		return false;
+	}
+	snprintf(def.name, sizeof(def.name), "%.*s", (int)sv_name.len, sv_name.data);
+	if (!parse_kind(doc, t_kind, &def.kind)) {
+		if (src_name && src_name[0]) {
+			log_error("entity def (%s) invalid kind", src_name);
+		} else {
+			log_error("entity def invalid kind");
+		}
+		return false;
+	}
+
+	// Optional bounds overrides
+	int t_radius = -1, t_height = -1;
+	if (json_object_get(doc, t_def, "radius", &t_radius) && t_radius >= 0) {
+		(void)json_get_float2(doc, t_radius, &def.radius);
+	}
+	if (json_object_get(doc, t_def, "height", &t_height) && t_height >= 0) {
+		(void)json_get_float2(doc, t_height, &def.height);
+	}
+
+	// Optional common metadata
+	int t_max_hp = -1;
+	if (json_object_get(doc, t_def, "max_hp", &t_max_hp) && t_max_hp >= 0) {
+		int mhp = 0;
+		if (!json_get_int2(doc, t_max_hp, &mhp) || mhp < 0) {
+			log_error("entity def '%s' max_hp invalid", def.name);
+			return false;
+		}
+		def.max_hp = mhp;
+	}
+
+	// Optional sprite lighting behavior.
+	int t_rtwl = -1;
+	if (json_object_get(doc, t_def, "react_to_world_lights", &t_rtwl) && t_rtwl >= 0) {
+		bool b = true;
+		if (!json_get_bool2(doc, t_rtwl, &b)) {
+			log_error("entity def '%s' react_to_world_lights invalid (expected boolean)", def.name);
+			return false;
+		}
+		def.react_to_world_lights = b;
+	}
+
+	// Sprite (preferred: object with file/frames/scale/z_offset; legacy: string filename)
+	memset(&def.sprite, 0, sizeof(def.sprite));
+	def.sprite.scale = 1.0f;
+	def.sprite.z_offset = 0.0f;
+	def.sprite.frames.count = 1;
+	int t_sprite = -1;
+	if (json_object_get(doc, t_def, "sprite", &t_sprite) && t_sprite >= 0) {
+		if (json_token_is_string(doc, t_sprite)) {
+			// Legacy: sprite: "file.png"
+			StringView sv;
+			if (json_get_string(doc, t_sprite, &sv) && sv.len > 0 && sv.len < (int)sizeof(def.sprite.file.name)) {
+				snprintf(def.sprite.file.name, sizeof(def.sprite.file.name), "%.*s", (int)sv.len, sv.data);
+			}
+		} else if (json_token_is_object(doc, t_sprite)) {
+			int t_file = -1;
+			int t_frames = -1;
+			if (!json_object_get(doc, t_sprite, "file", &t_file) || t_file < 0 || !json_token_is_object(doc, t_file)) {
+				log_error("entity def '%s' sprite missing object 'file'", def.name);
+				return false;
+			}
+			if (!json_object_get(doc, t_sprite, "frames", &t_frames) || t_frames < 0 || !json_token_is_object(doc, t_frames)) {
+				log_error("entity def '%s' sprite missing object 'frames'", def.name);
+				return false;
+			}
+
+			// file.name
+			int t_fname = -1;
+			if (!json_object_get(doc, t_file, "name", &t_fname) || t_fname < 0 || !json_token_is_string(doc, t_fname)) {
+				log_error("entity def '%s' sprite.file missing string 'name'", def.name);
+				return false;
+			}
+			StringView sv_fname;
+			if (!json_get_string(doc, t_fname, &sv_fname) || sv_fname.len <= 0 || sv_fname.len >= (int)sizeof(def.sprite.file.name)) {
+				log_error("entity def '%s' sprite.file.name invalid", def.name);
+				return false;
+			}
+			snprintf(def.sprite.file.name, sizeof(def.sprite.file.name), "%.*s", (int)sv_fname.len, sv_fname.data);
+
+			// file.dimensions.x/y
+			int t_fdim = -1;
+			if (!json_object_get(doc, t_file, "dimensions", &t_fdim) || t_fdim < 0 || !json_token_is_object(doc, t_fdim)) {
+				log_error("entity def '%s' sprite.file missing object 'dimensions'", def.name);
+				return false;
+			}
+			int t_fx = -1, t_fy = -1;
+			if (!json_object_get(doc, t_fdim, "x", &t_fx) || !json_object_get(doc, t_fdim, "y", &t_fy)) {
+				log_error("entity def '%s' sprite.file.dimensions missing x/y", def.name);
+				return false;
+			}
+			(void)json_get_int2(doc, t_fx, &def.sprite.file.width);
+			(void)json_get_int2(doc, t_fy, &def.sprite.file.height);
+			if (def.sprite.file.width <= 0 || def.sprite.file.height <= 0) {
+				log_error("entity def '%s' sprite.file.dimensions must be positive", def.name);
+				return false;
+			}
+
+			// frames.count
+			int t_count = -1;
+			if (!json_object_get(doc, t_frames, "count", &t_count)) {
+				log_error("entity def '%s' sprite.frames missing count", def.name);
+				return false;
+			}
+			(void)json_get_int2(doc, t_count, &def.sprite.frames.count);
+			if (def.sprite.frames.count <= 0) {
+				log_error("entity def '%s' sprite.frames.count must be >= 1", def.name);
+				return false;
+			}
+
+			// frames.dimensions.x/y
+			int t_frdim = -1;
+			if (!json_object_get(doc, t_frames, "dimensions", &t_frdim) || t_frdim < 0 || !json_token_is_object(doc, t_frdim)) {
+				log_error("entity def '%s' sprite.frames missing object 'dimensions'", def.name);
+				return false;
+			}
+			int t_frx = -1, t_fry = -1;
+			if (!json_object_get(doc, t_frdim, "x", &t_frx) || !json_object_get(doc, t_frdim, "y", &t_fry)) {
+				log_error("entity def '%s' sprite.frames.dimensions missing x/y", def.name);
+				return false;
+			}
+			(void)json_get_int2(doc, t_frx, &def.sprite.frames.width);
+			(void)json_get_int2(doc, t_fry, &def.sprite.frames.height);
+			if (def.sprite.frames.width <= 0 || def.sprite.frames.height <= 0) {
+				log_error("entity def '%s' sprite.frames.dimensions must be positive", def.name);
+				return false;
+			}
+
+			// scale/z_offset
+			int t_scale = -1;
+			if (json_object_get(doc, t_sprite, "scale", &t_scale) && t_scale >= 0) {
+				(void)json_get_float2(doc, t_scale, &def.sprite.scale);
+			}
+			int t_zoff = -1;
+			if (json_object_get(doc, t_sprite, "z_offset", &t_zoff) && t_zoff >= 0) {
+				(void)json_get_float2(doc, t_zoff, &def.sprite.z_offset);
+			}
+			if (def.sprite.scale <= 0.0f) {
+				def.sprite.scale = 1.0f;
+			}
+
+			// Validate frame packing for a horizontal strip.
+			if (def.sprite.frames.width * def.sprite.frames.count > def.sprite.file.width || def.sprite.frames.height > def.sprite.file.height) {
+				log_error("entity def '%s' sprite frames do not fit in file (horizontal strip)", def.name);
+				return false;
+			}
+		}
+	}
+	def.radius = fmaxf2(def.radius, 0.01f);
+	def.height = fmaxf2(def.height, 0.01f);
+
+	// Optional entity-attached point light emitter.
+	int t_light = -1;
+	if (json_object_get(doc, t_def, "light", &t_light) && t_light >= 0) {
+		if (!json_token_is_object(doc, t_light)) {
+			log_error("entity def '%s' light must be an object", def.name);
+			return false;
+		}
+		int t_lr = -1;
+		if (!json_object_get(doc, t_light, "radius", &t_lr) || t_lr < 0) {
+			log_error("entity def '%s' light missing required field radius", def.name);
+			return false;
+		}
+		float radius = 0.0f;
+		if (!json_get_float2(doc, t_lr, &radius)) {
+			log_error("entity def '%s' light.radius invalid", def.name);
+			return false;
+		}
+		if (radius < 0.0f) {
+			radius = 0.0f;
+		}
+		float intensity = 1.0f;
+		int t_li = -1;
+		if (json_object_get(doc, t_light, "intensity", &t_li) && t_li >= 0) {
+			if (!json_get_float2(doc, t_li, &intensity)) {
+				log_error("entity def '%s' light.intensity invalid", def.name);
+				return false;
+			}
+		}
+		if (intensity < 0.0f) {
+			intensity = 0.0f;
+		}
+
+		LightColor lc = light_color_white();
+		int t_color = -1;
+		if (json_object_get(doc, t_light, "color", &t_color) && t_color >= 0) {
+			if (!json_get_light_color_any2(doc, t_color, &lc)) {
+				log_error("entity def '%s' light.color invalid (expected hex string like \"EE0000\" or {r,g,b})", def.name);
+				return false;
+			}
+		}
+
+		LightFlicker flicker = LIGHT_FLICKER_NONE;
+		int t_flicker = -1;
+		if (json_object_get(doc, t_light, "flicker", &t_flicker) && t_flicker >= 0) {
+			if (!json_get_light_flicker2(doc, t_flicker, &flicker)) {
+				log_error("entity def '%s' light.flicker invalid (none|flame|malfunction)", def.name);
+				return false;
+			}
+		}
+
+		uint32_t seed = 0u;
+		int t_seed = -1;
+		if (json_object_get(doc, t_light, "seed", &t_seed) && t_seed >= 0) {
+			int s = 0;
+			if (!json_get_int2(doc, t_seed, &s)) {
+				log_error("entity def '%s' light.seed invalid", def.name);
+				return false;
+			}
+			seed = (uint32_t)s;
+		}
+
+		def.light.enabled = true;
+		def.light.light.radius = radius;
+		def.light.light.intensity = intensity;
+		def.light.light.color = lc;
+		def.light.light.flicker = flicker;
+		def.light.light.seed = seed;
+	}
+
+	// Optional entity-attached particle emitter.
+	int t_particles = -1;
+	if (json_object_get(doc, t_def, "particles", &t_particles) && t_particles >= 0) {
+		if (!json_token_is_object(doc, t_particles)) {
+			log_error("entity def '%s' particles must be an object", def.name);
+			return false;
+		}
+		int t_life = -1;
+		int t_interval = -1;
+		int t_start = -1;
+		int t_end = -1;
+		if (!json_object_get(doc, t_particles, "particle_life_ms", &t_life) || !json_object_get(doc, t_particles, "emit_interval_ms", &t_interval) ||
+			!json_object_get(doc, t_particles, "start", &t_start) || !json_object_get(doc, t_particles, "end", &t_end)) {
+			log_error("entity def '%s' particles missing required fields (particle_life_ms, emit_interval_ms, start, end)", def.name);
+			return false;
+		}
+		int life_ms = 0;
+		int interval_ms = 0;
+		if (!json_get_int2(doc, t_life, &life_ms) || !json_get_int2(doc, t_interval, &interval_ms)) {
+			log_error("entity def '%s' particles life/interval invalid", def.name);
+			return false;
+		}
+		float jitter = 0.0f;
+		int t_jitter = -1;
+		if (json_object_get(doc, t_particles, "offset_jitter", &t_jitter) && t_jitter >= 0) {
+			if (!json_get_float2(doc, t_jitter, &jitter)) {
+				log_error("entity def '%s' particles.offset_jitter invalid", def.name);
+				return false;
+			}
+		}
+
+		ParticleEmitterRotate rot;
+		rot.enabled = false;
+		rot.tick.deg = 0.0f;
+		rot.tick.time_ms = 30;
+		int t_rotate = -1;
+		if (json_object_get(doc, t_particles, "rotate", &t_rotate) && t_rotate >= 0) {
+			if (!json_get_particle_rotate2(doc, t_rotate, &rot)) {
+				log_error("entity def '%s' particles.rotate invalid", def.name);
+				return false;
+			}
+		}
+
+		char image[64] = "";
+		int t_image = -1;
+		if (json_object_get(doc, t_particles, "image", &t_image) && t_image >= 0) {
+			if (!json_token_is_string(doc, t_image)) {
+				log_error("entity def '%s' particles.image must be string", def.name);
+				return false;
+			}
+			StringView sv;
+			if (!json_get_string(doc, t_image, &sv) || sv.len <= 0 || sv.len >= (int)sizeof(image)) {
+				log_error("entity def '%s' particles.image invalid", def.name);
+				return false;
+			}
+			snprintf(image, sizeof(image), "%.*s", (int)sv.len, sv.data);
+		}
+
+		ParticleShape shape = PARTICLE_SHAPE_CIRCLE;
+		int t_shape = -1;
+		if (json_object_get(doc, t_particles, "shape", &t_shape) && t_shape >= 0) {
+			if (!json_get_particle_shape2(doc, t_shape, &shape)) {
+				log_error("entity def '%s' particles.shape invalid (circle|square)", def.name);
+				return false;
+			}
+		}
+
+		ParticleEmitterKeyframe start;
+		ParticleEmitterKeyframe end;
+		if (!json_get_particle_keyframe2(doc, t_start, &start) || !json_get_particle_keyframe2(doc, t_end, &end)) {
+			log_error("entity def '%s' particles.start/end invalid", def.name);
+			return false;
+		}
+
+		def.particles.enabled = true;
+		def.particles.emitter.particle_life_ms = life_ms;
+		def.particles.emitter.emit_interval_ms = interval_ms;
+		def.particles.emitter.offset_jitter = jitter;
+		def.particles.emitter.rotate = rot;
+		def.particles.emitter.shape = shape;
+		def.particles.emitter.start = start;
+		def.particles.emitter.end = end;
+		strncpy(def.particles.emitter.image, image, sizeof(def.particles.emitter.image) - 1);
+		def.particles.emitter.image[sizeof(def.particles.emitter.image) - 1] = '\0';
+	}
+
+	// Kind-specific payloads
+	if (def.kind == ENTITY_KIND_PICKUP) {
+		int t_pickup = -1;
+		if (!json_object_get(doc, t_def, "pickup", &t_pickup) || t_pickup < 0 || !json_token_is_object(doc, t_pickup)) {
+			log_error("entity def '%s' kind pickup missing object field 'pickup'", def.name);
+			return false;
+		}
+		int t_heal = -1, t_tr = -1;
+		int t_ammo_type = -1, t_ammo_amount = -1;
+		int t_add_inv = -1;
+		(void)json_object_get(doc, t_pickup, "heal_amount", &t_heal);
+		(void)json_object_get(doc, t_pickup, "ammo_type", &t_ammo_type);
+		(void)json_object_get(doc, t_pickup, "ammo_amount", &t_ammo_amount);
+		(void)json_object_get(doc, t_pickup, "add_to_inventory", &t_add_inv);
+
+		def.u.pickup.type = PICKUP_TYPE_HEALTH;
+		def.u.pickup.heal_amount = 0;
+		def.u.pickup.ammo_type = AMMO_BULLETS;
+		def.u.pickup.ammo_amount = 0;
+		def.u.pickup.add_to_inventory[0] = '\0';
+
+		bool has_heal = (t_heal >= 0);
+		bool has_ammo = (t_ammo_type >= 0 && t_ammo_amount >= 0);
+		bool has_inv = (t_add_inv >= 0);
+		if (has_inv && (has_heal || has_ammo)) {
+			log_error("entity def '%s' pickup add_to_inventory cannot be combined with heal_amount/ammo", def.name);
+			return false;
+		}
+		if (!has_heal && !has_ammo && !has_inv) {
+			log_error("entity def '%s' pickup must specify heal_amount or (ammo_type + ammo_amount) or add_to_inventory", def.name);
+			return false;
+		}
+
+		if (has_inv) {
+			if (!json_token_is_string(doc, t_add_inv)) {
+				log_error("entity def '%s' pickup add_to_inventory must be string", def.name);
+				return false;
+			}
+			StringView sv_item;
+			if (!json_get_string(doc, t_add_inv, &sv_item) || sv_item.len <= 0 || sv_item.len >= (int)sizeof(def.u.pickup.add_to_inventory)) {
+				log_error("entity def '%s' pickup add_to_inventory invalid", def.name);
+				return false;
+			}
+			def.u.pickup.type = PICKUP_TYPE_INVENTORY_ITEM;
+			snprintf(def.u.pickup.add_to_inventory, sizeof(def.u.pickup.add_to_inventory), "%.*s", (int)sv_item.len, sv_item.data);
+		} else if (has_heal) {
+			double heal_d = 0.0;
+			if (!json_get_double(doc, t_heal, &heal_d)) {
+				log_error("entity def '%s' pickup heal_amount invalid", def.name);
+				return false;
+			}
+			def.u.pickup.type = PICKUP_TYPE_HEALTH;
+			def.u.pickup.heal_amount = (int)heal_d;
+		} else {
+			if (!json_token_is_string(doc, t_ammo_type)) {
+				log_error("entity def '%s' pickup ammo_type must be string", def.name);
+				return false;
+			}
+			StringView sv_at;
+			if (!json_get_string(doc, t_ammo_type, &sv_at) || sv_at.len == 0) {
+				log_error("entity def '%s' pickup ammo_type invalid", def.name);
+				return false;
+			}
+			AmmoType at;
+			if (!parse_ammo_type_sv(sv_at, &at)) {
+				log_error("entity def '%s' pickup ammo_type must be bullets/shells/cells", def.name);
+				return false;
+			}
+			double amt_d = 0.0;
+			if (!json_get_double(doc, t_ammo_amount, &amt_d) || amt_d <= 0.0) {
+				log_error("entity def '%s' pickup ammo_amount invalid", def.name);
+				return false;
+			}
+			def.u.pickup.type = PICKUP_TYPE_AMMO;
+			def.u.pickup.ammo_type = at;
+			def.u.pickup.ammo_amount = (int)amt_d;
+		}
+		// trigger_radius defaults to def.radius if absent
+		def.u.pickup.trigger_radius = def.radius;
+		if (json_object_get(doc, t_pickup, "trigger_radius", &t_tr) && t_tr >= 0) {
+			(void)json_get_float2(doc, t_tr, &def.u.pickup.trigger_radius);
+		}
+		def.u.pickup.trigger_radius = fmaxf2(def.u.pickup.trigger_radius, 0.01f);
+
+		def.u.pickup.pickup_sound[0] = '\0';
+		def.u.pickup.pickup_sound_gain = 1.0f;
+		int t_sound = -1, t_gain = -1;
+		if (json_object_get(doc, t_pickup, "pickup_sound", &t_sound) && t_sound >= 0 && json_token_is_string(doc, t_sound)) {
+			StringView sv;
+			if (json_get_string(doc, t_sound, &sv) && sv.len < sizeof(def.u.pickup.pickup_sound)) {
+				snprintf(def.u.pickup.pickup_sound, sizeof(def.u.pickup.pickup_sound), "%.*s", (int)sv.len, sv.data);
+			}
+		}
+		if (json_object_get(doc, t_pickup, "pickup_sound_gain", &t_gain) && t_gain >= 0) {
+			(void)json_get_float2(doc, t_gain, &def.u.pickup.pickup_sound_gain);
+		}
+	}
+
+	if (def.kind == ENTITY_KIND_PROJECTILE) {
+		int t_proj = -1;
+		if (!json_object_get(doc, t_def, "projectile", &t_proj) || t_proj < 0 || !json_token_is_object(doc, t_proj)) {
+			log_error("entity def '%s' kind projectile missing object field 'projectile'", def.name);
+			return false;
+		}
+		def.u.projectile.speed = 8.0f;
+		def.u.projectile.lifetime_s = 1.0f;
+		def.u.projectile.damage = 10;
+		def.u.projectile.impact_sound[0] = '\0';
+		def.u.projectile.impact_sound_gain = 1.0f;
+
+		int t_speed = -1, t_life = -1, t_damage = -1, t_sound = -1, t_gain = -1;
+		if (json_object_get(doc, t_proj, "speed", &t_speed) && t_speed >= 0) {
+			(void)json_get_float2(doc, t_speed, &def.u.projectile.speed);
+		}
+		if (json_object_get(doc, t_proj, "lifetime_s", &t_life) && t_life >= 0) {
+			(void)json_get_float2(doc, t_life, &def.u.projectile.lifetime_s);
+		}
+		if (json_object_get(doc, t_proj, "damage", &t_damage) && t_damage >= 0) {
+			int dmg = 0;
+			if (!json_get_int2(doc, t_damage, &dmg) || dmg < 0) {
+				log_error("entity def '%s' projectile.damage invalid", def.name);
+				return false;
+			}
+			def.u.projectile.damage = dmg;
+		}
+		if (json_object_get(doc, t_proj, "impact_sound", &t_sound) && t_sound >= 0 && json_token_is_string(doc, t_sound)) {
+			StringView sv;
+			if (json_get_string(doc, t_sound, &sv) && sv.len < sizeof(def.u.projectile.impact_sound)) {
+				snprintf(def.u.projectile.impact_sound, sizeof(def.u.projectile.impact_sound), "%.*s", (int)sv.len, sv.data);
+			}
+		}
+		if (json_object_get(doc, t_proj, "impact_sound_gain", &t_gain) && t_gain >= 0) {
+			(void)json_get_float2(doc, t_gain, &def.u.projectile.impact_sound_gain);
+		}
+		def.u.projectile.speed = fmaxf2(def.u.projectile.speed, 0.0f);
+		def.u.projectile.lifetime_s = fmaxf2(def.u.projectile.lifetime_s, 0.0f);
+	}
+
+	if (def.kind == ENTITY_KIND_ENEMY) {
+		int t_enemy = -1;
+		if (!json_object_get(doc, t_def, "enemy", &t_enemy) || t_enemy < 0 || !json_token_is_object(doc, t_enemy)) {
+			log_error("entity def '%s' kind enemy missing object field 'enemy'", def.name);
+			return false;
+		}
+		EntityDefEnemy* ed = &def.u.enemy;
+		memset(ed, 0, sizeof(*ed));
+		ed->move_speed = 1.2f;
+		ed->engage_range = 6.0f;
+		ed->disengage_range = 10.0f;
+		ed->attack_range = 0.9f;
+		ed->attack_windup_s = 0.25f;
+		ed->attack_cooldown_s = 0.9f;
+		ed->attack_damage = 10;
+		ed->damaged_time_s = 0.25f;
+		ed->dying_time_s = 0.7f;
+		ed->dead_time_s = 0.8f;
+
+		int t_move = -1, t_eng = -1, t_dis = -1, t_ar = -1;
+		int t_wind = -1, t_cd = -1, t_dmg = -1;
+		int t_damaged_t = -1, t_dying_t = -1, t_dead_t = -1;
+		(void)json_object_get(doc, t_enemy, "move_speed", &t_move);
+		(void)json_object_get(doc, t_enemy, "engage_range", &t_eng);
+		(void)json_object_get(doc, t_enemy, "disengage_range", &t_dis);
+		(void)json_object_get(doc, t_enemy, "attack_range", &t_ar);
+		(void)json_object_get(doc, t_enemy, "attack_windup_s", &t_wind);
+		(void)json_object_get(doc, t_enemy, "attack_cooldown_s", &t_cd);
+		(void)json_object_get(doc, t_enemy, "attack_damage", &t_dmg);
+		(void)json_object_get(doc, t_enemy, "damaged_time_s", &t_damaged_t);
+		(void)json_object_get(doc, t_enemy, "dying_time_s", &t_dying_t);
+		(void)json_object_get(doc, t_enemy, "dead_time_s", &t_dead_t);
+		if (t_move >= 0) {
+			(void)json_get_float2(doc, t_move, &ed->move_speed);
+		}
+		if (t_eng >= 0) {
+			(void)json_get_float2(doc, t_eng, &ed->engage_range);
+		}
+		if (t_dis >= 0) {
+			(void)json_get_float2(doc, t_dis, &ed->disengage_range);
+		}
+		if (t_ar >= 0) {
+			(void)json_get_float2(doc, t_ar, &ed->attack_range);
+		}
+		if (t_wind >= 0) {
+			(void)json_get_float2(doc, t_wind, &ed->attack_windup_s);
+		}
+		if (t_cd >= 0) {
+			(void)json_get_float2(doc, t_cd, &ed->attack_cooldown_s);
+		}
+		if (t_dmg >= 0) {
+			int dmg = 0;
+			if (!json_get_int2(doc, t_dmg, &dmg) || dmg < 0) {
+				log_error("entity def '%s' enemy.attack_damage invalid", def.name);
+				return false;
+			}
+			ed->attack_damage = dmg;
+		}
+		if (t_damaged_t >= 0) {
+			(void)json_get_float2(doc, t_damaged_t, &ed->damaged_time_s);
+		}
+		if (t_dying_t >= 0) {
+			(void)json_get_float2(doc, t_dying_t, &ed->dying_time_s);
+		}
+		if (t_dead_t >= 0) {
+			(void)json_get_float2(doc, t_dead_t, &ed->dead_time_s);
+		}
+		ed->move_speed = fmaxf2(ed->move_speed, 0.0f);
+		ed->engage_range = fmaxf2(ed->engage_range, 0.0f);
+		ed->disengage_range = fmaxf2(ed->disengage_range, ed->engage_range);
+		ed->attack_range = fmaxf2(ed->attack_range, 0.0f);
+		ed->attack_windup_s = fmaxf2(ed->attack_windup_s, 0.0f);
+		ed->attack_cooldown_s = fmaxf2(ed->attack_cooldown_s, ed->attack_windup_s + 0.01f);
+		ed->damaged_time_s = fmaxf2(ed->damaged_time_s, 0.0f);
+		ed->dying_time_s = fmaxf2(ed->dying_time_s, 0.0f);
+		ed->dead_time_s = fmaxf2(ed->dead_time_s, 0.0f);
+
+		// Animations
+		int t_anims = -1;
+		if (!json_object_get(doc, t_enemy, "animations", &t_anims) || t_anims < 0 || !json_token_is_object(doc, t_anims)) {
+			log_error("entity def '%s' enemy missing object 'animations'", def.name);
+			return false;
+		}
+		const struct { const char* key; EntityDefEnemyAnim* out; } anim_keys[] = {
+			{"idle", &ed->anim_idle},
+			{"engaged", &ed->anim_engaged},
+			{"attack", &ed->anim_attack},
+			{"damaged", &ed->anim_damaged},
+			{"dying", &ed->anim_dying},
+			{"dead", &ed->anim_dead},
+		};
+		for (int ai = 0; ai < (int)(sizeof(anim_keys) / sizeof(anim_keys[0])); ai++) {
+			int t_a = -1;
+			if (!json_object_get(doc, t_anims, anim_keys[ai].key, &t_a) || t_a < 0) {
+				log_error("entity def '%s' enemy.animations missing '%s'", def.name, anim_keys[ai].key);
+				return false;
+			}
+			if (!parse_enemy_anim(doc, t_a, def.name, anim_keys[ai].key, anim_keys[ai].out)) {
+				return false;
+			}
+		}
+
+		// Validate animation frame ranges against sprite.frames.count
+		int sc = def.sprite.frames.count > 0 ? def.sprite.frames.count : 1;
+		const EntityDefEnemyAnim* anims[] = {&ed->anim_idle, &ed->anim_engaged, &ed->anim_attack, &ed->anim_damaged, &ed->anim_dying, &ed->anim_dead};
+		for (int k = 0; k < (int)(sizeof(anims) / sizeof(anims[0])); k++) {
+			int start = anims[k]->start;
+			int count = anims[k]->count;
+			if (start < 0 || count <= 0 || start + count > sc) {
+				log_error("entity def '%s' enemy animation out of range (start=%d count=%d sprite_frames=%d)", def.name, start, count, sc);
+				return false;
+			}
+		}
+
+		// Enemies should be damageable.
+		if (def.max_hp <= 0) {
+			log_error("entity def '%s' kind enemy requires max_hp > 0", def.name);
+			return false;
+		}
+
+		// Optional data-driven per-state behaviors.
+		ed->states.enabled = false;
+		enemy_behavior_list_clear(&ed->states.idle);
+		enemy_behavior_list_clear(&ed->states.engaged);
+		enemy_behavior_list_clear(&ed->states.attack);
+		enemy_behavior_list_clear(&ed->states.damaged);
+		enemy_behavior_list_clear(&ed->states.dying);
+		enemy_behavior_list_clear(&ed->states.dead);
+
+		int t_states = -1;
+		if (json_object_get(doc, t_enemy, "states", &t_states) && t_states >= 0) {
+			if (!json_token_is_object(doc, t_states)) {
+				log_error("entity def '%s' enemy.states must be an object", def.name);
+				return false;
+			}
+			ed->states.enabled = true;
+			const struct { const char* key; EnemyBehaviorList* out; } skeys[] = {
+				{"idle", &ed->states.idle},
+				{"engaged", &ed->states.engaged},
+				{"attack", &ed->states.attack},
+				{"damaged", &ed->states.damaged},
+				{"dying", &ed->states.dying},
+				{"dead", &ed->states.dead},
+			};
+			for (int si = 0; si < (int)(sizeof(skeys) / sizeof(skeys[0])); si++) {
+				int t_s = -1;
+				if (!json_object_get(doc, t_states, skeys[si].key, &t_s) || t_s < 0) {
+					continue;
+				}
+				if (!json_token_is_object(doc, t_s)) {
+					log_error("entity def '%s' enemy.states.%s must be an object", def.name, skeys[si].key);
+					return false;
+				}
+				if (!enemy_parse_behavior_list(doc, t_s, def.name, ed, skeys[si].out)) {
+					return false;
+				}
+			}
+
+			// Defaults for omitted/empty state configs.
+			if (ed->states.idle.count == 0) {
+				EnemyBehavior b;
+				memset(&b, 0, sizeof(b));
+				b.type = ENEMY_BEHAVIOR_WAIT;
+				(void)enemy_behavior_list_push(&ed->states.idle, &b);
+			}
+			if (ed->states.engaged.count == 0) {
+				EnemyBehavior b;
+				memset(&b, 0, sizeof(b));
+				b.type = ENEMY_BEHAVIOR_RUSH;
+				b.u.rush.speed = ed->move_speed;
+				(void)enemy_behavior_list_push(&ed->states.engaged, &b);
+			}
+			if (ed->states.attack.count == 0) {
+				EnemyBehavior b;
+				memset(&b, 0, sizeof(b));
+				b.type = ENEMY_BEHAVIOR_MELEE;
+				b.u.melee.range = ed->attack_range;
+				b.u.melee.windup_s = ed->attack_windup_s;
+				b.u.melee.cooldown_s = ed->attack_cooldown_s;
+				b.u.melee.damage = ed->attack_damage;
+				(void)enemy_behavior_list_push(&ed->states.attack, &b);
+			}
+			if (ed->states.damaged.count == 0) {
+				EnemyBehavior b;
+				memset(&b, 0, sizeof(b));
+				b.type = ENEMY_BEHAVIOR_WAIT;
+				(void)enemy_behavior_list_push(&ed->states.damaged, &b);
+			}
+			if (ed->states.dying.count == 0) {
+				EnemyBehavior b;
+				memset(&b, 0, sizeof(b));
+				b.type = ENEMY_BEHAVIOR_WAIT;
+				(void)enemy_behavior_list_push(&ed->states.dying, &b);
+			}
+			if (ed->states.dead.count == 0) {
+				EnemyBehavior b;
+				memset(&b, 0, sizeof(b));
+				b.type = ENEMY_BEHAVIOR_WAIT;
+				(void)enemy_behavior_list_push(&ed->states.dead, &b);
+			}
+		}
+	}
+
+	// Require unique names.
+	if (entity_defs_find(defs, def.name) != UINT32_MAX) {
+		log_error("duplicate entity def name '%s'", def.name);
+		return false;
+	}
+
+	if (!defs_push(defs, &def)) {
+		log_error("out of memory adding entity def '%s'", def.name);
+		return false;
+	}
+
+	(void)src_index;
+	return true;
+}
+
 bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 	if (!defs || !paths) {
 		return false;
@@ -1120,847 +1838,86 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 	entity_defs_destroy(defs);
 	entity_defs_init(defs);
 
-	char* full = asset_path_join(paths, "Entities", "entities.json");
-	if (!full) {
-		log_error("entity defs: could not allocate path");
+	char* manifest_path = asset_path_join(paths, "Entities", "entities_manifest.json");
+	if (!manifest_path) {
+		log_error("entity defs: could not allocate manifest path");
 		return false;
 	}
-	JsonDoc doc;
-	if (!json_doc_load_file(&doc, full)) {
-		log_warn("entity defs: missing or unreadable: %s", full);
+	JsonDoc manifest;
+	if (!json_doc_load_file(&manifest, manifest_path)) {
+		log_warn("entity defs: missing or unreadable manifest: %s", manifest_path);
+		free(manifest_path);
+		return false;
+	}
+	free(manifest_path);
+
+	if (manifest.token_count < 1 || !json_token_is_object(&manifest, 0)) {
+		log_error("entity defs manifest root must be an object");
+		json_doc_destroy(&manifest);
+		return false;
+	}
+	int t_files = -1;
+	if (!json_object_get(&manifest, 0, "files", &t_files) || t_files < 0 || !json_token_is_array(&manifest, t_files)) {
+		log_error("entity defs manifest missing required array field 'files'");
+		json_doc_destroy(&manifest);
+		return false;
+	}
+
+	int file_count = json_array_size(&manifest, t_files);
+	for (int fi = 0; fi < file_count; fi++) {
+		int t_file = json_array_nth(&manifest, t_files, fi);
+		if (!json_token_is_string(&manifest, t_file)) {
+			log_error("entity defs manifest files[%d] must be a string", fi);
+			json_doc_destroy(&manifest);
+			entity_defs_destroy(defs);
+			return false;
+		}
+		StringView sv;
+		if (!json_get_string(&manifest, t_file, &sv) || sv.len <= 0) {
+			log_error("entity defs manifest files[%d] invalid", fi);
+			json_doc_destroy(&manifest);
+			entity_defs_destroy(defs);
+			return false;
+		}
+		char rel[256];
+		if (sv.len >= (int)sizeof(rel)) {
+			log_error("entity defs manifest files[%d] path too long", fi);
+			json_doc_destroy(&manifest);
+			entity_defs_destroy(defs);
+			return false;
+		}
+		snprintf(rel, sizeof(rel), "%.*s", (int)sv.len, sv.data);
+
+		char* full = asset_path_join(paths, "Entities", rel);
+		if (!full) {
+			log_error("entity defs: could not allocate path for %s", rel);
+			json_doc_destroy(&manifest);
+			entity_defs_destroy(defs);
+			return false;
+		}
+		JsonDoc doc;
+		if (!json_doc_load_file(&doc, full)) {
+			log_error("entity defs: missing or unreadable: %s", full);
+			free(full);
+			json_doc_destroy(&manifest);
+			entity_defs_destroy(defs);
+			return false;
+		}
+
+		if (doc.token_count < 1 || !json_token_is_object(&doc, 0)) {
+			log_error("entity def file root must be an object: %s", full);
+			json_doc_destroy(&doc);
+			free(full);
+			json_doc_destroy(&manifest);
+			entity_defs_destroy(defs);
+			return false;
+		}
+
+		bool ok = entity_defs_parse_def_object_and_push(defs, &doc, 0, rel, fi);
+		json_doc_destroy(&doc);
 		free(full);
-		return false;
-	}
-	free(full);
-
-	if (doc.token_count < 1 || !json_token_is_object(&doc, 0)) {
-		log_error("entity defs root must be an object");
-		json_doc_destroy(&doc);
-		return false;
-	}
-
-	int t_defs = -1;
-	if (!json_object_get(&doc, 0, "defs", &t_defs) || t_defs < 0 || !json_token_is_array(&doc, t_defs)) {
-		log_error("entity defs missing required array field 'defs'");
-		json_doc_destroy(&doc);
-		return false;
-	}
-
-	int n = json_array_size(&doc, t_defs);
-	for (int i = 0; i < n; i++) {
-		int t_def = json_array_nth(&doc, t_defs, i);
-		if (!json_token_is_object(&doc, t_def)) {
-			log_error("entity defs[%d] must be an object", i);
-			json_doc_destroy(&doc);
-			entity_defs_destroy(defs);
-			return false;
-		}
-
-		EntityDef def;
-		memset(&def, 0, sizeof(def));
-		def.kind = ENTITY_KIND_INVALID;
-		def.radius = 0.35f;
-		def.height = 1.0f;
-		def.max_hp = 0;
-		def.react_to_world_lights = true;
-		def.light.enabled = false;
-		memset(&def.light.light, 0, sizeof(def.light.light));
-		def.light.light.color = light_color_white();
-		def.light.light.flicker = LIGHT_FLICKER_NONE;
-		def.light.light.seed = 0u;
-		def.particles.enabled = false;
-		memset(&def.particles.emitter, 0, sizeof(def.particles.emitter));
-		def.particles.emitter.shape = PARTICLE_SHAPE_CIRCLE;
-		def.particles.emitter.start.opacity = 1.0f;
-		def.particles.emitter.end.opacity = 0.0f;
-		def.particles.emitter.start.size = 1.0f;
-		def.particles.emitter.end.size = 1.0f;
-		def.particles.emitter.start.color.r = 1.0f;
-		def.particles.emitter.start.color.g = 1.0f;
-		def.particles.emitter.start.color.b = 1.0f;
-		def.particles.emitter.end.color = def.particles.emitter.start.color;
-		def.particles.emitter.rotate.enabled = false;
-		def.particles.emitter.rotate.tick.deg = 0.0f;
-		def.particles.emitter.rotate.tick.time_ms = 30;
-
-		int t_name = -1;
-		int t_kind = -1;
-		(void)json_object_get(&doc, t_def, "name", &t_name);
-		(void)json_object_get(&doc, t_def, "kind", &t_kind);
-		if (t_name < 0 || t_kind < 0) {
-			log_error("entity defs[%d] missing name/kind", i);
-			json_doc_destroy(&doc);
-			entity_defs_destroy(defs);
-			return false;
-		}
-		StringView sv_name;
-		if (!json_get_string(&doc, t_name, &sv_name) || sv_name.len == 0 || sv_name.len >= sizeof(def.name)) {
-			log_error("entity defs[%d] invalid name", i);
-			json_doc_destroy(&doc);
-			entity_defs_destroy(defs);
-			return false;
-		}
-		snprintf(def.name, sizeof(def.name), "%.*s", (int)sv_name.len, sv_name.data);
-		if (!parse_kind(&doc, t_kind, &def.kind)) {
-			log_error("entity defs[%d] invalid kind", i);
-			json_doc_destroy(&doc);
-			entity_defs_destroy(defs);
-			return false;
-		}
-
-		// Optional bounds overrides
-		int t_radius = -1, t_height = -1;
-		if (json_object_get(&doc, t_def, "radius", &t_radius) && t_radius >= 0) {
-			(void)json_get_float2(&doc, t_radius, &def.radius);
-		}
-		if (json_object_get(&doc, t_def, "height", &t_height) && t_height >= 0) {
-			(void)json_get_float2(&doc, t_height, &def.height);
-		}
-
-		// Optional common metadata
-		int t_max_hp = -1;
-		if (json_object_get(&doc, t_def, "max_hp", &t_max_hp) && t_max_hp >= 0) {
-			int mhp = 0;
-			if (!json_get_int2(&doc, t_max_hp, &mhp) || mhp < 0) {
-				log_error("entity def '%s' max_hp invalid", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			def.max_hp = mhp;
-		}
-
-		// Optional sprite lighting behavior.
-		int t_rtwl = -1;
-		if (json_object_get(&doc, t_def, "react_to_world_lights", &t_rtwl) && t_rtwl >= 0) {
-			bool b = true;
-			if (!json_get_bool2(&doc, t_rtwl, &b)) {
-				log_error("entity def '%s' react_to_world_lights invalid (expected boolean)", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			def.react_to_world_lights = b;
-		}
-
-		// Sprite (preferred: object with file/frames/scale/z_offset; legacy: string filename)
-		memset(&def.sprite, 0, sizeof(def.sprite));
-		def.sprite.scale = 1.0f;
-		def.sprite.z_offset = 0.0f;
-		def.sprite.frames.count = 1;
-		int t_sprite = -1;
-		if (json_object_get(&doc, t_def, "sprite", &t_sprite) && t_sprite >= 0) {
-			if (json_token_is_string(&doc, t_sprite)) {
-				// Legacy: sprite: "file.png"
-				StringView sv;
-				if (json_get_string(&doc, t_sprite, &sv) && sv.len > 0 && sv.len < (int)sizeof(def.sprite.file.name)) {
-					snprintf(def.sprite.file.name, sizeof(def.sprite.file.name), "%.*s", (int)sv.len, sv.data);
-				}
-			} else if (json_token_is_object(&doc, t_sprite)) {
-				int t_file = -1;
-				int t_frames = -1;
-				if (!json_object_get(&doc, t_sprite, "file", &t_file) || t_file < 0 || !json_token_is_object(&doc, t_file)) {
-					log_error("entity def '%s' sprite missing object 'file'", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				if (!json_object_get(&doc, t_sprite, "frames", &t_frames) || t_frames < 0 || !json_token_is_object(&doc, t_frames)) {
-					log_error("entity def '%s' sprite missing object 'frames'", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-
-				// file.name
-				int t_name = -1;
-				if (!json_object_get(&doc, t_file, "name", &t_name) || t_name < 0 || !json_token_is_string(&doc, t_name)) {
-					log_error("entity def '%s' sprite.file missing string 'name'", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				StringView sv_name;
-				if (!json_get_string(&doc, t_name, &sv_name) || sv_name.len <= 0 || sv_name.len >= (int)sizeof(def.sprite.file.name)) {
-					log_error("entity def '%s' sprite.file.name invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				snprintf(def.sprite.file.name, sizeof(def.sprite.file.name), "%.*s", (int)sv_name.len, sv_name.data);
-
-				// file.dimensions.x/y
-				int t_fdim = -1;
-				if (!json_object_get(&doc, t_file, "dimensions", &t_fdim) || t_fdim < 0 || !json_token_is_object(&doc, t_fdim)) {
-					log_error("entity def '%s' sprite.file missing object 'dimensions'", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				int t_fx = -1, t_fy = -1;
-				if (!json_object_get(&doc, t_fdim, "x", &t_fx) || !json_object_get(&doc, t_fdim, "y", &t_fy)) {
-					log_error("entity def '%s' sprite.file.dimensions missing x/y", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				(void)json_get_int2(&doc, t_fx, &def.sprite.file.width);
-				(void)json_get_int2(&doc, t_fy, &def.sprite.file.height);
-				if (def.sprite.file.width <= 0 || def.sprite.file.height <= 0) {
-					log_error("entity def '%s' sprite.file.dimensions must be positive", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-
-				// frames.count
-				int t_count = -1;
-				if (!json_object_get(&doc, t_frames, "count", &t_count)) {
-					log_error("entity def '%s' sprite.frames missing count", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				(void)json_get_int2(&doc, t_count, &def.sprite.frames.count);
-				if (def.sprite.frames.count <= 0) {
-					log_error("entity def '%s' sprite.frames.count must be >= 1", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-
-				// frames.dimensions.x/y
-				int t_frdim = -1;
-				if (!json_object_get(&doc, t_frames, "dimensions", &t_frdim) || t_frdim < 0 || !json_token_is_object(&doc, t_frdim)) {
-					log_error("entity def '%s' sprite.frames missing object 'dimensions'", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				int t_frx = -1, t_fry = -1;
-				if (!json_object_get(&doc, t_frdim, "x", &t_frx) || !json_object_get(&doc, t_frdim, "y", &t_fry)) {
-					log_error("entity def '%s' sprite.frames.dimensions missing x/y", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				(void)json_get_int2(&doc, t_frx, &def.sprite.frames.width);
-				(void)json_get_int2(&doc, t_fry, &def.sprite.frames.height);
-				if (def.sprite.frames.width <= 0 || def.sprite.frames.height <= 0) {
-					log_error("entity def '%s' sprite.frames.dimensions must be positive", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-
-				// scale/z_offset
-				int t_scale = -1;
-				if (json_object_get(&doc, t_sprite, "scale", &t_scale) && t_scale >= 0) {
-					(void)json_get_float2(&doc, t_scale, &def.sprite.scale);
-				}
-				int t_zoff = -1;
-				if (json_object_get(&doc, t_sprite, "z_offset", &t_zoff) && t_zoff >= 0) {
-					(void)json_get_float2(&doc, t_zoff, &def.sprite.z_offset);
-				}
-				if (def.sprite.scale <= 0.0f) {
-					def.sprite.scale = 1.0f;
-				}
-
-				// Validate frame packing for a horizontal strip.
-				if (def.sprite.frames.width * def.sprite.frames.count > def.sprite.file.width || def.sprite.frames.height > def.sprite.file.height) {
-					log_error("entity def '%s' sprite frames do not fit in file (horizontal strip)", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-		}
-		def.radius = fmaxf2(def.radius, 0.01f);
-		def.height = fmaxf2(def.height, 0.01f);
-
-		// Optional entity-attached point light emitter.
-		int t_light = -1;
-		if (json_object_get(&doc, t_def, "light", &t_light) && t_light >= 0) {
-			if (!json_token_is_object(&doc, t_light)) {
-				log_error("entity def '%s' light must be an object", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			int t_lr = -1;
-			if (!json_object_get(&doc, t_light, "radius", &t_lr) || t_lr < 0) {
-				log_error("entity def '%s' light missing required field radius", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			float radius = 0.0f;
-			if (!json_get_float2(&doc, t_lr, &radius)) {
-				log_error("entity def '%s' light.radius invalid", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			if (radius < 0.0f) {
-				radius = 0.0f;
-			}
-			float intensity = 1.0f;
-			int t_li = -1;
-			if (json_object_get(&doc, t_light, "intensity", &t_li) && t_li >= 0) {
-				if (!json_get_float2(&doc, t_li, &intensity)) {
-					log_error("entity def '%s' light.intensity invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-			if (intensity < 0.0f) {
-				intensity = 0.0f;
-			}
-
-			LightColor lc = light_color_white();
-			int t_color = -1;
-			if (json_object_get(&doc, t_light, "color", &t_color) && t_color >= 0) {
-				if (!json_get_light_color_any2(&doc, t_color, &lc)) {
-					log_error("entity def '%s' light.color invalid (expected hex string like \"EE0000\" or {r,g,b})", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-
-			LightFlicker flicker = LIGHT_FLICKER_NONE;
-			int t_flicker = -1;
-			if (json_object_get(&doc, t_light, "flicker", &t_flicker) && t_flicker >= 0) {
-				if (!json_get_light_flicker2(&doc, t_flicker, &flicker)) {
-					log_error("entity def '%s' light.flicker invalid (none|flame|malfunction)", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-
-			uint32_t seed = 0u;
-			int t_seed = -1;
-			if (json_object_get(&doc, t_light, "seed", &t_seed) && t_seed >= 0) {
-				int s = 0;
-				if (!json_get_int2(&doc, t_seed, &s)) {
-					log_error("entity def '%s' light.seed invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				seed = (uint32_t)s;
-			}
-
-			def.light.enabled = true;
-			def.light.light.radius = radius;
-			def.light.light.intensity = intensity;
-			def.light.light.color = lc;
-			def.light.light.flicker = flicker;
-			def.light.light.seed = seed;
-		}
-
-		// Optional entity-attached particle emitter.
-		int t_particles = -1;
-		if (json_object_get(&doc, t_def, "particles", &t_particles) && t_particles >= 0) {
-			if (!json_token_is_object(&doc, t_particles)) {
-				log_error("entity def '%s' particles must be an object", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			int t_life = -1;
-			int t_interval = -1;
-			int t_start = -1;
-			int t_end = -1;
-			if (!json_object_get(&doc, t_particles, "particle_life_ms", &t_life) || !json_object_get(&doc, t_particles, "emit_interval_ms", &t_interval) ||
-				!json_object_get(&doc, t_particles, "start", &t_start) || !json_object_get(&doc, t_particles, "end", &t_end)) {
-				log_error("entity def '%s' particles missing required fields (particle_life_ms, emit_interval_ms, start, end)", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			int life_ms = 0;
-			int interval_ms = 0;
-			if (!json_get_int2(&doc, t_life, &life_ms) || !json_get_int2(&doc, t_interval, &interval_ms)) {
-				log_error("entity def '%s' particles life/interval invalid", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			float jitter = 0.0f;
-			int t_jitter = -1;
-			if (json_object_get(&doc, t_particles, "offset_jitter", &t_jitter) && t_jitter >= 0) {
-				if (!json_get_float2(&doc, t_jitter, &jitter)) {
-					log_error("entity def '%s' particles.offset_jitter invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-
-			ParticleEmitterRotate rot;
-			rot.enabled = false;
-			rot.tick.deg = 0.0f;
-			rot.tick.time_ms = 30;
-			int t_rotate = -1;
-			if (json_object_get(&doc, t_particles, "rotate", &t_rotate) && t_rotate >= 0) {
-				if (!json_get_particle_rotate2(&doc, t_rotate, &rot)) {
-					log_error("entity def '%s' particles.rotate invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-
-			char image[64] = "";
-			int t_image = -1;
-			if (json_object_get(&doc, t_particles, "image", &t_image) && t_image >= 0) {
-				if (!json_token_is_string(&doc, t_image)) {
-					log_error("entity def '%s' particles.image must be string", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				StringView sv;
-				if (!json_get_string(&doc, t_image, &sv) || sv.len <= 0 || sv.len >= (int)sizeof(image)) {
-					log_error("entity def '%s' particles.image invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				snprintf(image, sizeof(image), "%.*s", (int)sv.len, sv.data);
-			}
-
-			ParticleShape shape = PARTICLE_SHAPE_CIRCLE;
-			int t_shape = -1;
-			if (json_object_get(&doc, t_particles, "shape", &t_shape) && t_shape >= 0) {
-				if (!json_get_particle_shape2(&doc, t_shape, &shape)) {
-					log_error("entity def '%s' particles.shape invalid (circle|square)", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-
-			ParticleEmitterKeyframe start;
-			ParticleEmitterKeyframe end;
-			if (!json_get_particle_keyframe2(&doc, t_start, &start) || !json_get_particle_keyframe2(&doc, t_end, &end)) {
-				log_error("entity def '%s' particles.start/end invalid", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-
-			def.particles.enabled = true;
-			def.particles.emitter.particle_life_ms = life_ms;
-			def.particles.emitter.emit_interval_ms = interval_ms;
-			def.particles.emitter.offset_jitter = jitter;
-			def.particles.emitter.rotate = rot;
-			def.particles.emitter.shape = shape;
-			def.particles.emitter.start = start;
-			def.particles.emitter.end = end;
-			strncpy(def.particles.emitter.image, image, sizeof(def.particles.emitter.image) - 1);
-			def.particles.emitter.image[sizeof(def.particles.emitter.image) - 1] = '\0';
-		}
-
-		// Kind-specific payloads
-		if (def.kind == ENTITY_KIND_PICKUP) {
-			int t_pickup = -1;
-			if (!json_object_get(&doc, t_def, "pickup", &t_pickup) || t_pickup < 0 || !json_token_is_object(&doc, t_pickup)) {
-				log_error("entity def '%s' kind pickup missing object field 'pickup'", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			int t_heal = -1, t_tr = -1;
-			int t_ammo_type = -1, t_ammo_amount = -1;
-			int t_add_inv = -1;
-			(void)json_object_get(&doc, t_pickup, "heal_amount", &t_heal);
-			(void)json_object_get(&doc, t_pickup, "ammo_type", &t_ammo_type);
-			(void)json_object_get(&doc, t_pickup, "ammo_amount", &t_ammo_amount);
-			(void)json_object_get(&doc, t_pickup, "add_to_inventory", &t_add_inv);
-
-			def.u.pickup.type = PICKUP_TYPE_HEALTH;
-			def.u.pickup.heal_amount = 0;
-			def.u.pickup.ammo_type = AMMO_BULLETS;
-			def.u.pickup.ammo_amount = 0;
-			def.u.pickup.add_to_inventory[0] = '\0';
-
-			bool has_heal = (t_heal >= 0);
-			bool has_ammo = (t_ammo_type >= 0 && t_ammo_amount >= 0);
-			bool has_inv = (t_add_inv >= 0);
-			if (has_inv && (has_heal || has_ammo)) {
-				log_error("entity def '%s' pickup add_to_inventory cannot be combined with heal_amount/ammo", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			if (!has_heal && !has_ammo && !has_inv) {
-				log_error("entity def '%s' pickup must specify heal_amount or (ammo_type + ammo_amount) or add_to_inventory", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-
-			if (has_inv) {
-				if (!json_token_is_string(&doc, t_add_inv)) {
-					log_error("entity def '%s' pickup add_to_inventory must be string", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				StringView sv_item;
-				if (!json_get_string(&doc, t_add_inv, &sv_item) || sv_item.len <= 0 || sv_item.len >= (int)sizeof(def.u.pickup.add_to_inventory)) {
-					log_error("entity def '%s' pickup add_to_inventory invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				def.u.pickup.type = PICKUP_TYPE_INVENTORY_ITEM;
-				snprintf(def.u.pickup.add_to_inventory, sizeof(def.u.pickup.add_to_inventory), "%.*s", (int)sv_item.len, sv_item.data);
-			} else if (has_heal) {
-				double heal_d = 0.0;
-				if (!json_get_double(&doc, t_heal, &heal_d)) {
-					log_error("entity def '%s' pickup heal_amount invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				def.u.pickup.type = PICKUP_TYPE_HEALTH;
-				def.u.pickup.heal_amount = (int)heal_d;
-			} else {
-				if (!json_token_is_string(&doc, t_ammo_type)) {
-					log_error("entity def '%s' pickup ammo_type must be string", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				StringView sv_at;
-				if (!json_get_string(&doc, t_ammo_type, &sv_at) || sv_at.len == 0) {
-					log_error("entity def '%s' pickup ammo_type invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				AmmoType at;
-				if (!parse_ammo_type_sv(sv_at, &at)) {
-					log_error("entity def '%s' pickup ammo_type must be bullets/shells/cells", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				double amt_d = 0.0;
-				if (!json_get_double(&doc, t_ammo_amount, &amt_d) || amt_d <= 0.0) {
-					log_error("entity def '%s' pickup ammo_amount invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				def.u.pickup.type = PICKUP_TYPE_AMMO;
-				def.u.pickup.ammo_type = at;
-				def.u.pickup.ammo_amount = (int)amt_d;
-			}
-			// trigger_radius defaults to def.radius if absent
-			def.u.pickup.trigger_radius = def.radius;
-			if (json_object_get(&doc, t_pickup, "trigger_radius", &t_tr) && t_tr >= 0) {
-				(void)json_get_float2(&doc, t_tr, &def.u.pickup.trigger_radius);
-			}
-			def.u.pickup.trigger_radius = fmaxf2(def.u.pickup.trigger_radius, 0.01f);
-
-			def.u.pickup.pickup_sound[0] = '\0';
-			def.u.pickup.pickup_sound_gain = 1.0f;
-			int t_sound = -1, t_gain = -1;
-			if (json_object_get(&doc, t_pickup, "pickup_sound", &t_sound) && t_sound >= 0 && json_token_is_string(&doc, t_sound)) {
-				StringView sv;
-				if (json_get_string(&doc, t_sound, &sv) && sv.len < sizeof(def.u.pickup.pickup_sound)) {
-					snprintf(def.u.pickup.pickup_sound, sizeof(def.u.pickup.pickup_sound), "%.*s", (int)sv.len, sv.data);
-				}
-			}
-			if (json_object_get(&doc, t_pickup, "pickup_sound_gain", &t_gain) && t_gain >= 0) {
-				(void)json_get_float2(&doc, t_gain, &def.u.pickup.pickup_sound_gain);
-			}
-		}
-
-		if (def.kind == ENTITY_KIND_PROJECTILE) {
-			int t_proj = -1;
-			if (!json_object_get(&doc, t_def, "projectile", &t_proj) || t_proj < 0 || !json_token_is_object(&doc, t_proj)) {
-				log_error("entity def '%s' kind projectile missing object field 'projectile'", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			def.u.projectile.speed = 8.0f;
-			def.u.projectile.lifetime_s = 1.0f;
-			def.u.projectile.damage = 10;
-			def.u.projectile.impact_sound[0] = '\0';
-			def.u.projectile.impact_sound_gain = 1.0f;
-
-			int t_speed = -1, t_life = -1, t_damage = -1, t_sound = -1, t_gain = -1;
-			if (json_object_get(&doc, t_proj, "speed", &t_speed) && t_speed >= 0) {
-				(void)json_get_float2(&doc, t_speed, &def.u.projectile.speed);
-			}
-			if (json_object_get(&doc, t_proj, "lifetime_s", &t_life) && t_life >= 0) {
-				(void)json_get_float2(&doc, t_life, &def.u.projectile.lifetime_s);
-			}
-			if (json_object_get(&doc, t_proj, "damage", &t_damage) && t_damage >= 0) {
-				int dmg = 0;
-				if (!json_get_int2(&doc, t_damage, &dmg) || dmg < 0) {
-					log_error("entity def '%s' projectile.damage invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				def.u.projectile.damage = dmg;
-			}
-			if (json_object_get(&doc, t_proj, "impact_sound", &t_sound) && t_sound >= 0 && json_token_is_string(&doc, t_sound)) {
-				StringView sv;
-				if (json_get_string(&doc, t_sound, &sv) && sv.len < sizeof(def.u.projectile.impact_sound)) {
-					snprintf(def.u.projectile.impact_sound, sizeof(def.u.projectile.impact_sound), "%.*s", (int)sv.len, sv.data);
-				}
-			}
-			if (json_object_get(&doc, t_proj, "impact_sound_gain", &t_gain) && t_gain >= 0) {
-				(void)json_get_float2(&doc, t_gain, &def.u.projectile.impact_sound_gain);
-			}
-			def.u.projectile.speed = fmaxf2(def.u.projectile.speed, 0.0f);
-			def.u.projectile.lifetime_s = fmaxf2(def.u.projectile.lifetime_s, 0.0f);
-		}
-
-		if (def.kind == ENTITY_KIND_ENEMY) {
-			int t_enemy = -1;
-			if (!json_object_get(&doc, t_def, "enemy", &t_enemy) || t_enemy < 0 || !json_token_is_object(&doc, t_enemy)) {
-				log_error("entity def '%s' kind enemy missing object field 'enemy'", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			EntityDefEnemy* ed = &def.u.enemy;
-			memset(ed, 0, sizeof(*ed));
-			ed->move_speed = 1.2f;
-			ed->engage_range = 6.0f;
-			ed->disengage_range = 10.0f;
-			ed->attack_range = 0.9f;
-			ed->attack_windup_s = 0.25f;
-			ed->attack_cooldown_s = 0.9f;
-			ed->attack_damage = 10;
-			ed->damaged_time_s = 0.25f;
-			ed->dying_time_s = 0.7f;
-			ed->dead_time_s = 0.8f;
-
-			int t_move = -1, t_eng = -1, t_dis = -1, t_ar = -1;
-			int t_wind = -1, t_cd = -1, t_dmg = -1;
-			int t_damaged_t = -1, t_dying_t = -1, t_dead_t = -1;
-			(void)json_object_get(&doc, t_enemy, "move_speed", &t_move);
-			(void)json_object_get(&doc, t_enemy, "engage_range", &t_eng);
-			(void)json_object_get(&doc, t_enemy, "disengage_range", &t_dis);
-			(void)json_object_get(&doc, t_enemy, "attack_range", &t_ar);
-			(void)json_object_get(&doc, t_enemy, "attack_windup_s", &t_wind);
-			(void)json_object_get(&doc, t_enemy, "attack_cooldown_s", &t_cd);
-			(void)json_object_get(&doc, t_enemy, "attack_damage", &t_dmg);
-			(void)json_object_get(&doc, t_enemy, "damaged_time_s", &t_damaged_t);
-			(void)json_object_get(&doc, t_enemy, "dying_time_s", &t_dying_t);
-			(void)json_object_get(&doc, t_enemy, "dead_time_s", &t_dead_t);
-			if (t_move >= 0) {
-				(void)json_get_float2(&doc, t_move, &ed->move_speed);
-			}
-			if (t_eng >= 0) {
-				(void)json_get_float2(&doc, t_eng, &ed->engage_range);
-			}
-			if (t_dis >= 0) {
-				(void)json_get_float2(&doc, t_dis, &ed->disengage_range);
-			}
-			if (t_ar >= 0) {
-				(void)json_get_float2(&doc, t_ar, &ed->attack_range);
-			}
-			if (t_wind >= 0) {
-				(void)json_get_float2(&doc, t_wind, &ed->attack_windup_s);
-			}
-			if (t_cd >= 0) {
-				(void)json_get_float2(&doc, t_cd, &ed->attack_cooldown_s);
-			}
-			if (t_dmg >= 0) {
-				int dmg = 0;
-				if (!json_get_int2(&doc, t_dmg, &dmg) || dmg < 0) {
-					log_error("entity def '%s' enemy.attack_damage invalid", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				ed->attack_damage = dmg;
-			}
-			if (t_damaged_t >= 0) {
-				(void)json_get_float2(&doc, t_damaged_t, &ed->damaged_time_s);
-			}
-			if (t_dying_t >= 0) {
-				(void)json_get_float2(&doc, t_dying_t, &ed->dying_time_s);
-			}
-			if (t_dead_t >= 0) {
-				(void)json_get_float2(&doc, t_dead_t, &ed->dead_time_s);
-			}
-			ed->move_speed = fmaxf2(ed->move_speed, 0.0f);
-			ed->engage_range = fmaxf2(ed->engage_range, 0.0f);
-			ed->disengage_range = fmaxf2(ed->disengage_range, ed->engage_range);
-			ed->attack_range = fmaxf2(ed->attack_range, 0.0f);
-			ed->attack_windup_s = fmaxf2(ed->attack_windup_s, 0.0f);
-			ed->attack_cooldown_s = fmaxf2(ed->attack_cooldown_s, ed->attack_windup_s + 0.01f);
-			ed->damaged_time_s = fmaxf2(ed->damaged_time_s, 0.0f);
-			ed->dying_time_s = fmaxf2(ed->dying_time_s, 0.0f);
-			ed->dead_time_s = fmaxf2(ed->dead_time_s, 0.0f);
-
-			// Animations
-			int t_anims = -1;
-			if (!json_object_get(&doc, t_enemy, "animations", &t_anims) || t_anims < 0 || !json_token_is_object(&doc, t_anims)) {
-				log_error("entity def '%s' enemy missing object 'animations'", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-			const struct { const char* key; EntityDefEnemyAnim* out; } anim_keys[] = {
-				{"idle", &ed->anim_idle},
-				{"engaged", &ed->anim_engaged},
-				{"attack", &ed->anim_attack},
-				{"damaged", &ed->anim_damaged},
-				{"dying", &ed->anim_dying},
-				{"dead", &ed->anim_dead},
-			};
-			for (int ai = 0; ai < (int)(sizeof(anim_keys) / sizeof(anim_keys[0])); ai++) {
-				int t_a = -1;
-				if (!json_object_get(&doc, t_anims, anim_keys[ai].key, &t_a) || t_a < 0) {
-					log_error("entity def '%s' enemy.animations missing '%s'", def.name, anim_keys[ai].key);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				if (!parse_enemy_anim(&doc, t_a, def.name, anim_keys[ai].key, anim_keys[ai].out)) {
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-
-			// Validate animation frame ranges against sprite.frames.count
-			int sc = def.sprite.frames.count > 0 ? def.sprite.frames.count : 1;
-			const EntityDefEnemyAnim* anims[] = {&ed->anim_idle, &ed->anim_engaged, &ed->anim_attack, &ed->anim_damaged, &ed->anim_dying, &ed->anim_dead};
-			for (int k = 0; k < (int)(sizeof(anims) / sizeof(anims[0])); k++) {
-				int start = anims[k]->start;
-				int count = anims[k]->count;
-				if (start < 0 || count <= 0 || start + count > sc) {
-					log_error("entity def '%s' enemy animation out of range (start=%d count=%d sprite_frames=%d)", def.name, start, count, sc);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-			}
-
-			// Enemies should be damageable.
-			if (def.max_hp <= 0) {
-				log_error("entity def '%s' kind enemy requires max_hp > 0", def.name);
-				json_doc_destroy(&doc);
-				entity_defs_destroy(defs);
-				return false;
-			}
-
-			// Optional data-driven per-state behaviors.
-			ed->states.enabled = false;
-			enemy_behavior_list_clear(&ed->states.idle);
-			enemy_behavior_list_clear(&ed->states.engaged);
-			enemy_behavior_list_clear(&ed->states.attack);
-			enemy_behavior_list_clear(&ed->states.damaged);
-			enemy_behavior_list_clear(&ed->states.dying);
-			enemy_behavior_list_clear(&ed->states.dead);
-
-			int t_states = -1;
-			if (json_object_get(&doc, t_enemy, "states", &t_states) && t_states >= 0) {
-				if (!json_token_is_object(&doc, t_states)) {
-					log_error("entity def '%s' enemy.states must be an object", def.name);
-					json_doc_destroy(&doc);
-					entity_defs_destroy(defs);
-					return false;
-				}
-				ed->states.enabled = true;
-				const struct { const char* key; EnemyBehaviorList* out; } skeys[] = {
-					{"idle", &ed->states.idle},
-					{"engaged", &ed->states.engaged},
-					{"attack", &ed->states.attack},
-					{"damaged", &ed->states.damaged},
-					{"dying", &ed->states.dying},
-					{"dead", &ed->states.dead},
-				};
-				for (int si = 0; si < (int)(sizeof(skeys) / sizeof(skeys[0])); si++) {
-					int t_s = -1;
-					if (!json_object_get(&doc, t_states, skeys[si].key, &t_s) || t_s < 0) {
-						continue;
-					}
-					if (!json_token_is_object(&doc, t_s)) {
-						log_error("entity def '%s' enemy.states.%s must be an object", def.name, skeys[si].key);
-						json_doc_destroy(&doc);
-						entity_defs_destroy(defs);
-						return false;
-					}
-					if (!enemy_parse_behavior_list(&doc, t_s, def.name, ed, skeys[si].out)) {
-						json_doc_destroy(&doc);
-						entity_defs_destroy(defs);
-						return false;
-					}
-				}
-
-				// Defaults for omitted/empty state configs.
-				if (ed->states.idle.count == 0) {
-					EnemyBehavior b;
-					memset(&b, 0, sizeof(b));
-					b.type = ENEMY_BEHAVIOR_WAIT;
-					(void)enemy_behavior_list_push(&ed->states.idle, &b);
-				}
-				if (ed->states.engaged.count == 0) {
-					EnemyBehavior b;
-					memset(&b, 0, sizeof(b));
-					b.type = ENEMY_BEHAVIOR_RUSH;
-					b.u.rush.speed = ed->move_speed;
-					(void)enemy_behavior_list_push(&ed->states.engaged, &b);
-				}
-				if (ed->states.attack.count == 0) {
-					EnemyBehavior b;
-					memset(&b, 0, sizeof(b));
-					b.type = ENEMY_BEHAVIOR_MELEE;
-					b.u.melee.range = ed->attack_range;
-					b.u.melee.windup_s = ed->attack_windup_s;
-					b.u.melee.cooldown_s = ed->attack_cooldown_s;
-					b.u.melee.damage = ed->attack_damage;
-					(void)enemy_behavior_list_push(&ed->states.attack, &b);
-				}
-				if (ed->states.damaged.count == 0) {
-					EnemyBehavior b;
-					memset(&b, 0, sizeof(b));
-					b.type = ENEMY_BEHAVIOR_WAIT;
-					(void)enemy_behavior_list_push(&ed->states.damaged, &b);
-				}
-				if (ed->states.dying.count == 0) {
-					EnemyBehavior b;
-					memset(&b, 0, sizeof(b));
-					b.type = ENEMY_BEHAVIOR_WAIT;
-					(void)enemy_behavior_list_push(&ed->states.dying, &b);
-				}
-				if (ed->states.dead.count == 0) {
-					EnemyBehavior b;
-					memset(&b, 0, sizeof(b));
-					b.type = ENEMY_BEHAVIOR_WAIT;
-					(void)enemy_behavior_list_push(&ed->states.dead, &b);
-				}
-			}
-		}
-
-		// Require unique names.
-		if (entity_defs_find(defs, def.name) != UINT32_MAX) {
-			log_error("duplicate entity def name '%s'", def.name);
-			json_doc_destroy(&doc);
-			entity_defs_destroy(defs);
-			return false;
-		}
-
-		if (!defs_push(defs, &def)) {
-			log_error("out of memory adding entity def '%s'", def.name);
-			json_doc_destroy(&doc);
+		if (!ok) {
+			json_doc_destroy(&manifest);
 			entity_defs_destroy(defs);
 			return false;
 		}
@@ -2000,7 +1957,7 @@ bool entity_defs_load(EntityDefs* defs, const AssetPaths* paths) {
 		}
 	}
 
-	json_doc_destroy(&doc);
+	json_doc_destroy(&manifest);
 	log_info("Loaded %u entity defs", defs->count);
 	return true;
 }

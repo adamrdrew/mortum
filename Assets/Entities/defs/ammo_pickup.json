@@ -1,0 +1,37 @@
+{
+  "name": "ammo_pickup",
+  "kind": "pickup",
+  "sprite": {
+    "file": {
+      "name": "ammo_pickup.png",
+      "dimensions": {
+        "x": 64,
+        "y": 64
+      }
+    },
+    "frames": {
+      "count": 1,
+      "dimensions": {
+        "x": 64,
+        "y": 64
+      }
+    },
+    "scale": 1,
+    "z_offset": 32
+  },
+  "radius": 0.35,
+  "height": 0.6,
+  "light": {
+    "radius": 8.0,
+    "intensity": 1.0,
+    "color": "#FF9A3D",
+    "flicker": "none"
+  },
+  "pickup": {
+    "ammo_type": "bullets",
+    "ammo_amount": 15,
+    "trigger_radius": 0.6,
+    "pickup_sound": "Player_Jump.wav",
+    "pickup_sound_gain": 1.0
+  }
+}

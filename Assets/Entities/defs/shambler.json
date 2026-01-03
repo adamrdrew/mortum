@@ -1,0 +1,69 @@
+{
+  "name": "shambler",
+  "kind": "enemy",
+  "max_hp": 30,
+  "sprite": {
+    "file": {
+      "name": "shambler.png",
+      "dimensions": {
+        "x": 1280,
+        "y": 256
+      }
+    },
+    "frames": {
+      "count": 10,
+      "dimensions": {
+        "x": 128,
+        "y": 256
+      }
+    },
+    "scale": 1,
+    "z_offset": 0
+  },
+  "radius": 0.45,
+  "height": 1.6,
+  "enemy": {
+    "move_speed": 5,
+    "engage_range": 10.0,
+    "disengage_range": 10.0,
+    "attack_range": 1.0,
+    "attack_windup_s": 0.25,
+    "attack_cooldown_s": 0.9,
+    "attack_damage": 10,
+    "damaged_time_s": 0.25,
+    "dying_time_s": 0.8,
+    "dead_time_s": 0.8,
+    "animations": {
+      "idle": {
+        "start": 0,
+        "count": 2,
+        "fps": 3
+      },
+      "engaged": {
+        "start": 2,
+        "count": 2,
+        "fps": 6
+      },
+      "attack": {
+        "start": 4,
+        "count": 2,
+        "fps": 8
+      },
+      "damaged": {
+        "start": 6,
+        "count": 2,
+        "fps": 8
+      },
+      "dying": {
+        "start": 8,
+        "count": 2,
+        "fps": 6
+      },
+      "dead": {
+        "start": 9,
+        "count": 1,
+        "fps": 1
+      }
+    }
+  }
+}

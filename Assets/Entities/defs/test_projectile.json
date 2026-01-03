@@ -1,0 +1,68 @@
+{
+  "name": "test_projectile",
+  "kind": "projectile",
+  "react_to_world_lights": false,
+  "sprite": {
+    "file": {
+      "name": "test_projectile.png",
+      "dimensions": {
+        "x": 64,
+        "y": 64
+      }
+    },
+    "frames": {
+      "count": 1,
+      "dimensions": {
+        "x": 64,
+        "y": 64
+      }
+    },
+    "scale": 0.125,
+    "z_offset": 80
+  },
+  "radius": 0.12,
+  "height": 0.12,
+  "light": {
+    "radius": 8.0,
+    "intensity": 1.0,
+    "color": "#9f6be4",
+    "flicker": "none"
+  },
+  "particles": {
+    "particle_life_ms": 300,
+    "emit_interval_ms": 25,
+    "offset_jitter": 0.09,
+    "shape": "circle",
+    "start": {
+      "opacity": 0.8,
+      "size": 0.06,
+      "color": {
+        "value": "#9f6be4"
+      },
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      }
+    },
+    "end": {
+      "opacity": 0.0,
+      "size": 0.22,
+      "color": {
+        "value": "#05c2d5"
+      },
+      "offset": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.18
+      }
+    }
+  },
+  "projectile": {
+    "speed": 12.0,
+    "lifetime_s": 2.0,
+    "damage": 10,
+    "impact_sound": "Player_Jump.wav",
+    "impact_sound_gain": 0.6
+  }
+}

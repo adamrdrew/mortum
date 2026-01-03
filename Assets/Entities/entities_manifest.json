@@ -1,0 +1,10 @@
+{
+  "files": [
+    "defs/health_pickup.json",
+    "defs/ammo_pickup.json",
+    "defs/test_projectile.json",
+    "defs/shambler.json",
+    "defs/infected_spread_shooter.json",
+    "defs/void_lurker_stalker.json"
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "name": "infected_spread_shooter",
+  "kind": "enemy",
+  "max_hp": 12,
+  "sprite": {
+    "file": {
+      "name": "infected.png",
+      "dimensions": {
+        "x": 1280,
+        "y": 256
+      }
+    },
+    "frames": {
+      "count": 10,
+      "dimensions": {
+        "x": 128,
+        "y": 256
+      }
+    },
+    "scale": 1,
+    "z_offset": 0
+  },
+  "radius": 0.42,
+  "height": 1.55,
+  "enemy": {
+    "move_speed": 4.2,
+    "engage_range": 10.0,
+    "disengage_range": 12.0,
+    "attack_range": 1.0,
+    "attack_windup_s": 0.2,
+    "attack_cooldown_s": 1.0,
+    "attack_damage": 6,
+    "damaged_time_s": 0.2,
+    "dying_time_s": 0.7,
+    "dead_time_s": 0.8,
+    "animations": {
+      "idle": {
+        "start": 0,
+        "count": 1,
+        "fps": 3
+      },
+      "engaged": {
+        "start": 1,
+        "count": 2,
+        "fps": 6
+      },
+      "attack": {
+        "start": 3,
+        "count": 2,
+        "fps": 8
+      },
+      "damaged": {
+        "start": 5,
+        "count": 2,
+        "fps": 8
+      },
+      "dying": {
+        "start": 6,
+        "count": 2,
+        "fps": 6
+      },
+      "dead": {
+        "start": 8,
+        "count": 1,
+        "fps": 1
+      }
+    },
+    "states": {
+      "idle": {
+        "behaviors": [
+          {
+            "type": "Pace",
+            "speed": 2.2,
+            "switch_interval_s": 0.9
+          }
+        ]
+      },
+      "engaged": {
+        "behaviors": [
+          {
+            "type": "HangBack",
+            "speed": 3.5,
+            "min_dist": 4.0,
+            "max_dist": 7.0
+          },
+          {
+            "type": "Flank",
+            "speed": 2.6,
+            "fov_avoid_deg": 75.0
+          }
+        ]
+      },
+      "attack": {
+        "behaviors": [
+          {
+            "type": "Shoot",
+            "projectile_def": "test_projectile",
+            "range": 8.5,
+            "windup_s": 0.15,
+            "cooldown_s": 1.05,
+            "autoaim": true,
+            "pattern": {
+              "type": "FiveOscSpread",
+              "spread_deg": 10.0,
+              "shot_interval_s": 0.07
+            }
+          }
+        ]
+      }
+    }
+  }
+}
