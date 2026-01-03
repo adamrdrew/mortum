@@ -302,6 +302,11 @@ Optional fields (toggle floors)
 - `toggle_sound` (string): WAV filename under `Assets/Sounds/Effects/`
 - `toggle_sound_finish` (string): WAV filename under `Assets/Sounds/Effects/`
 
+Optional fields (inventory gating)
+
+- `required_item` (string): inventory item required to activate this toggle wall
+- `required_item_missing_message` (string): optional toast message when the item is missing
+
 Semantics:
 
 - **Solid wall**: `back_sector == -1`
@@ -311,6 +316,11 @@ Semantics:
   - Does not block collision or LOS.
   - In the renderer, acts as a portal between sectors; the raycaster can recurse through an “open span”.
 
+Runtime note (doors):
+
+- A portal wall can be made to behave as solid at runtime by setting `Wall.door_blocked = true`.
+  - This is how first-class doors are implemented: the wall remains a portal in topology (`back_sector` is unchanged), but collision/LOS/raycast treat it as solid while blocked.
+
 Validation rules:
 
 - `v0` and `v1` must be valid vertex indices and must not be equal.
@@ -318,6 +328,38 @@ Validation rules:
 - `back_sector` must be `-1` or in range.
 - `tex` must be non-empty.
 - If `toggle_sector` is true and `toggle_sector_id != -1`, that `toggle_sector_id` must match some sector’s `id`.
+
+---
+
+## Schema: `doors` (optional)
+
+Array of door objects. Doors are first-class map primitives that bind to an existing **portal wall** by index.
+
+Required fields per door:
+
+- `id` (string): non-empty, unique within the map
+- `wall_index` (integer): index into `world.walls[]`; must refer to a portal wall (`back_sector != -1`)
+- `tex` (string): non-empty wall texture to apply while the door is closed
+
+Optional fields:
+
+- `starts_closed` (boolean, default `true`)
+- `sound_open` (string): WAV filename under `Assets/Sounds/Effects/`
+- `required_item` (string): inventory item required to open
+- `required_item_missing_message` (string): optional toast message when the item is missing
+
+Semantics:
+
+- Doors are **open-only**: once opened they do not close in gameplay.
+- When a door starts closed, the engine sets the bound wall’s runtime `door_blocked` flag and applies `tex` as the wall’s current texture.
+- When opened, the engine clears `door_blocked` and restores the wall’s authored base texture.
+
+Validation rules:
+
+- Door IDs must be unique.
+- `wall_index` must be in-range.
+- The referenced wall must be a portal wall.
+- `tex` must be non-empty.
 
 ---
 

@@ -92,6 +92,7 @@ SRC := \
   src/game/collision.c \
   src/game/dash.c \
   src/game/sector_height.c \
+  src/game/doors.c \
   src/game/player_controller.c \
   src/game/sound_emitters.c \
   src/game/particle_emitters.c \
