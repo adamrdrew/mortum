@@ -1,0 +1,30 @@
+{
+  "name": "blue_key",
+  "kind": "pickup",
+  "sprite": {
+    "file": {
+      "name": "blue_key.png",
+      "dimensions": {
+        "x": 64,
+        "y": 64
+      }
+    },
+    "frames": {
+      "count": 1,
+      "dimensions": {
+        "x": 64,
+        "y": 64
+      }
+    },
+    "scale": 1,
+    "z_offset": 32
+  },
+  "radius": 0.35,
+  "height": 0.6,
+  "pickup": {
+    "add_to_inventory": "blue_key",
+    "trigger_radius": 0.6,
+    "pickup_sound": "Player_Jump.wav",
+    "pickup_sound_gain": 1.0
+  }
+}

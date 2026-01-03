@@ -2,6 +2,10 @@
   "files": [
     "defs/health_pickup.json",
     "defs/ammo_pickup.json",
+    "defs/blue_key.json",
+    "defs/red_key.json",
+    "defs/green_key.json",
+    "defs/orange_key.json",
     "defs/test_projectile.json",
     "defs/shambler.json",
     "defs/infected_spread_shooter.json",

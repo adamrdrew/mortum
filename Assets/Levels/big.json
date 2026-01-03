@@ -16,9 +16,11 @@
         {"def": "shambler", "x": 15.0, "y": 33.0, "yaw_deg": 180.0},
         {"def": "infected_spread_shooter", "x": 18.0, "y": 33.0, "yaw_deg": 180.0},
         {"def": "void_lurker_stalker", "x": 12.0, "y": 33.0, "yaw_deg": 180.0},
+        {"def": "orange_key", "x": 15.0, "y": 35.0, "yaw_deg": 0.0},
         {"def": "ammo_pickup", "x": 15.0, "y": 24.0, "yaw_deg": 0.0},
 
         {"def": "shambler", "x": 33.0, "y": 15.0, "yaw_deg": 270.0},
+        {"def": "blue_key", "x": 35.0, "y": 15.0, "yaw_deg": 0.0},
         {"def": "health_pickup", "x": 15.0, "y": 3.0, "yaw_deg": 0.0},
 
         {"def": "ammo_pickup", "x": 3.0, "y": 15.0, "yaw_deg": 0.0}
