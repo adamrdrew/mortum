@@ -26,6 +26,7 @@
 
 typedef struct TextureRegistry TextureRegistry;
 typedef struct HudSystem HudSystem;
+typedef struct Notifications Notifications;
 
 // Command wiring context. Commands call into engine systems through pointers here.
 // Keep this POD and owned by main.
@@ -49,6 +50,7 @@ typedef struct ConsoleCommandContext {
 	bool* mouse_captured;
 	TextureRegistry* texreg;
 	HudSystem* hud;
+	Notifications* notifications;
 
 	// Pointer to the current config pointer in main (updated on reload).
 	const CoreConfig** cfg;

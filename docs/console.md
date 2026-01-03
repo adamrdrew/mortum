@@ -150,6 +150,7 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - `inventory_add <string>` — adds an inventory item (no duplicates)
 - `inventory_remove <string>` — removes an inventory item
 - `inventory_contains <string>` — checks if an inventory item exists
+- `notify <string>` — shows a toast notification (upper-right)
 
 ## Console Opacity
 

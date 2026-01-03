@@ -874,7 +874,8 @@ Requires a `pickup` object.
 
 ```json
 "pickup": {
-  "heal_amount": 25,
+  "add_to_inventory": "green_key",
+  "notification": "You got the green key",
   "trigger_radius": 0.6,
   "pickup_sound": "Player_Jump.wav",
   "pickup_sound_gain": 1.0
@@ -882,14 +883,18 @@ Requires a `pickup` object.
 ```
 
 Rules (exact):
-- You must specify either:
+- You must specify exactly one of:
   - `heal_amount`, or
-  - both `ammo_type` and `ammo_amount`
+  - both `ammo_type` and `ammo_amount`, or
+  - `add_to_inventory`
+- `notification` is optional and can be combined with any of the above.
 
 Fields:
 - `heal_amount` (number; stored as int; no positivity check)
 - `ammo_type` (string): `"bullets" | "shells" | "cells"`
 - `ammo_amount` (number; stored as int; must be `> 0`)
+- `add_to_inventory` (string; optional)
+- `notification` (string; optional)
 - `trigger_radius` (float; optional; defaults to `def.radius`; clamped to `>= 0.01`)
 - `pickup_sound` (string; optional; WAV under `Assets/Sounds/Effects/`)
 - `pickup_sound_gain` (float; optional; default `1.0`)

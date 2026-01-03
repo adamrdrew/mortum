@@ -58,6 +58,8 @@
 #include "game/console.h"
 #include "game/console_commands.h"
 
+#include "game/notifications.h"
+
 #include "game/screen_runtime.h"
 #include "assets/scene_loader.h"
 #include "game/menu_screen.h"
@@ -528,6 +530,10 @@ int main(int argc, char** argv) {
 	PostFxSystem postfx;
 	postfx_init(&postfx);
 
+	Notifications notifications;
+	notifications_init(&notifications);
+	notifications_reset(&notifications);
+
 	Player player;
 	player_init(&player);
 	if (map_ok) {
@@ -645,6 +651,7 @@ int main(int argc, char** argv) {
 	console_ctx.prev_bgmusic_cap = sizeof(prev_bgmusic);
 	console_ctx.prev_soundfont = prev_soundfont;
 	console_ctx.prev_soundfont_cap = sizeof(prev_soundfont);
+	console_ctx.notifications = &notifications;
 
 	ScreenRuntime screens;
 	screen_runtime_init(&screens);
@@ -714,6 +721,7 @@ int main(int argc, char** argv) {
 	bool e_prev_down = false;
 	bool esc_prev_down = false;
 	bool win_prev = false;
+	bool lose_prev = false;
 	uint32_t mouse_prev_buttons = 0u;
 	double particle_ms_remainder = 0.0;
 
@@ -1096,6 +1104,10 @@ int main(int argc, char** argv) {
 									(void)inventory_add_item(&player.inventory, def->u.pickup.add_to_inventory);
 								}
 
+								if (def->u.pickup.notification[0] != '\0') {
+									(void)notifications_push_icon(&notifications, def->u.pickup.notification, def->sprite.file.name);
+								}
+
 								// Pickups are consumed on touch (even if already full).
 								if (def->u.pickup.pickup_sound[0] != '\0') {
 									sound_emitters_play_one_shot_at(
@@ -1297,6 +1309,15 @@ int main(int argc, char** argv) {
 			update_t1 = platform_time_seconds();
 		}
 
+		notifications_tick(&notifications, (float)frame_dt_s);
+
+		// One-shot death notification (avoid spam while in LOSE).
+		bool lose_now = (gs.mode == GAME_MODE_LOSE && player.health <= 0);
+		if (lose_now && !lose_prev) {
+			(void)notifications_push_text(&notifications, "YOU DIED");
+		}
+		lose_prev = lose_now;
+
 		// Timeline progression on win edge.
 		bool win_now = (gs.mode == GAME_MODE_WIN);
 		if (win_now && !win_prev && tl_flow.active && using_timeline) {
@@ -1492,6 +1513,7 @@ int main(int argc, char** argv) {
 			}
 			font_draw_text(&ui_font, &fb, x, y, fps_text, color_from_abgr(0xFFFFFFFFu), 1.0f);
 		}
+		notifications_draw(&notifications, &fb, &ui_font, &texreg, &paths);
 		console_draw(&console, &ui_font, &fb);
 		if (perf_trace_is_active(&perf)) {
 			ui_t1 = platform_time_seconds();

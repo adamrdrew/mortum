@@ -455,7 +455,5 @@ void hud_draw(HudSystem* hud, Framebuffer* fb, const Player* player, const GameS
 	// Top-left status for win/lose (kept for now).
 	if (state && state->mode == GAME_MODE_WIN) {
 		font_draw_text(&hud->font, fb, 8, 8, "YOU ESCAPED", color_from_abgr(0xFF90FF90u), 1.0f);
-	} else if (state && state->mode == GAME_MODE_LOSE) {
-		font_draw_text(&hud->font, fb, 8, 8, "YOU DIED", color_from_abgr(0xFFFF9090u), 1.0f);
 	}
 }

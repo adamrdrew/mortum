@@ -23,6 +23,7 @@
   "height": 0.6,
   "pickup": {
     "add_to_inventory": "blue_key",
+    "notification": "You got the blue key",
     "trigger_radius": 0.6,
     "pickup_sound": "Player_Jump.wav",
     "pickup_sound_gain": 1.0

@@ -16,6 +16,8 @@
 
 #include "game/inventory.h"
 
+#include "game/notifications.h"
+
 #include "render/camera.h"
 #include "render/raycast.h"
 
@@ -287,6 +289,9 @@ static void unload_map_and_world(ConsoleCommandContext* ctx) {
 	}
 
 	// Reset runtime systems that may still be producing audio/particles/entities.
+	if (ctx->notifications) {
+		notifications_reset(ctx->notifications);
+	}
 	if (ctx->sfx_emitters) {
 		sound_emitters_reset(ctx->sfx_emitters);
 		refresh_runtime_audio(ctx);
@@ -339,6 +344,9 @@ static bool load_map_by_name(ConsoleCommandContext* ctx, const char* map_name, b
 	level_mesh_build(ctx->mesh, &ctx->map->world);
 	level_start_apply(ctx->player, ctx->map);
 	ctx->player->footstep_timer_s = 0.0f;
+	if (ctx->notifications) {
+		notifications_reset(ctx->notifications);
+	}
 	respawn_map_emitters_and_entities(ctx);
 	ctx->gs->mode = GAME_MODE_PLAYING;
 	maybe_start_music_for_map(ctx);
@@ -433,6 +441,7 @@ static bool cmd_inventory_list(Console* con, int argc, const char** argv, void* 
 static bool cmd_inventory_add(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_inventory_remove(Console* con, int argc, const char** argv, void* user_ctx);
 static bool cmd_inventory_contains(Console* con, int argc, const char** argv, void* user_ctx);
+static bool cmd_notify(Console* con, int argc, const char** argv, void* user_ctx);
 
 static bool cmd_clear(Console* con, int argc, const char** argv, void* user_ctx) {
 	(void)argc;
@@ -586,6 +595,20 @@ static bool cmd_inventory_contains(Console* con, int argc, const char** argv, vo
 		return false;
 	}
 	bool ok = inventory_contains(&ctx->player->inventory, argv[0]);
+	console_print(con, ok ? "true" : "false");
+	return ok;
+}
+
+static bool cmd_notify(Console* con, int argc, const char** argv, void* user_ctx) {
+	ConsoleCommandContext* ctx = (ConsoleCommandContext*)user_ctx;
+	if (!con || !ctx || !ctx->notifications) {
+		return false;
+	}
+	if (argc < 1) {
+		console_print(con, "Error: Expected message string");
+		return false;
+	}
+	bool ok = notifications_push_text(ctx->notifications, argv[0]);
 	console_print(con, ok ? "true" : "false");
 	return ok;
 }
@@ -1126,6 +1149,13 @@ void console_commands_register_all(Console* con) {
 		.example = "inventory_contains red_key",
 		.syntax = "inventory_contains <string>",
 		.fn = cmd_inventory_contains,
+	});
+	(void)console_register_command(con, (ConsoleCommand){
+		.name = "notify",
+		.description = "Shows a toast notification (upper-right).",
+		.example = "notify \"Hello there\"",
+		.syntax = "notify <string>",
+		.fn = cmd_notify,
 	});
 	(void)console_register_command(con, (ConsoleCommand){
 		.name = "full_screen",

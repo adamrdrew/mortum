@@ -1485,16 +1485,19 @@ static bool entity_defs_parse_def_object_and_push(EntityDefs* defs, const JsonDo
 		int t_heal = -1, t_tr = -1;
 		int t_ammo_type = -1, t_ammo_amount = -1;
 		int t_add_inv = -1;
+		int t_note = -1;
 		(void)json_object_get(doc, t_pickup, "heal_amount", &t_heal);
 		(void)json_object_get(doc, t_pickup, "ammo_type", &t_ammo_type);
 		(void)json_object_get(doc, t_pickup, "ammo_amount", &t_ammo_amount);
 		(void)json_object_get(doc, t_pickup, "add_to_inventory", &t_add_inv);
+		(void)json_object_get(doc, t_pickup, "notification", &t_note);
 
 		def.u.pickup.type = PICKUP_TYPE_HEALTH;
 		def.u.pickup.heal_amount = 0;
 		def.u.pickup.ammo_type = AMMO_BULLETS;
 		def.u.pickup.ammo_amount = 0;
 		def.u.pickup.add_to_inventory[0] = '\0';
+		def.u.pickup.notification[0] = '\0';
 
 		bool has_heal = (t_heal >= 0);
 		bool has_ammo = (t_ammo_type >= 0 && t_ammo_amount >= 0);
@@ -1551,6 +1554,20 @@ static bool entity_defs_parse_def_object_and_push(EntityDefs* defs, const JsonDo
 			def.u.pickup.type = PICKUP_TYPE_AMMO;
 			def.u.pickup.ammo_type = at;
 			def.u.pickup.ammo_amount = (int)amt_d;
+		}
+
+		// Optional pickup notification (does not affect payload selection).
+		if (t_note >= 0) {
+			if (!json_token_is_string(doc, t_note)) {
+				log_error("entity def '%s' pickup notification must be string", def.name);
+				return false;
+			}
+			StringView sv_note;
+			if (!json_get_string(doc, t_note, &sv_note) || sv_note.len <= 0 || sv_note.len >= (int)sizeof(def.u.pickup.notification)) {
+				log_error("entity def '%s' pickup notification invalid", def.name);
+				return false;
+			}
+			snprintf(def.u.pickup.notification, sizeof(def.u.pickup.notification), "%.*s", (int)sv_note.len, sv_note.data);
 		}
 		// trigger_radius defaults to def.radius if absent
 		def.u.pickup.trigger_radius = def.radius;

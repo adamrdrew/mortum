@@ -68,6 +68,8 @@ typedef struct EntityDefPickup {
 	int ammo_amount;
 	// Inventory pickup payload (empty string means none)
 	char add_to_inventory[64];
+	// Optional toast notification on pickup (empty string means none)
+	char notification[128];
 
 	float trigger_radius;
 	char pickup_sound[64];

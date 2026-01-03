@@ -63,6 +63,7 @@ Example:
   "height": 0.6,
   "pickup": {
     "add_to_inventory": "red_key",
+    "notification": "You got the red key",
     "trigger_radius": 0.6,
     "pickup_sound": "Player_Jump.wav",
     "pickup_sound_gain": 1.0
@@ -78,12 +79,15 @@ For `kind: "pickup"`, the `pickup` object must specify exactly one of:
 - `ammo_type` + `ammo_amount`, or
 - `add_to_inventory`
 
+`notification` is optional and can be combined with any of the pickup payload types above.
+
 `add_to_inventory` must be a non-empty string shorter than 64 bytes.
 
 ### Runtime behavior
 
 - Inventory pickup application happens when the main loop handles `ENTITY_EVENT_PLAYER_TOUCH`.
 - The pickup is **consumed on touch**, even if the inventory already contains that item.
+- If `pickup.notification` is present, a toast notification is shown using the pickup's sprite as the icon.
 
 ## Console Commands
 
