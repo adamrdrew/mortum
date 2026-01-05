@@ -234,8 +234,6 @@ static void move_resolved_2d(PhysicsBody* b, const World* world, float dx, float
 			if (!hit) {
 				break;
 			}
-			x += vx;
-			y += vy;
 			vx = 0.0f;
 			vy = 0.0f;
 		}
