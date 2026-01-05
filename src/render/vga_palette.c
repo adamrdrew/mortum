@@ -22,12 +22,6 @@ static inline uint32_t abgr_pack(uint8_t a, uint8_t r, uint8_t g, uint8_t b) {
 	return ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
 }
 
-static inline int clampi(int v, int lo, int hi) {
-	if (v < lo) return lo;
-	if (v > hi) return hi;
-	return v;
-}
-
 static inline int dist2_rgb(uint8_t r0, uint8_t g0, uint8_t b0, uint8_t r1, uint8_t g1, uint8_t b1) {
 	int dr = (int)r0 - (int)r1;
 	int dg = (int)g0 - (int)g1;
@@ -35,8 +29,8 @@ static inline int dist2_rgb(uint8_t r0, uint8_t g0, uint8_t b0, uint8_t r1, uint
 	return dr * dr + dg * dg + db * db;
 }
 
-static void nearest_vga256(uint8_t r, uint8_t g, uint8_t b, uint8_t* out_r, uint8_t* out_g, uint8_t* out_b) {
-	// VGA 256-color palette (common layout):
+static void build_vga256_palette(uint8_t pal[256][3]) {
+	// Common VGA/DOS 256-color palette layout:
 	// - 0..15: EGA system colors
 	// - 16..231: 6x6x6 color cube (0,51,102,153,204,255)
 	// - 232..255: 24-step grayscale ramp
@@ -59,47 +53,77 @@ static void nearest_vga256(uint8_t r, uint8_t g, uint8_t b, uint8_t* out_r, uint
 		{255, 255, 255},
 	};
 
-	// Candidate 1: 6x6x6 cube.
-	int r6 = clampi(((int)r + 25) / 51, 0, 5);
-	int g6 = clampi(((int)g + 25) / 51, 0, 5);
-	int b6 = clampi(((int)b + 25) / 51, 0, 5);
-	uint8_t rc = (uint8_t)(r6 * 51);
-	uint8_t gc = (uint8_t)(g6 * 51);
-	uint8_t bc = (uint8_t)(b6 * 51);
-	int best_d = dist2_rgb(r, g, b, rc, gc, bc);
-	uint8_t best_r = rc;
-	uint8_t best_g = gc;
-	uint8_t best_b = bc;
-
-	// Candidate 2: grayscale ramp (24 levels).
-	int y = (299 * (int)r + 587 * (int)g + 114 * (int)b + 500) / 1000;
-	int gi = clampi((y * 23 + 127) / 255, 0, 23);
-	uint8_t gv = (uint8_t)((gi * 255 + 11) / 23);
-	int d_gray = dist2_rgb(r, g, b, gv, gv, gv);
-	if (d_gray < best_d) {
-		best_d = d_gray;
-		best_r = gv;
-		best_g = gv;
-		best_b = gv;
+	for (int i = 0; i < 16; i++) {
+		pal[i][0] = ega16[i][0];
+		pal[i][1] = ega16[i][1];
+		pal[i][2] = ega16[i][2];
 	}
 
-	// Candidate 3: EGA 16 system colors.
-	for (int i = 0; i < 16; i++) {
-		uint8_t pr = ega16[i][0];
-		uint8_t pg = ega16[i][1];
-		uint8_t pb = ega16[i][2];
-		int d = dist2_rgb(r, g, b, pr, pg, pb);
-		if (d < best_d) {
-			best_d = d;
-			best_r = pr;
-			best_g = pg;
-			best_b = pb;
+	int idx = 16;
+	for (int r6 = 0; r6 < 6; r6++) {
+		for (int g6 = 0; g6 < 6; g6++) {
+			for (int b6 = 0; b6 < 6; b6++) {
+				pal[idx][0] = (uint8_t)(r6 * 51);
+				pal[idx][1] = (uint8_t)(g6 * 51);
+				pal[idx][2] = (uint8_t)(b6 * 51);
+				idx++;
+			}
 		}
 	}
 
-	*out_r = best_r;
-	*out_g = best_g;
-	*out_b = best_b;
+	for (int i = 0; i < 24; i++) {
+		uint8_t v = (uint8_t)((i * 255 + 11) / 23);
+		pal[232 + i][0] = v;
+		pal[232 + i][1] = v;
+		pal[232 + i][2] = v;
+	}
+}
+
+static inline uint8_t expand5(uint8_t v5) {
+	// 0..31 -> 0..255
+	return (uint8_t)((v5 << 3) | (v5 >> 2));
+}
+
+static uint32_t g_vga_lut_abgr[1u << 15];
+static bool g_vga_lut_ready = false;
+
+static void ensure_vga_lut(void) {
+	if (g_vga_lut_ready) {
+		return;
+	}
+
+	uint8_t pal[256][3];
+	build_vga256_palette(pal);
+
+	for (unsigned idx = 0; idx < (1u << 15); idx++) {
+		uint8_t r5 = (uint8_t)((idx >> 10) & 31u);
+		uint8_t g5 = (uint8_t)((idx >> 5) & 31u);
+		uint8_t b5 = (uint8_t)(idx & 31u);
+		uint8_t r = expand5(r5);
+		uint8_t g = expand5(g5);
+		uint8_t b = expand5(b5);
+
+		int best_d = 0x7FFFFFFF;
+		uint8_t best_r = 0, best_g = 0, best_b = 0;
+		for (int p = 0; p < 256; p++) {
+			uint8_t pr = pal[p][0];
+			uint8_t pg = pal[p][1];
+			uint8_t pb = pal[p][2];
+			int d = dist2_rgb(r, g, b, pr, pg, pb);
+			if (d < best_d) {
+				best_d = d;
+				best_r = pr;
+				best_g = pg;
+				best_b = pb;
+				if (d == 0) {
+					break;
+				}
+			}
+		}
+		g_vga_lut_abgr[idx] = abgr_pack(0xFFu, best_r, best_g, best_b);
+	}
+
+	g_vga_lut_ready = true;
 }
 
 void vga_palette_apply(Framebuffer* fb) {
@@ -107,16 +131,17 @@ void vga_palette_apply(Framebuffer* fb) {
 		return;
 	}
 
+	ensure_vga_lut();
+
 	size_t count = (size_t)fb->width * (size_t)fb->height;
 	for (size_t i = 0; i < count; i++) {
 		uint32_t p = fb->pixels[i];
 		uint8_t a = abgr_a(p);
-		uint8_t r = abgr_r(p);
-		uint8_t g = abgr_g(p);
-		uint8_t b = abgr_b(p);
-
-		uint8_t qr = 0, qg = 0, qb = 0;
-		nearest_vga256(r, g, b, &qr, &qg, &qb);
-		fb->pixels[i] = abgr_pack(a, qr, qg, qb);
+		uint8_t r5 = (uint8_t)(abgr_r(p) >> 3);
+		uint8_t g5 = (uint8_t)(abgr_g(p) >> 3);
+		uint8_t b5 = (uint8_t)(abgr_b(p) >> 3);
+		unsigned key = ((unsigned)r5 << 10) | ((unsigned)g5 << 5) | (unsigned)b5;
+		uint32_t q = g_vga_lut_abgr[key];
+		fb->pixels[i] = (q & 0x00FFFFFFu) | ((uint32_t)a << 24);
 	}
 }
