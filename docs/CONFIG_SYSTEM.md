@@ -131,6 +131,7 @@ General rules:
 
 **Reloadable (takes effect immediately after reload)**
 - Most gameplay tuning, lighting parameters, keybinds, footsteps, weapon balance, etc.
+- `render.vga_mode` (full-screen VGA 256-color palette clamp) is applied at present-time.
 - `window.grab_mouse` and `window.relative_mouse` are applied immediately.
 - SFX master volume is applied immediately.
 
@@ -152,6 +153,14 @@ High-level sections:
 - `weapons.balance.*`, `weapons.view.*`, `weapons.sfx.*`
 
 The complete set of keys + defaults is mirrored in [config.json](../config.json).
+
+## Render: VGA palette mode
+
+`render.vga_mode` (bool) enables a full-screen post-processing pass that clamps final output colors to a fixed 256-color VGA palette.
+
+Notes:
+- This is applied as a **screen-space** pass right before present, so it affects gameplay, HUD, console, menus, and scenes.
+- It is safe to toggle at runtime via the console command `config_change render.vga_mode true|false`.
 
 ## How to add a new config option (extension checklist)
 

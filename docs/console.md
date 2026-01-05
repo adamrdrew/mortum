@@ -159,6 +159,14 @@ Defined in [src/game/console_commands.c](../src/game/console_commands.c).
 - The console's opacity is controlled by the `console_opacity` value in `config.json` (default 0.9).
 - You can change the opacity live using the `config_change console_opacity <value>` command.
 
+## VGA Palette Mode
+
+If enabled, `render.vga_mode` clamps final colors to a 256-color VGA palette as a full-screen post-process.
+
+Toggle it live:
+- `config_change render.vga_mode true`
+- `config_change render.vga_mode false`
+
 ## Extending the console
 
 ### Add a new command
