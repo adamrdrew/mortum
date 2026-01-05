@@ -106,7 +106,7 @@ Notes:
 
 Prereqs:
 - C compiler (macOS: Xcode Command Line Tools)
-- SDL2 development libraries (macOS: `brew install sdl2`)
+- SDL2 development libraries (macOS: `brew install sdl2 fluidsynth`)
 
 Build/run:
 - `make`
