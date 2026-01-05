@@ -86,8 +86,8 @@ static CoreConfig g_cfg = {
 	.player = {
 		.mouse_sens_deg_per_px = 0.12f,
 		.move_speed = 4.7f,
-		.dash_distance = 0.85f,
-		.dash_cooldown_s = 0.65f,
+		.run_speed_multiplier = 1.45f,
+		.run_bob_phase_multiplier = 1.25f,
 		.weapon_view_bob_smooth_rate = 8.0f,
 		.weapon_view_bob_phase_rate = 10.0f,
 		.weapon_view_bob_phase_base = 0.2f,
@@ -952,6 +952,9 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 					static const char* const allowed_player[] = {
 						"mouse_sens_deg_per_px",
 						"move_speed",
+						"run_speed_multiplier",
+						"run_bob_phase_multiplier",
+						// Legacy keys (pre-run refactor). Still accepted to avoid breaking old configs.
 						"dash_distance",
 						"dash_cooldown_s",
 						"weapon_view_bob_smooth_rate",
@@ -980,22 +983,40 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 							next.player.move_speed = v;
 						}
 					}
-					if (json_object_get(&doc, t_player, "dash_distance", &t)) {
+					if (json_object_get(&doc, t_player, "run_speed_multiplier", &t)) {
+						float v = 0.0f;
+						if (!json_get_float_any(&doc, t, &v) || v < 1.0f || v > 10.0f) {
+							log_error("Config: %s: player.run_speed_multiplier must be number in [1..10]", path);
+							ok = false;
+						} else {
+							next.player.run_speed_multiplier = v;
+						}
+					} else if (json_object_get(&doc, t_player, "dash_distance", &t)) {
+						// Legacy alias.
 						float v = 0.0f;
 						if (!json_get_float_any(&doc, t, &v) || v < 0.0f || v > 100.0f) {
 							log_error("Config: %s: player.dash_distance must be number in [0..100]", path);
 							ok = false;
 						} else {
-							next.player.dash_distance = v;
+							next.player.run_speed_multiplier = v;
 						}
 					}
-					if (json_object_get(&doc, t_player, "dash_cooldown_s", &t)) {
+					if (json_object_get(&doc, t_player, "run_bob_phase_multiplier", &t)) {
+						float v = 0.0f;
+						if (!json_get_float_any(&doc, t, &v) || v < 0.0f || v > 10.0f) {
+							log_error("Config: %s: player.run_bob_phase_multiplier must be number in [0..10]", path);
+							ok = false;
+						} else {
+							next.player.run_bob_phase_multiplier = v;
+						}
+					} else if (json_object_get(&doc, t_player, "dash_cooldown_s", &t)) {
+						// Legacy alias.
 						float v = 0.0f;
 						if (!json_get_float_any(&doc, t, &v) || v < 0.0f || v > 60.0f) {
 							log_error("Config: %s: player.dash_cooldown_s must be number in [0..60]", path);
 							ok = false;
 						} else {
-							next.player.dash_cooldown_s = v;
+							next.player.run_bob_phase_multiplier = v;
 						}
 					}
 					if (json_object_get(&doc, t_player, "weapon_view_bob_smooth_rate", &t)) {
@@ -1657,11 +1678,18 @@ CoreConfigSetStatus core_config_try_set_by_path(
 	if (key_eq(key_path, "player.move_speed")) {
 		return set_float(&g_cfg.player.move_speed, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);
 	}
+	if (key_eq(key_path, "player.run_speed_multiplier")) {
+		return set_float(&g_cfg.player.run_speed_multiplier, 1.0f, 10.0f, provided_kind, value_str, out_expected_kind);
+	}
+	if (key_eq(key_path, "player.run_bob_phase_multiplier")) {
+		return set_float(&g_cfg.player.run_bob_phase_multiplier, 0.0f, 10.0f, provided_kind, value_str, out_expected_kind);
+	}
+	// Legacy aliases.
 	if (key_eq(key_path, "player.dash_distance")) {
-		return set_float(&g_cfg.player.dash_distance, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);
+		return set_float(&g_cfg.player.run_speed_multiplier, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);
 	}
 	if (key_eq(key_path, "player.dash_cooldown_s")) {
-		return set_float(&g_cfg.player.dash_cooldown_s, 0.0f, 60.0f, provided_kind, value_str, out_expected_kind);
+		return set_float(&g_cfg.player.run_bob_phase_multiplier, 0.0f, 60.0f, provided_kind, value_str, out_expected_kind);
 	}
 	if (key_eq(key_path, "player.weapon_view_bob_smooth_rate")) {
 		return set_float(&g_cfg.player.weapon_view_bob_smooth_rate, 0.0f, 100.0f, provided_kind, value_str, out_expected_kind);

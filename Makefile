@@ -90,7 +90,6 @@ SRC := \
   src/game/rules.c \
   src/game/tuning.c \
   src/game/collision.c \
-  src/game/dash.c \
   src/game/sector_height.c \
   src/game/doors.c \
   src/game/player_controller.c \

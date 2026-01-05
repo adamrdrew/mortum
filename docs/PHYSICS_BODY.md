@@ -75,7 +75,7 @@ There is also a one-off movement helper:
 
 - `physics_body_move_delta(...)`
 
-Used for “impulse-like” moves (dash), so dash uses the *same* traversal rules.
+Used for “impulse-like” moves (e.g. scripted pushes), so these use the *same* traversal rules.
 
 ## Collision rules
 

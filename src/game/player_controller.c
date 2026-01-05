@@ -2,7 +2,6 @@
 
 #include "core/config.h"
 
-#include "game/dash.h"
 #include "game/physics_body.h"
 
 #include <math.h>
@@ -31,6 +30,8 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 	const CoreConfig* cfg = core_config_get();
 	const float mouse_sens_deg_per_px = cfg ? cfg->player.mouse_sens_deg_per_px : 0.12f;
 	const float move_speed = cfg ? cfg->player.move_speed : 4.7f;
+	const float run_speed_multiplier = cfg ? cfg->player.run_speed_multiplier : 1.45f;
+	const float run_bob_phase_multiplier = cfg ? cfg->player.run_bob_phase_multiplier : 1.25f;
 	const float bob_smooth_rate = cfg ? cfg->player.weapon_view_bob_smooth_rate : 8.0f;
 	const float bob_phase_rate = cfg ? cfg->player.weapon_view_bob_phase_rate : 10.0f;
 	const float bob_phase_base = cfg ? cfg->player.weapon_view_bob_phase_base : 0.2f;
@@ -60,6 +61,10 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 		forward /= len;
 		right /= len;
 	}
+	const bool moving = len > 1e-6f;
+	const bool running = in->dash && moving;
+	const float speed_multiplier = running ? run_speed_multiplier : 1.0f;
+	const float bob_phase_multiplier = running ? run_bob_phase_multiplier : 1.0f;
 
 	float ang = player->angle_deg * (float)M_PI / 180.0f;
 	float fx = cosf(ang);
@@ -69,20 +74,8 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 
 	PhysicsBodyParams phys = physics_body_params_default();
 
-	if (!player->noclip) {
-		// Dash/quick-step: impulse-like move with cooldown.
-		// Uses movement direction when provided; otherwise dashes forward.
-		float dir_x = fx * forward + rx * right;
-		float dir_y = fy * forward + ry * right;
-		if (fabsf(dir_x) < 1e-6f && fabsf(dir_y) < 1e-6f) {
-			dir_x = fx;
-			dir_y = fy;
-		}
-		(void)dash_update(player, world, in->dash, dir_x, dir_y, dt_s, &phys);
-	}
-
-	float vx = (fx * forward + rx * right) * move_speed;
-	float vy = (fy * forward + ry * right) * move_speed;
+	float vx = (fx * forward + rx * right) * move_speed * speed_multiplier;
+	float vy = (fy * forward + ry * right) * move_speed * speed_multiplier;
 
 	if (player->noclip || !world) {
 		player->body.x += vx * (float)dt_s;
@@ -103,7 +96,7 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 			smooth = 1.0f;
 		}
 		player->weapon_view_bob_amp += (target_amp - player->weapon_view_bob_amp) * smooth;
-		player->weapon_view_bob_phase += (float)(dt_s * bob_phase_rate) * (bob_phase_base + bob_phase_amp * player->weapon_view_bob_amp);
+		player->weapon_view_bob_phase += (float)(dt_s * bob_phase_rate * bob_phase_multiplier) * (bob_phase_base + bob_phase_amp * player->weapon_view_bob_amp);
 		return;
 	}
 
@@ -123,5 +116,5 @@ void player_controller_update(Player* player, const World* world, const PlayerCo
 		smooth = 1.0f;
 	}
 	player->weapon_view_bob_amp += (target_amp - player->weapon_view_bob_amp) * smooth;
-	player->weapon_view_bob_phase += (float)(dt_s * bob_phase_rate) * (bob_phase_base + bob_phase_amp * player->weapon_view_bob_amp);
+	player->weapon_view_bob_phase += (float)(dt_s * bob_phase_rate * bob_phase_multiplier) * (bob_phase_base + bob_phase_amp * player->weapon_view_bob_amp);
 }

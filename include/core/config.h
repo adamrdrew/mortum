@@ -46,8 +46,8 @@ typedef struct InputBindingsConfig {
 typedef struct PlayerTuningConfig {
 	float mouse_sens_deg_per_px;
 	float move_speed;
-	float dash_distance;
-	float dash_cooldown_s;
+	float run_speed_multiplier;
+	float run_bob_phase_multiplier;
 
 	float weapon_view_bob_smooth_rate;
 	float weapon_view_bob_phase_rate;

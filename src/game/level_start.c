@@ -52,8 +52,6 @@ void level_start_apply(Player* player, const MapLoadResult* map) {
 	// Per-level resets
 	player->keys = 0;
 	player->weapon_cooldown_s = 0.0f;
-	player->dash_cooldown_s = 0.0f;
-	player->dash_prev_down = false;
 
 	// Clear undead session state on new level start.
 	player->undead_active = false;

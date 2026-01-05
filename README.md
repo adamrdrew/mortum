@@ -71,7 +71,7 @@ Notes:
 | `input.bindings.back` | key or `[key,key]` | `["S","Down"]` | Reloadable | Move back |
 | `input.bindings.left` | key or `[key,key]` | `"A"` | Reloadable | Strafe left |
 | `input.bindings.right` | key or `[key,key]` | `"D"` | Reloadable | Strafe right |
-| `input.bindings.dash` | key or `[key,key]` | `["Left Shift","Right Shift"]` | Reloadable | Dash/quick-step |
+| `input.bindings.dash` | key or `[key,key]` | `["Left Shift","Right Shift"]` | Reloadable | Run (hold while moving) |
 | `input.bindings.action` | key or `[key,key]` | `"Space"` | Reloadable | Wall/sector interact |
 | `input.bindings.use` | key or `[key,key]` | `"F"` | Reloadable | Use (purge item) |
 | `input.bindings.weapon_slot_1..5` | key | `"1".."5"` | Reloadable | Select weapon slots |
@@ -84,8 +84,8 @@ Notes:
 | `input.bindings.noclip` | key | `"F2"` | Reloadable | Toggles noclip |
 | `player.mouse_sens_deg_per_px` | number | `0.12` | Reloadable | Range: `[0..10]` |
 | `player.move_speed` | number | `4.7` | Reloadable | Range: `[0..100]` |
-| `player.dash_distance` | number | `0.85` | Reloadable | Range: `[0..100]` |
-| `player.dash_cooldown_s` | number | `0.65` | Reloadable | Range: `[0..60]` |
+| `player.run_speed_multiplier` | number | `1.45` | Reloadable | Range: `[1..10]` |
+| `player.run_bob_phase_multiplier` | number | `1.25` | Reloadable | Range: `[0..10]` |
 | `player.weapon_view_bob_smooth_rate` | number | `8` | Reloadable | Range: `[0..100]` |
 | `player.weapon_view_bob_phase_rate` | number | `10` | Reloadable | Range: `[0..100]` |
 | `player.weapon_view_bob_phase_base` | number | `0.2` | Reloadable | Range: `[0..10]` |

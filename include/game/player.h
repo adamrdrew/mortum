@@ -30,8 +30,6 @@ typedef struct Player {
 	int undead_shards_required;
 	int undead_shards_collected;
 	float weapon_cooldown_s;
-	float dash_cooldown_s;
-	bool dash_prev_down;
 	bool noclip;
 	bool noclip_prev_down;
 	bool action_prev_down;

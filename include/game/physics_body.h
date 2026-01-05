@@ -60,5 +60,5 @@ void physics_body_init(PhysicsBody* b, float x, float y, float z, float radius, 
 // - step-up animation when entering a slightly higher floor (<= step_height)
 void physics_body_update(PhysicsBody* b, const World* world, float wish_vx, float wish_vy, double dt_s, const PhysicsBodyParams* params);
 
-// One-off movement helper (used by dash) that applies the same collision rules.
+// One-off movement helper for impulse-like moves that applies the same collision rules.
 void physics_body_move_delta(PhysicsBody* b, const World* world, float dx, float dy, const PhysicsBodyParams* params);
