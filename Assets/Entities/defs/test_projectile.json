@@ -32,7 +32,7 @@
     "particle_life_ms": 300,
     "emit_interval_ms": 25,
     "offset_jitter": 0.09,
-    "shape": "circle",
+    "shape": "square",
     "start": {
       "opacity": 0.8,
       "size": 0.06,

@@ -3313,6 +3313,9 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			if (adef->kind != ENTITY_KIND_ENEMY) {
 				continue;
 			}
+			if (a->state == ENTITY_STATE_DYING || a->state == ENTITY_STATE_DEAD) {
+				continue;
+			}
 			// Query nearby candidates.
 			uint32_t cand[64];
 			float query_r = a->body.radius * 2.0f + 1.0f;
@@ -3338,6 +3341,9 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 				}
 				const EntityDef* bdef = &es->defs->defs[b->def_id];
 				if (bdef->kind != ENTITY_KIND_ENEMY) {
+					continue;
+				}
+				if (b->state == ENTITY_STATE_DYING || b->state == ENTITY_STATE_DEAD) {
 					continue;
 				}
 				if (a->body.sector != b->body.sector) {
@@ -3558,6 +3564,10 @@ void entity_system_resolve_player_collisions(EntitySystem* es, PhysicsBody* play
 			}
 			const EntityDef* def = &es->defs->defs[e->def_id];
 			if (def->kind != ENTITY_KIND_ENEMY) {
+				continue;
+			}
+			if (e->state == ENTITY_STATE_DYING || e->state == ENTITY_STATE_DEAD) {
+				// Corpses/death animations should not physically block the player.
 				continue;
 			}
 			float dx = e->body.x - player_body->x;
