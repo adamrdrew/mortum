@@ -1009,6 +1009,9 @@ int main(int argc, char** argv) {
 				font_draw_text(&ui_font, &fb, x, y, fps_text, color_from_abgr(0xFFFFFFFFu), 1.0f);
 			}
 			console_draw(&console, &ui_font, &fb);
+			if (cfg && cfg->render.vga_mode) {
+				vga_palette_apply(&fb);
+			}
 			if (perf_trace_is_active(&perf)) {
 				ui_t1 = platform_time_seconds();
 				present_t0 = ui_t1;
