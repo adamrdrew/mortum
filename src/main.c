@@ -1512,6 +1512,21 @@ int main(int argc, char** argv) {
 		int start_sector = -1;
 		if (map_ok && (unsigned)player.body.sector < (unsigned)map.world.sector_count) {
 			start_sector = player.body.sector;
+			// Rendering bug fix (rare, 1-frame): the raycaster computes plane projection
+			// (floor/ceiling) using a camera Z derived from the *start sector*'s floor/ceiling.
+			// During boundary transitions (especially with camera smoothing / step-up clamping),
+			// the camera position can land just across a portal for a frame while
+			// player.body.sector still reflects the other side. If we render with the wrong
+			// start sector, floor/ceiling can briefly jump into the middle of the screen.
+			//
+			// Solution: if the chosen start sector doesn't actually contain the camera, prefer
+			// the sector-at-camera-point for this frame.
+			if (!world_sector_contains_point(&map.world, start_sector, cam.x, cam.y)) {
+				int cam_sector = world_find_sector_at_point(&map.world, cam.x, cam.y);
+				if ((unsigned)cam_sector < (unsigned)map.world.sector_count) {
+					start_sector = cam_sector;
+				}
+			}
 		}
 		RaycastPerf rc_perf;
 		RaycastPerf* rc_perf_ptr = NULL;
