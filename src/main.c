@@ -14,6 +14,7 @@
 #include "render/camera.h"
 #include "render/framebuffer.h"
 #include "render/present.h"
+#include "render/vga_palette.h"
 #include "render/raycast.h"
 #include "render/level_mesh.h"
 #include "render/texture.h"
@@ -1584,6 +1585,9 @@ int main(int argc, char** argv) {
 		}
 		notifications_draw(&notifications, &fb, &ui_font, &texreg, &paths);
 		console_draw(&console, &ui_font, &fb);
+		if (cfg && cfg->render.vga_mode) {
+			vga_palette_apply(&fb);
+		}
 		if (perf_trace_is_active(&perf)) {
 			ui_t1 = platform_time_seconds();
 			present_t0 = ui_t1;

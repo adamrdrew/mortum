@@ -12,6 +12,7 @@
     "internal_width": 640,
     "internal_height": 400,
     "fov_deg": 75.0,
+    "vga_mode": true,
     "point_lights_enabled": true,
     "lighting": {
       "enabled": true,

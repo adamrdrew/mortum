@@ -57,6 +57,7 @@ SRC := \
   src/render/texture.c \
   src/render/level_mesh.c \
   src/render/lighting.c \
+  src/render/vga_palette.c \
   src/assets/json.c \
   src/assets/asset_paths.c \
   src/assets/timeline_loader.c \

@@ -26,6 +26,7 @@ static CoreConfig g_cfg = {
 		.internal_width = 640,
 		.internal_height = 400,
 		.fov_deg = 75.0f,
+		.vga_mode = false,
 		.point_lights_enabled = true,
 		.lighting = {
 			.enabled = true,
@@ -507,7 +508,7 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 				log_error("Config: %s: render must be an object", path);
 				ok = false;
 			} else {
-				static const char* const allowed_render[] = {"internal_width", "internal_height", "fov_deg", "point_lights_enabled", "lighting"};
+				static const char* const allowed_render[] = {"internal_width", "internal_height", "fov_deg", "vga_mode", "point_lights_enabled", "lighting"};
 				warn_unknown_keys(&doc, t_render, allowed_render, (int)(sizeof(allowed_render) / sizeof(allowed_render[0])), "render");
 
 				int t_iw = -1;
@@ -538,6 +539,16 @@ bool core_config_load_from_file(const char* path, const AssetPaths* assets, Conf
 						ok = false;
 					} else {
 						next.render.fov_deg = v;
+					}
+				}
+				int t_vga = -1;
+				if (json_object_get(&doc, t_render, "vga_mode", &t_vga)) {
+					bool b = false;
+					if (!json_get_bool_any(&doc, t_vga, &b)) {
+						log_error("Config: %s: render.vga_mode must be bool", path);
+						ok = false;
+					} else {
+						next.render.vga_mode = b;
 					}
 				}
 				int t_pl = -1;
@@ -1529,6 +1540,9 @@ CoreConfigSetStatus core_config_try_set_by_path(
 	}
 
 	// render
+	if (key_eq(key_path, "render.vga_mode")) {
+		return set_bool(&g_cfg.render.vga_mode, key_path, provided_kind, value_str, out_expected_kind);
+	}
 	if (key_eq(key_path, "render.lighting.enabled")) {
 		return set_bool(&g_cfg.render.lighting.enabled, key_path, provided_kind, value_str, out_expected_kind);
 	}

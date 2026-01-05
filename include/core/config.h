@@ -122,6 +122,7 @@ typedef struct RenderConfig {
 	int internal_width;
 	int internal_height;
 	float fov_deg;
+	bool vga_mode;
 	bool point_lights_enabled;
 	LightingConfig lighting;
 } RenderConfig;
