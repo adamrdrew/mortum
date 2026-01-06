@@ -262,33 +262,141 @@ static uint32_t mix_gore_seed(uint32_t a, uint32_t b) {
         return h ? h : 0xAC1D3Eu;
 }
 
-static GoreSpawnParams gore_params_base(float x, float y, float z, float nx, float ny, float nz, float radius, int samples, float anisotropy, uint32_t seed) {
-        GoreSpawnParams gp;
-        memset(&gp, 0, sizeof(gp));
-        gp.x = x;
-        gp.y = y;
-        gp.z = z;
-        gp.n_x = nx;
-        gp.n_y = ny;
-        gp.n_z = nz;
-        gp.radius = radius;
-        gp.sample_count = samples;
-        gp.opacity = 0.95f;
-        gp.color_r = 0.65f;
-        gp.color_g = 0.08f;
-        gp.color_b = 0.05f;
-        gp.color_spread = 0.08f;
-        gp.anisotropy = anisotropy;
-        gp.life_ms = 0u; // Persistent until reclaimed by pool pressure.
-        gp.seed = seed;
-        return gp;
-}
-
 static float gore_body_height_center(const Entity* target) {
         if (!target) {
                 return 0.8f;
         }
         return target->body.z + fmaxf(target->body.height * 0.6f, 0.1f);
+}
+
+static uint32_t gore_rng_step(uint32_t* s) {
+        uint32_t x = *s;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        *s = x ? x : 0xA53B1Du;
+        return *s;
+}
+
+static float gore_randf01(uint32_t* s) {
+        return (float)(gore_rng_step(s) & 0xFFFFFFu) / (float)0x1000000u;
+}
+
+static void gore_basis_from_normal(float nx, float ny, float nz, float* rx, float* ry, float* rz, float* ux, float* uy, float* uz) {
+        float n_len = sqrtf(nx * nx + ny * ny + nz * nz);
+        if (n_len < 1e-5f) {
+                nx = 0.0f;
+                ny = 0.0f;
+                nz = 1.0f;
+                n_len = 1.0f;
+        }
+        nx /= n_len;
+        ny /= n_len;
+        nz /= n_len;
+        float ax = fabsf(nx) > 0.8f ? 0.0f : 1.0f;
+        float ay = 0.0f;
+        float az = fabsf(nx) > 0.8f ? 1.0f : 0.0f;
+        float r_x = ny * az - nz * ay;
+        float r_y = nz * ax - nx * az;
+        float r_z = nx * ay - ny * ax;
+        float rl = sqrtf(r_x * r_x + r_y * r_y + r_z * r_z);
+        if (rl < 1e-5f) {
+                r_x = 1.0f;
+                r_y = 0.0f;
+                r_z = 0.0f;
+                rl = 1.0f;
+        }
+        r_x /= rl;
+        r_y /= rl;
+        r_z /= rl;
+        float u_x = r_y * nz - r_z * ny;
+        float u_y = r_z * nx - r_x * nz;
+        float u_z = r_x * ny - r_y * nx;
+        float ul = sqrtf(u_x * u_x + u_y * u_y + u_z * u_z);
+        if (ul > 1e-6f) {
+                u_x /= ul;
+                u_y /= ul;
+                u_z /= ul;
+        }
+        if (rx) {
+                *rx = r_x;
+        }
+        if (ry) {
+                *ry = r_y;
+        }
+        if (rz) {
+                *rz = r_z;
+        }
+        if (ux) {
+                *ux = u_x;
+        }
+        if (uy) {
+                *uy = u_y;
+        }
+        if (uz) {
+                *uz = u_z;
+        }
+}
+
+static void gore_pick_palette(uint32_t* rng, float* r, float* g, float* b) {
+        static const float palette[4][3] = {
+                {1.0f, 1.0f, 1.0f},
+                {0.98f, 0.64f, 0.70f},
+                {0.95f, 0.05f, 0.05f},
+                {0.35f, 0.04f, 0.06f},
+        };
+        int idx = (int)(gore_rng_step(rng) % 4u);
+        *r = palette[idx][0];
+        *g = palette[idx][1];
+        *b = palette[idx][2];
+}
+
+static void gore_emit_chunk_burst(
+        World* world,
+        float x,
+        float y,
+        float z,
+        float nx,
+        float ny,
+        float nz,
+        int count,
+        float base_speed,
+        float speed_jitter,
+        float spread_deg,
+        uint32_t seed,
+        int last_valid_sector) {
+        if (!world || !world->gore.initialized || count <= 0) {
+                return;
+        }
+        uint32_t rng = seed ? seed : 0xC11DB10Du;
+        float rx = 1.0f, ry = 0.0f, rz = 0.0f;
+        float ux = 0.0f, uy = 1.0f, uz = 0.0f;
+        gore_basis_from_normal(nx, ny, nz, &rx, &ry, &rz, &ux, &uy, &uz);
+        float spread_rad = spread_deg * (float)M_PI / 180.0f;
+
+        for (int i = 0; i < count; i++) {
+            float theta = gore_randf01(&rng) * spread_rad;
+            float phi = gore_randf01(&rng) * 2.0f * (float)M_PI;
+            float sin_t = sinf(theta);
+            float cos_t = cosf(theta);
+            float dir_x = nx * cos_t + (rx * cosf(phi) + ux * sinf(phi)) * sin_t;
+            float dir_y = ny * cos_t + (ry * cosf(phi) + uy * sinf(phi)) * sin_t;
+            float dir_z = nz * cos_t + (rz * cosf(phi) + uz * sinf(phi)) * sin_t;
+            float dir_len = sqrtf(dir_x * dir_x + dir_y * dir_y + dir_z * dir_z);
+            if (dir_len > 1e-5f) {
+                    dir_x /= dir_len;
+                    dir_y /= dir_len;
+                    dir_z /= dir_len;
+            }
+            float speed = base_speed + (gore_randf01(&rng) * 2.0f - 1.0f) * speed_jitter;
+            float vx = dir_x * speed;
+            float vy = dir_y * speed;
+            float vz = dir_z * speed + 0.5f * base_speed * gore_randf01(&rng);
+            float radius = 0.035f + gore_randf01(&rng) * 0.05f;
+            float cr = 1.0f, cg = 0.0f, cb = 0.0f;
+            gore_pick_palette(&rng, &cr, &cg, &cb);
+            (void)gore_spawn_chunk(&world->gore, world, x, y, z, vx, vy, vz, radius, cr, cg, cb, 2800u, last_valid_sector);
+        }
 }
 
 static void gore_emit_damage_splatter(World* world, const Entity* target, const PhysicsBody* player_body, float hx, float hy, uint32_t seed) {
@@ -303,12 +411,8 @@ static void gore_emit_damage_splatter(World* world, const Entity* target, const 
         }
         float center_z = gore_body_height_center(target);
 
-        uint32_t s0 = mix_gore_seed(seed, (uint32_t)target->id.index + 1u);
-        GoreSpawnParams floor_gp = gore_params_base(base_x, base_y, center_z, 0.0f, 0.0f, 1.0f, 0.35f, 12, 0.25f, s0);
-        (void)gore_spawn(&world->gore, &floor_gp);
-
         float nx = 0.0f;
-        float ny = 1.0f;
+        float ny = 0.0f;
         if (player_body) {
                 float dx = target->body.x - player_body->x;
                 float dy = target->body.y - player_body->y;
@@ -318,10 +422,9 @@ static void gore_emit_damage_splatter(World* world, const Entity* target, const 
                         ny = dy / len;
                 }
         }
-        uint32_t s1 = mix_gore_seed(seed, (uint32_t)(target->id.index + 3u));
-        GoreSpawnParams wall_gp = gore_params_base(base_x, base_y, center_z, nx, ny, 0.0f, 0.28f, 10, 0.55f, s1);
-        wall_gp.color_spread = 0.12f;
-        (void)gore_spawn(&world->gore, &wall_gp);
+        float burst_dir_z = 0.6f;
+        uint32_t s0 = mix_gore_seed(seed, (uint32_t)target->id.index + 1u);
+        gore_emit_chunk_burst(world, base_x, base_y, center_z, nx, ny, burst_dir_z, 18, 6.5f, 3.0f, 55.0f, s0, target->body.last_valid_sector);
 }
 
 static void gore_emit_death_burst(World* world, const Entity* target, const PhysicsBody* player_body, uint32_t seed) {
@@ -332,14 +435,8 @@ static void gore_emit_death_burst(World* world, const Entity* target, const Phys
         float base_y = target->body.y;
         float center_z = gore_body_height_center(target);
 
-        uint32_t s0 = mix_gore_seed(seed, (uint32_t)target->id.index + 11u);
-        GoreSpawnParams floor_gp = gore_params_base(base_x, base_y, center_z, 0.0f, 0.0f, 1.0f, 0.6f, 18, 0.35f, s0);
-        floor_gp.opacity = 1.0f;
-        floor_gp.color_spread = 0.12f;
-        (void)gore_spawn(&world->gore, &floor_gp);
-
         float nx = 0.0f;
-        float ny = 1.0f;
+        float ny = 0.0f;
         if (player_body) {
                 float dx = target->body.x - player_body->x;
                 float dy = target->body.y - player_body->y;
@@ -350,11 +447,8 @@ static void gore_emit_death_burst(World* world, const Entity* target, const Phys
                 }
         }
 
-        uint32_t s1 = mix_gore_seed(seed, (uint32_t)target->id.index + 17u);
-        GoreSpawnParams wall_gp = gore_params_base(base_x, base_y, center_z, nx, ny, 0.0f, 0.85f, 24, 0.65f, s1);
-        wall_gp.opacity = 0.9f;
-        wall_gp.color_spread = 0.15f;
-        (void)gore_spawn(&world->gore, &wall_gp);
+        uint32_t s0 = mix_gore_seed(seed, (uint32_t)target->id.index + 11u);
+        gore_emit_chunk_burst(world, base_x, base_y, center_z, nx, ny, 0.8f, 36, 8.0f, 70.0f, s0, target->body.last_valid_sector);
 }
 
 static void set_mouse_capture(Window* win, const CoreConfig* cfg, bool captured) {
@@ -1443,7 +1537,7 @@ int main(int argc, char** argv) {
                                                         p_tick_ms += (t1 - t0) * 1000.0;
                                                         t0 = t1;
                                                 }
-                                                gore_tick(&map.world.gore, dt_ms);
+                                                gore_tick(&map.world.gore, &map.world, dt_ms);
                                                 if (perf_trace_is_active(&perf)) {
                                                         double t1 = platform_time_seconds();
                                                         g_tick_ms += (t1 - t0) * 1000.0;

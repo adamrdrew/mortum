@@ -10,6 +10,7 @@
 // are pooled separately from the particle emitter pipeline.
 
 #define GORE_STAMP_MAX_DEFAULT 512
+#define GORE_CHUNK_MAX_DEFAULT 768
 #define GORE_STAMP_MAX_SAMPLES 24
 
 typedef struct World World;
@@ -54,11 +55,33 @@ typedef struct GoreStamp {
         GoreSample samples[GORE_STAMP_MAX_SAMPLES];
 } GoreStamp;
 
+typedef struct GoreChunk {
+        bool alive;
+        float x;
+        float y;
+        float z;
+        float vx;
+        float vy;
+        float vz;
+        float radius;
+        float r;
+        float g;
+        float b;
+        uint32_t age_ms;
+        uint32_t life_ms;
+        int sector;
+        int last_valid_sector;
+} GoreChunk;
+
 typedef struct GoreSystem {
         bool initialized;
         int capacity;
         GoreStamp* items; // owned
         int alive_count;
+
+        int chunk_capacity;
+        GoreChunk* chunks; // owned
+        int chunk_alive;
 
         // Per-frame stats (cleared by gore_begin_frame).
         uint32_t stats_spawned;
@@ -94,10 +117,27 @@ void gore_shutdown(GoreSystem* self);
 void gore_reset(GoreSystem* self);
 
 void gore_begin_frame(GoreSystem* self);
-void gore_tick(GoreSystem* self, uint32_t dt_ms);
+void gore_tick(GoreSystem* self, const World* world, uint32_t dt_ms);
 
 // Spawns a procedural gore stamp. Drops newest when pool is full.
 bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params);
+
+// Spawn a flying gore chunk with ballistic motion; drops newest when chunk pool is full.
+bool gore_spawn_chunk(
+        GoreSystem* self,
+        const World* world,
+        float x,
+        float y,
+        float z,
+        float vx,
+        float vy,
+        float vz,
+        float radius,
+        float r,
+        float g,
+        float b,
+        uint32_t life_ms,
+        int last_valid_sector);
 
 // Draws all alive gore stamps using procedural droplets; respects depth/wall occlusion.
 void gore_draw(

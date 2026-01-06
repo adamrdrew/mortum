@@ -3,8 +3,13 @@
 #include "core/base.h"
 #include "core/log.h"
 #include "game/world.h"
+#include "game/collision.h"
 #include "render/camera.h"
+#include "render/lighting.h"
+#include "render/raycast.h"
+#include "platform/time.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,6 +108,13 @@ bool gore_init(GoreSystem* self, int capacity) {
         if (!self->items) {
                 return false;
         }
+        self->chunk_capacity = GORE_CHUNK_MAX_DEFAULT;
+        self->chunks = (GoreChunk*)calloc((size_t)self->chunk_capacity, sizeof(GoreChunk));
+        if (!self->chunks) {
+                free(self->items);
+                memset(self, 0, sizeof(*self));
+                return false;
+        }
         self->capacity = capacity;
         self->initialized = true;
         return true;
@@ -113,6 +125,7 @@ void gore_shutdown(GoreSystem* self) {
                 return;
         }
         free(self->items);
+        free(self->chunks);
         memset(self, 0, sizeof(*self));
 }
 
@@ -121,7 +134,11 @@ void gore_reset(GoreSystem* self) {
                 return;
         }
         memset(self->items, 0, (size_t)self->capacity * sizeof(GoreStamp));
+        if (self->chunks && self->chunk_capacity > 0) {
+                memset(self->chunks, 0, (size_t)self->chunk_capacity * sizeof(GoreChunk));
+        }
         self->alive_count = 0;
+        self->chunk_alive = 0;
         self->stats_spawned = 0u;
         self->stats_dropped = 0u;
         self->stats_drawn_samples = 0u;
@@ -138,7 +155,150 @@ void gore_begin_frame(GoreSystem* self) {
         self->stats_pixels_written = 0u;
 }
 
-void gore_tick(GoreSystem* self, uint32_t dt_ms) {
+static const float GORE_PALETTE[4][3] = {
+        {1.0f, 1.0f, 1.0f},          // white
+        {0.98f, 0.64f, 0.70f},       // pink
+        {0.95f, 0.05f, 0.05f},       // bright red
+        {0.35f, 0.04f, 0.06f},       // dark maroon
+};
+
+static void gore_snap_to_palette(float r, float g, float b, float* out_r, float* out_g, float* out_b) {
+        float best = FLT_MAX;
+        int best_idx = 0;
+        for (int i = 0; i < 4; i++) {
+                float dr = r - GORE_PALETTE[i][0];
+                float dg = g - GORE_PALETTE[i][1];
+                float db = b - GORE_PALETTE[i][2];
+                float d2 = dr * dr + dg * dg + db * db;
+                if (d2 < best) {
+                        best = d2;
+                        best_idx = i;
+                }
+        }
+        if (out_r) {
+                *out_r = GORE_PALETTE[best_idx][0];
+        }
+        if (out_g) {
+                *out_g = GORE_PALETTE[best_idx][1];
+        }
+        if (out_b) {
+                *out_b = GORE_PALETTE[best_idx][2];
+        }
+}
+
+static inline float deg_to_rad3(float deg) {
+        return deg * (float)M_PI / 180.0f;
+}
+
+static inline float max3(float a, float b) {
+        return a > b ? a : b;
+}
+
+static bool gore_stamp_from_chunk(GoreSystem* self, const World* world, const GoreChunk* c, float nx, float ny, float nz) {
+        if (!self || !c) {
+                return false;
+        }
+        GoreSpawnParams gp;
+        memset(&gp, 0, sizeof(gp));
+        gp.x = c->x;
+        gp.y = c->y;
+        gp.z = c->z;
+        gp.n_x = nx;
+        gp.n_y = ny;
+        gp.n_z = nz;
+        gp.radius = max3(c->radius * 2.25f, 0.05f);
+        gp.sample_count = 4;
+        gp.opacity = 1.0f;
+        gp.color_r = c->r;
+        gp.color_g = c->g;
+        gp.color_b = c->b;
+        gp.color_spread = 0.0f;
+        gp.anisotropy = 0.35f;
+        gp.life_ms = 0u;
+        gp.seed = c->age_ms ^ (uint32_t)(fabsf(c->x * 100.0f));
+        (void)world;
+        return gore_spawn(self, &gp);
+}
+
+static bool gore_chunk_collide_floorceil(
+        GoreSystem* self,
+        const World* world,
+        GoreChunk* c,
+        float new_z,
+        float floor_z,
+        float ceil_z) {
+        if (new_z - c->radius <= floor_z) {
+                c->z = floor_z;
+                gore_stamp_from_chunk(self, world, c, 0.0f, 0.0f, 1.0f);
+                c->alive = false;
+                return true;
+        }
+        if (new_z + c->radius >= ceil_z) {
+                c->z = ceil_z;
+                gore_stamp_from_chunk(self, world, c, 0.0f, 0.0f, -1.0f);
+                c->alive = false;
+                return true;
+        }
+        return false;
+}
+
+bool gore_spawn_chunk(
+        GoreSystem* self,
+        const World* world,
+        float x,
+        float y,
+        float z,
+        float vx,
+        float vy,
+        float vz,
+        float radius,
+        float r,
+        float g,
+        float b,
+        uint32_t life_ms,
+        int last_valid_sector) {
+        if (!self || !self->initialized || !self->chunks) {
+                return false;
+        }
+        if (radius <= 0.0f) {
+                return false;
+        }
+        if (self->chunk_alive >= self->chunk_capacity) {
+                self->stats_dropped++;
+                return false;
+        }
+        int idx = -1;
+        for (int i = 0; i < self->chunk_capacity; i++) {
+                if (!self->chunks[i].alive) {
+                        idx = i;
+                        break;
+                }
+        }
+        if (idx < 0) {
+                self->stats_dropped++;
+                return false;
+        }
+        GoreChunk c;
+        memset(&c, 0, sizeof(c));
+        c.alive = true;
+        c.x = x;
+        c.y = y;
+        c.z = z;
+        c.vx = vx;
+        c.vy = vy;
+        c.vz = vz;
+        c.radius = radius;
+        gore_snap_to_palette(clampf3(r, 0.0f, 1.0f), clampf3(g, 0.0f, 1.0f), clampf3(b, 0.0f, 1.0f), &c.r, &c.g, &c.b);
+        c.life_ms = life_ms > 0u ? life_ms : 2200u;
+        c.age_ms = 0u;
+        c.last_valid_sector = last_valid_sector;
+        c.sector = world ? world_find_sector_at_point_stable(world, x, y, last_valid_sector) : -1;
+        self->chunks[idx] = c;
+        self->chunk_alive++;
+        return true;
+}
+
+void gore_tick(GoreSystem* self, const World* world, uint32_t dt_ms) {
         if (!self || !self->initialized || !self->items || dt_ms == 0u) {
                 return;
         }
@@ -156,11 +316,72 @@ void gore_tick(GoreSystem* self, uint32_t dt_ms) {
                 alive++;
         }
         self->alive_count = alive;
-}
 
-static float clamp_and_mix(float base, float spread, uint32_t* rng) {
-        float delta = (randf(rng) * 2.0f - 1.0f) * spread;
-        return clampf3(base + delta, 0.0f, 1.0f);
+        if (!self->chunks || !world) {
+                return;
+        }
+
+        const float gravity = 18.0f;
+        float dt = (float)dt_ms / 1000.0f;
+        int chunk_alive = 0;
+        for (int i = 0; i < self->chunk_capacity; i++) {
+                GoreChunk* c = &self->chunks[i];
+                if (!c->alive) {
+                        continue;
+                }
+                c->age_ms += dt_ms;
+                if (c->life_ms > 0u && c->age_ms >= c->life_ms) {
+                        c->alive = false;
+                        continue;
+                }
+
+                float to_x = c->x + c->vx * dt;
+                float to_y = c->y + c->vy * dt;
+                CollisionMoveResult mr = collision_move_circle(world, c->radius, c->x, c->y, to_x, to_y);
+                bool hit_wall = mr.collided;
+                float nx = 0.0f;
+                float ny = 0.0f;
+                if (hit_wall) {
+                        float dx = to_x - mr.out_x;
+                        float dy = to_y - mr.out_y;
+                        float len = sqrtf(dx * dx + dy * dy);
+                        if (len > 1e-5f) {
+                                nx = dx / len;
+                                ny = dy / len;
+                        } else {
+                                float lv = sqrtf(c->vx * c->vx + c->vy * c->vy);
+                                if (lv > 1e-6f) {
+                                        nx = -c->vx / lv;
+                                        ny = -c->vy / lv;
+                                }
+                        }
+                }
+
+                c->x = mr.out_x;
+                c->y = mr.out_y;
+                c->vz -= gravity * dt;
+                float new_z = c->z + c->vz * dt;
+
+                int sec = world_find_sector_at_point_stable(world, c->x, c->y, c->last_valid_sector);
+                c->sector = sec;
+                if (sec >= 0 && (unsigned)sec < (unsigned)world->sector_count) {
+                        c->last_valid_sector = sec;
+                        float floor_z = world->sectors[sec].floor_z;
+                        float ceil_z = world->sectors[sec].ceil_z;
+                        if (gore_chunk_collide_floorceil(self, world, c, new_z, floor_z, ceil_z)) {
+                                continue;
+                        }
+                }
+                c->z = new_z;
+
+                if (hit_wall) {
+                        c->alive = false;
+                        gore_stamp_from_chunk(self, world, c, nx, ny, 0.0f);
+                        continue;
+                }
+                chunk_alive++;
+        }
+        self->chunk_alive = chunk_alive;
 }
 
 bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params) {
@@ -186,6 +407,11 @@ bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params) {
                 self->stats_dropped++;
                 return false;
         }
+
+        float pr = params->color_r;
+        float pg = params->color_g;
+        float pb = params->color_b;
+        gore_snap_to_palette(pr, pg, pb, &pr, &pg, &pb);
 
         GoreStamp g;
         memset(&g, 0, sizeof(g));
@@ -213,11 +439,11 @@ bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params) {
                 float rr = radial * stretch;
                 g.samples[i].off_r = rr * cosf(angle);
                 g.samples[i].off_u = radial * sinf(angle);
-                g.samples[i].radius = (0.1f + 0.9f * randf(&rng)) * (params->radius * 0.15f);
-                g.samples[i].opacity = clampf3(params->opacity * (0.6f + 0.4f * randf(&rng)), 0.0f, 1.0f);
-                g.samples[i].r = clamp_and_mix(params->color_r, params->color_spread, &rng);
-                g.samples[i].g = clamp_and_mix(params->color_g, params->color_spread, &rng);
-                g.samples[i].b = clamp_and_mix(params->color_b, params->color_spread, &rng);
+                g.samples[i].radius = (0.35f + 0.65f * randf(&rng)) * (params->radius * 0.2f);
+                g.samples[i].opacity = 1.0f;
+                g.samples[i].r = clampf3(pr, 0.0f, 1.0f);
+                g.samples[i].g = clampf3(pg, 0.0f, 1.0f);
+                g.samples[i].b = clampf3(pb, 0.0f, 1.0f);
                 g.sample_count++;
         }
 
@@ -252,10 +478,6 @@ static inline uint32_t blend_abgr8888_over(uint32_t src, uint32_t dst) {
         uint32_t og = (sg * sa + dg * inv + 127u) / 255u;
         uint32_t or_ = (sr * sa + dr * inv + 127u) / 255u;
         return (oa << 24u) | (ob << 16u) | (og << 8u) | or_;
-}
-
-static inline float deg_to_rad3(float deg) {
-        return deg * (float)M_PI / 180.0f;
 }
 
 static float camera_world_z_for_sector_approx3(const World* world, int sector, float z_offset) {
@@ -305,6 +527,9 @@ void gore_draw(
         }
         float focal = half_w / tan_half_fov;
         float cam_z_world = camera_world_z_for_sector_approx3(world, start_sector, cam->z);
+
+        PointLight vis_lights[96];
+        int vis_count = raycast_build_visible_lights(vis_lights, (int)MORTUM_ARRAY_COUNT(vis_lights), world, cam, (float)platform_time_seconds());
 
         uint32_t drawn_samples = 0u;
         uint32_t pixels_written = 0u;
@@ -359,11 +584,21 @@ void gore_draw(
                                 continue;
                         }
 
-                        uint8_t a = (uint8_t)lroundf(clampf3(s->opacity, 0.0f, 1.0f) * 255.0f);
+                        int sec = world_find_sector_at_point_stable(world, wx, wy, start_sector);
+                        float sector_intensity = 1.0f;
+                        LightColor sector_tint = light_color_white();
+                        if ((unsigned)sec < (unsigned)world->sector_count) {
+                                sector_intensity = world->sectors[sec].light;
+                                sector_tint = world->sectors[sec].light_color;
+                        }
+
+                        float dist = sqrtf(dx * dx + dy * dy);
+                        uint8_t a = 255u;
                         uint8_t r = (uint8_t)lroundf(clampf3(s->r, 0.0f, 1.0f) * 255.0f);
                         uint8_t gch = (uint8_t)lroundf(clampf3(s->g, 0.0f, 1.0f) * 255.0f);
                         uint8_t b = (uint8_t)lroundf(clampf3(s->b, 0.0f, 1.0f) * 255.0f);
                         uint32_t src_px = pack_abgr_u8(a, b, gch, r);
+                        src_px = lighting_apply(src_px, dist, sector_intensity, sector_tint, vis_lights, vis_count, wx, wy);
 
                         bool any = false;
                         for (int x = clip_x0; x < clip_x1; x++) {
@@ -377,24 +612,8 @@ void gore_draw(
                                                         continue;
                                                 }
                                         }
-                                        float lx = ((float)x + 0.5f - x_center) / (float)radius_px;
-                                        float ly = ((float)y + 0.5f - y_center) / (float)radius_px;
-                                        float rr = lx * lx + ly * ly;
-                                        if (rr > 1.0f) {
-                                                continue;
-                                        }
-                                        // Slightly ragged edges for procedural look.
-                                        float edge = 1.0f - rr;
-                                        if (edge < 0.0f) {
-                                                edge = 0.0f;
-                                        }
-                                        uint8_t local_a = (uint8_t)lroundf((float)a * edge);
-                                        if (local_a == 0u) {
-                                                continue;
-                                        }
-                                        uint32_t tinted = (src_px & 0x00FFFFFFu) | ((uint32_t)local_a << 24u);
                                         uint32_t dst = fb->pixels[y * fb->width + x];
-                                        fb->pixels[y * fb->width + x] = blend_abgr8888_over(tinted, dst);
+                                        fb->pixels[y * fb->width + x] = blend_abgr8888_over(src_px, dst);
                                         pixels_written++;
                                         any = true;
                                 }
