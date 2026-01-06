@@ -345,7 +345,18 @@ static void gore_pick_palette(uint32_t* rng, float* r, float* g, float* b) {
                 {0.95f, 0.05f, 0.05f},
                 {0.35f, 0.04f, 0.06f},
         };
-        int idx = (int)(gore_rng_step(rng) % 4u);
+        // Bias towards reds, with pink as an accent and white the rarest.
+        float roll = gore_randf01(rng);
+        int idx = 0;
+        if (roll < 0.05f) {
+                idx = 0; // white
+        } else if (roll < 0.20f) {
+                idx = 1; // pink
+        } else if (roll < 0.60f) {
+                idx = 2; // bright red
+        } else {
+                idx = 3; // dark maroon
+        }
         *r = palette[idx][0];
         *g = palette[idx][1];
         *b = palette[idx][2];
@@ -392,7 +403,11 @@ static void gore_emit_chunk_burst(
             float vx = dir_x * speed;
             float vy = dir_y * speed;
             float vz = dir_z * speed + 0.5f * base_speed * gore_randf01(&rng);
-            float radius = 0.035f + gore_randf01(&rng) * 0.05f;
+            // Mix in chunky variety (1x/2x/4x) with light per-tier jitter.
+            float size_roll = gore_randf01(&rng);
+            float size_mul = size_roll < 0.60f ? 1.0f : (size_roll < 0.90f ? 2.0f : 4.0f);
+            float base_radius = 0.025f + gore_randf01(&rng) * 0.02f;
+            float radius = base_radius * size_mul;
             float cr = 1.0f, cg = 0.0f, cb = 0.0f;
             gore_pick_palette(&rng, &cr, &cg, &cb);
             (void)gore_spawn_chunk(&world->gore, world, x, y, z, vx, vy, vz, radius, cr, cg, cb, 2800u, last_valid_sector);
