@@ -18,8 +18,10 @@ the map ([src/assets/map_loader.c](../src/assets/map_loader.c)). Gameplay spawns
 
 - **Chunks**: flying opaque squares that use simple ballistic physics, collide with world geometry only, and stamp when
 they hit floors/ceilings/walls. They are pooled separately from stamps (`GORE_CHUNK_MAX_DEFAULT`).
-- **Stamps**: persistent "sticky" splats projected onto geometry planes. Each stamp procedurally scatters up to
-`GORE_STAMP_MAX_SAMPLES` droplets in tangent space, with palette snapping and optional lifetime (0 = permanent).
+- **Stamps**: persistent "sticky" splats that are floor-only in the current implementation. Chunk impacts only stamp
+  onto floors (walls/ceilings are intentionally skipped due to view-dependent z-fighting and skybox edge cases).
+  Each stamp procedurally scatters up to `GORE_STAMP_MAX_SAMPLES` droplets in the floor plane, with palette snapping and
+  optional lifetime (0 = permanent).
 - **Color palette**: four hard colors (white, pink, bright red, dark maroon) with spawn bias toward the two reds,
 occasional pink, and rare white for specks. Live rendering never uses transparency.
 - **Lighting**: both live chunks and baked stamps run through the lighting model (sector light and visible point lights)
@@ -47,21 +49,21 @@ stable given the same inputs.
 - Spawn: `gore_spawn_chunk` drops the newest request if the pool is full and defaults `life_ms` to ~2.8s when zero.
   It immediately snaps the requested RGB to the gore palette for consistency.
 - Simulation: `gore_tick` advances gravity (`18.0f` units/s²), integrates XY motion with `collision_move_circle`, and
-  handles Z floor/ceiling impacts. Wall hits compute a collision normal, move the stamp origin to (almost) the wall
-  plane, and stamp before killing the chunk so decals sit flush on the surface.
+  handles Z floor/ceiling impacts. Floor hits stamp before killing the chunk; wall and ceiling hits currently do not
+  stamp (the chunk is simply removed).
 - Rendering: visible chunks draw as opaque squares in screen space, depth-tested against walls/depth buffers and lit per
   sector/point light.
 
 ### Stamps (sticky decals)
 
-- Structure: `GoreStamp` stores world position, surface normal, tangent basis, max radius, lifetime, and procedural
-  droplet samples (`GoreSample`).
-- Spawn: `gore_spawn` builds tangent/bitangent from the requested normal, scatters up to `GORE_STAMP_MAX_SAMPLES` samples
-  using a seeded RNG and snaps colors to the palette. New spawns drop when the pool is full.
+- Structure: `GoreStamp` stores world position, max radius, lifetime, and procedural droplet samples (`GoreSample`).
+- Spawn: `gore_spawn` scatters up to `GORE_STAMP_MAX_SAMPLES` samples in the floor plane using a seeded RNG and snaps
+  colors to the palette. New spawns drop when the pool is full.
 - Tick: `gore_tick` ages stamps and culls any with finite lifetimes; persistent stamps keep `life_ms == 0`.
 - Rendering: `gore_draw` projects each sample into screen space as an opaque square, clipping against wall depth/depth
-  buffer and applying sector + point-light shading. Draw stats (`stats_drawn_samples`, `stats_pixels_written`) are
-  tracked for perf instrumentation.
+  buffer and applying sector + point-light shading. A small depth bias is applied in the depth comparisons so decals
+  reliably win against the surface they sit on (avoids close-up z-fighting). Draw stats (`stats_drawn_samples`,
+  `stats_pixels_written`) are tracked for perf instrumentation.
 
 ---
 

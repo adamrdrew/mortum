@@ -19,8 +19,8 @@ typedef struct TextureRegistry TextureRegistry;
 typedef struct AssetPaths AssetPaths;
 
 typedef struct GoreSample {
-        float off_r;      // offset along tangent/right basis (world units)
-        float off_u;      // offset along bitangent/up basis (world units)
+        float off_x;      // offset along world X (world units)
+        float off_y;      // offset along world Y (world units)
         float radius;     // world-unit radius of this droplet
         float r;
         float g;
@@ -35,18 +35,6 @@ typedef struct GoreStamp {
         float x;
         float y;
         float z;
-
-        float n_x;
-        float n_y;
-        float n_z;
-
-        // Orthonormal tangent basis spanning the gore plane (right, up).
-        float r_x;
-        float r_y;
-        float r_z;
-        float u_x;
-        float u_y;
-        float u_z;
 
         float max_radius;
 
@@ -94,17 +82,11 @@ typedef struct GoreSpawnParams {
         float y;
         float z;
 
-        // Preferred surface normal (normalized internally; defaults to +Z when invalid).
-        float n_x;
-        float n_y;
-        float n_z;
-
         float radius;        // world units, overall footprint radius
         int sample_count;    // number of procedural droplets to generate
         float color_r;       // [0..1]
         float color_g;       // [0..1]
         float color_b;       // [0..1]
-        float anisotropy;    // 0..1 stretch droplets along tangent
         uint32_t life_ms;    // 0 => persistent
         uint32_t seed;       // deterministic seed; 0 derives from position
 } GoreSpawnParams;

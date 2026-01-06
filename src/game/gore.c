@@ -48,53 +48,7 @@ static inline float clampf3(float v, float lo, float hi) {
         return v;
 }
 
-static bool normalize3(float* x, float* y, float* z) {
-        float len = sqrtf((*x) * (*x) + (*y) * (*y) + (*z) * (*z));
-        if (len < 1e-6f) {
-                return false;
-        }
-        *x /= len;
-        *y /= len;
-        *z /= len;
-        return true;
-}
-
-static void make_basis_from_normal(float nx, float ny, float nz, float* rx, float* ry, float* rz, float* ux, float* uy, float* uz) {
-        float n_x = nx;
-        float n_y = ny;
-        float n_z = nz;
-        if (!normalize3(&n_x, &n_y, &n_z)) {
-                n_x = 0.0f;
-                n_y = 0.0f;
-                n_z = 1.0f;
-        }
-        // Choose an arbitrary vector not parallel to n for cross product.
-        float ax = fabsf(n_x) > 0.9f ? 0.0f : 1.0f;
-        float ay = 0.0f;
-        float az = fabsf(n_x) > 0.9f ? 1.0f : 0.0f;
-
-        // r = normalize(cross(n, a))
-        float r_x = n_y * az - n_z * ay;
-        float r_y = n_z * ax - n_x * az;
-        float r_z = n_x * ay - n_y * ax;
-        if (!normalize3(&r_x, &r_y, &r_z)) {
-                r_x = 1.0f;
-                r_y = 0.0f;
-                r_z = 0.0f;
-        }
-        // u = cross(r, n)
-        float u_x = r_y * n_z - r_z * n_y;
-        float u_y = r_z * n_x - r_x * n_z;
-        float u_z = r_x * n_y - r_y * n_x;
-        (void)normalize3(&u_x, &u_y, &u_z);
-
-        *rx = r_x;
-        *ry = r_y;
-        *rz = r_z;
-        *ux = u_x;
-        *uy = u_y;
-        *uz = u_z;
-}
+// Stamps are floor-only in the current implementation, so we don't need arbitrary plane/tangent basis math.
 
 bool gore_init(GoreSystem* self, int capacity) {
         if (!self) {
@@ -203,15 +157,14 @@ static bool gore_stamp_from_chunk(GoreSystem* self, const World* world, const Go
         gp.x = c->x;
         gp.y = c->y;
         gp.z = c->z;
-        gp.n_x = nx;
-        gp.n_y = ny;
-        gp.n_z = nz;
+        (void)nx;
+        (void)ny;
+        (void)nz;
         gp.radius = max3(c->radius * 2.25f, 0.05f);
         gp.sample_count = 4;
         gp.color_r = c->r;
         gp.color_g = c->g;
         gp.color_b = c->b;
-        gp.anisotropy = 0.35f;
         gp.life_ms = 0u;
         gp.seed = c->age_ms ^ (uint32_t)(fabsf(c->x * 100.0f));
         (void)world;
@@ -233,7 +186,6 @@ static bool gore_chunk_collide_floorceil(
         }
         if (new_z + c->radius >= ceil_z) {
                 c->z = ceil_z;
-                gore_stamp_from_chunk(self, world, c, 0.0f, 0.0f, -1.0f);
                 c->alive = false;
                 return true;
         }
@@ -337,23 +289,6 @@ void gore_tick(GoreSystem* self, const World* world, uint32_t dt_ms) {
                 float to_y = c->y + c->vy * dt;
                 CollisionMoveResult mr = collision_move_circle(world, c->radius, c->x, c->y, to_x, to_y);
                 bool hit_wall = mr.collided;
-                float nx = 0.0f;
-                float ny = 0.0f;
-                if (hit_wall) {
-                        float dx = to_x - mr.out_x;
-                        float dy = to_y - mr.out_y;
-                        float len = sqrtf(dx * dx + dy * dy);
-                        if (len > 1e-5f) {
-                                nx = dx / len;
-                                ny = dy / len;
-                        } else {
-                                float lv = sqrtf(c->vx * c->vx + c->vy * c->vy);
-                                if (lv > 1e-6f) {
-                                        nx = -c->vx / lv;
-                                        ny = -c->vy / lv;
-                                }
-                        }
-                }
 
                 c->x = mr.out_x;
                 c->y = mr.out_y;
@@ -373,13 +308,9 @@ void gore_tick(GoreSystem* self, const World* world, uint32_t dt_ms) {
                 c->z = new_z;
 
                 if (hit_wall) {
-                        // Move the stamp origin to (almost) the wall plane so it reads like a decal.
-                        // Keep a tiny epsilon so depth tests don't reject it as "behind" the wall.
-                        float contact_push = max3(c->radius - 1e-4f, 0.0f);
-                        c->x += nx * contact_push;
-                        c->y += ny * contact_push;
+                        // Wall decals are intentionally disabled: in this renderer they tend to z-fight
+                        // and look glitchy depending on view angle and distance.
                         c->alive = false;
-                        gore_stamp_from_chunk(self, world, c, nx, ny, 0.0f);
                         continue;
                 }
                 chunk_alive++;
@@ -422,13 +353,8 @@ bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params) {
         g.x = params->x;
         g.y = params->y;
         g.z = params->z;
-        g.n_x = params->n_x;
-        g.n_y = params->n_y;
-        g.n_z = params->n_z;
         g.life_ms = params->life_ms;
         g.max_radius = params->radius;
-
-        make_basis_from_normal(g.n_x, g.n_y, g.n_z, &g.r_x, &g.r_y, &g.r_z, &g.u_x, &g.u_y, &g.u_z);
 
         int samples = params->sample_count;
         if (samples > GORE_STAMP_MAX_SAMPLES) {
@@ -438,10 +364,8 @@ bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params) {
         for (int i = 0; i < samples; i++) {
                 float angle = randf(&rng) * 2.0f * (float)M_PI;
                 float radial = sqrtf(randf(&rng)) * params->radius;
-                float stretch = 1.0f + params->anisotropy * (randf(&rng) * 0.75f);
-                float rr = radial * stretch;
-                g.samples[i].off_r = rr * cosf(angle);
-                g.samples[i].off_u = radial * sinf(angle);
+                g.samples[i].off_x = radial * cosf(angle);
+                g.samples[i].off_y = radial * sinf(angle);
                 g.samples[i].radius = (0.35f + 0.65f * randf(&rng)) * (params->radius * 0.2f);
                 g.samples[i].r = clampf3(pr, 0.0f, 1.0f);
                 g.samples[i].g = clampf3(pg, 0.0f, 1.0f);
@@ -515,6 +439,10 @@ void gore_draw(
         uint32_t drawn_samples = 0u;
         uint32_t pixels_written = 0u;
 
+        // Depth bias (world units along the ray depth axis) so decals don't z-fight with the surface they sit on.
+        // This is applied only for STAMPS (not chunks) and biases them to be slightly closer than the surface.
+        const float stamp_depth_bias = 0.02f;
+
         // Draw live airborne chunks as opaque squares so their ballistic motion is visible.
         for (int ci = 0; ci < self->chunk_capacity; ci++) {
                 const GoreChunk* c = &self->chunks[ci];
@@ -578,13 +506,13 @@ void gore_draw(
 
                 bool any = false;
                 for (int x = clip_x0; x < clip_x1; x++) {
-                        if (wall_depth && depth >= wall_depth[x]) {
+                        if (wall_depth && depth >= (wall_depth[x] + stamp_depth_bias)) {
                                 continue;
                         }
                         for (int y = clip_y0; y < clip_y1; y++) {
                                 if (depth_pixels) {
                                         float world_depth = depth_pixels[y * fb->width + x];
-                                        if (depth >= world_depth) {
+                                        if (depth >= (world_depth + stamp_depth_bias)) {
                                                 continue;
                                         }
                                 }
@@ -605,9 +533,9 @@ void gore_draw(
                 }
                 for (int si = 0; si < g->sample_count; si++) {
                         const GoreSample* s = &g->samples[si];
-                        float wx = g->x + g->r_x * s->off_r + g->u_x * s->off_u;
-                        float wy = g->y + g->r_y * s->off_r + g->u_y * s->off_u;
-                        float wz = g->z + g->r_z * s->off_r + g->u_z * s->off_u;
+                        float wx = g->x + s->off_x;
+                        float wy = g->y + s->off_y;
+                        float wz = g->z;
 
                         float dx = wx - cam->x;
                         float dy = wy - cam->y;
@@ -666,13 +594,13 @@ void gore_draw(
 
                         bool any = false;
                         for (int x = clip_x0; x < clip_x1; x++) {
-                                if (wall_depth && depth >= wall_depth[x]) {
+                                if (wall_depth && depth >= (wall_depth[x] + stamp_depth_bias)) {
                                         continue;
                                 }
                                 for (int y = clip_y0; y < clip_y1; y++) {
                                         if (depth_pixels) {
                                                 float world_depth = depth_pixels[y * fb->width + x];
-                                                if (depth >= world_depth) {
+                                                if (depth >= (world_depth + stamp_depth_bias)) {
                                                         continue;
                                                 }
                                         }
