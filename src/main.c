@@ -448,7 +448,7 @@ static void gore_emit_death_burst(World* world, const Entity* target, const Phys
         }
 
         uint32_t s0 = mix_gore_seed(seed, (uint32_t)target->id.index + 11u);
-        gore_emit_chunk_burst(world, base_x, base_y, center_z, nx, ny, 0.8f, 36, 8.0f, 70.0f, s0, target->body.last_valid_sector);
+        gore_emit_chunk_burst(world, base_x, base_y, center_z, nx, ny, 0.8f, 36, 8.0f, 3.5f, 85.0f, s0, target->body.last_valid_sector);
 }
 
 static void set_mouse_capture(Window* win, const CoreConfig* cfg, bool captured) {
