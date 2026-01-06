@@ -208,11 +208,9 @@ static bool gore_stamp_from_chunk(GoreSystem* self, const World* world, const Go
         gp.n_z = nz;
         gp.radius = max3(c->radius * 2.25f, 0.05f);
         gp.sample_count = 4;
-        gp.opacity = 1.0f;
         gp.color_r = c->r;
         gp.color_g = c->g;
         gp.color_b = c->b;
-        gp.color_spread = 0.0f;
         gp.anisotropy = 0.35f;
         gp.life_ms = 0u;
         gp.seed = c->age_ms ^ (uint32_t)(fabsf(c->x * 100.0f));
@@ -289,7 +287,7 @@ bool gore_spawn_chunk(
         c.vz = vz;
         c.radius = radius;
         gore_snap_to_palette(clampf3(r, 0.0f, 1.0f), clampf3(g, 0.0f, 1.0f), clampf3(b, 0.0f, 1.0f), &c.r, &c.g, &c.b);
-        c.life_ms = life_ms > 0u ? life_ms : 2200u;
+        c.life_ms = life_ms > 0u ? life_ms : 2800u;
         c.age_ms = 0u;
         c.last_valid_sector = last_valid_sector;
         c.sector = world ? world_find_sector_at_point_stable(world, x, y, last_valid_sector) : -1;
@@ -375,8 +373,9 @@ void gore_tick(GoreSystem* self, const World* world, uint32_t dt_ms) {
                 c->z = new_z;
 
                 if (hit_wall) {
-                        // Push the stamp further into the wall contact to avoid floating pixels.
-                        float contact_push = c->radius * 0.98f;
+                        // Move the stamp origin to (almost) the wall plane so it reads like a decal.
+                        // Keep a tiny epsilon so depth tests don't reject it as "behind" the wall.
+                        float contact_push = max3(c->radius - 1e-4f, 0.0f);
                         c->x += nx * contact_push;
                         c->y += ny * contact_push;
                         c->alive = false;
@@ -392,7 +391,7 @@ bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params) {
         if (!self || !self->initialized || !self->items || !params) {
                 return false;
         }
-        if (params->sample_count <= 0 || params->radius <= 0.0f || params->opacity <= 0.0f) {
+        if (params->sample_count <= 0 || params->radius <= 0.0f) {
                 return false;
         }
         if (self->alive_count >= self->capacity) {
@@ -444,7 +443,6 @@ bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params) {
                 g.samples[i].off_r = rr * cosf(angle);
                 g.samples[i].off_u = radial * sinf(angle);
                 g.samples[i].radius = (0.35f + 0.65f * randf(&rng)) * (params->radius * 0.2f);
-                g.samples[i].opacity = 1.0f;
                 g.samples[i].r = clampf3(pr, 0.0f, 1.0f);
                 g.samples[i].g = clampf3(pg, 0.0f, 1.0f);
                 g.samples[i].b = clampf3(pb, 0.0f, 1.0f);
@@ -461,28 +459,7 @@ static inline uint32_t pack_abgr_u8(uint8_t a, uint8_t b, uint8_t g, uint8_t r) 
         return ((uint32_t)a << 24u) | ((uint32_t)b << 16u) | ((uint32_t)g << 8u) | (uint32_t)r;
 }
 
-static inline uint32_t blend_abgr8888_over(uint32_t src, uint32_t dst) {
-        uint32_t sa = (src >> 24u) & 0xFFu;
-        if (sa == 0u) {
-                return dst;
-        }
-        if (sa == 255u) {
-                return src;
-        }
-        uint32_t inv = 255u - sa;
-        uint32_t sb = (src >> 16u) & 0xFFu;
-        uint32_t sg = (src >> 8u) & 0xFFu;
-        uint32_t sr = src & 0xFFu;
-        uint32_t da = (dst >> 24u) & 0xFFu;
-        uint32_t db = (dst >> 16u) & 0xFFu;
-        uint32_t dg = (dst >> 8u) & 0xFFu;
-        uint32_t dr = dst & 0xFFu;
-        uint32_t oa = sa + (da * inv + 127u) / 255u;
-        uint32_t ob = (sb * sa + db * inv + 127u) / 255u;
-        uint32_t og = (sg * sa + dg * inv + 127u) / 255u;
-        uint32_t or_ = (sr * sa + dr * inv + 127u) / 255u;
-        return (oa << 24u) | (ob << 16u) | (og << 8u) | or_;
-}
+// Gore draws are opaque; no blending needed.
 
 static float camera_world_z_for_sector_approx3(const World* world, int sector, float z_offset) {
         const float eye_height = 1.5f;
@@ -699,8 +676,7 @@ void gore_draw(
                                                         continue;
                                                 }
                                         }
-                                        uint32_t dst = fb->pixels[y * fb->width + x];
-                                        fb->pixels[y * fb->width + x] = blend_abgr8888_over(src_px, dst);
+                                        fb->pixels[y * fb->width + x] = src_px;
                                         pixels_written++;
                                         any = true;
                                 }

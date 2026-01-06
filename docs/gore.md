@@ -47,8 +47,8 @@ stable given the same inputs.
 - Spawn: `gore_spawn_chunk` drops the newest request if the pool is full and defaults `life_ms` to ~2.8s when zero.
   It immediately snaps the requested RGB to the gore palette for consistency.
 - Simulation: `gore_tick` advances gravity (`18.0f` units/s²), integrates XY motion with `collision_move_circle`, and
-  handles Z floor/ceiling impacts. Wall hits compute a collision normal, push the chunk along that normal by ~0.98× its
-  radius, and stamp before killing the chunk so decals seat against the surface.
+  handles Z floor/ceiling impacts. Wall hits compute a collision normal, move the stamp origin to (almost) the wall
+  plane, and stamp before killing the chunk so decals sit flush on the surface.
 - Rendering: visible chunks draw as opaque squares in screen space, depth-tested against walls/depth buffers and lit per
   sector/point light.
 
@@ -57,8 +57,7 @@ stable given the same inputs.
 - Structure: `GoreStamp` stores world position, surface normal, tangent basis, max radius, lifetime, and procedural
   droplet samples (`GoreSample`).
 - Spawn: `gore_spawn` builds tangent/bitangent from the requested normal, scatters up to `GORE_STAMP_MAX_SAMPLES` samples
-  using a seeded RNG, snaps colors to the palette, and records opacity (currently always 1.0f). New spawns drop when the
-  pool is full.
+  using a seeded RNG and snaps colors to the palette. New spawns drop when the pool is full.
 - Tick: `gore_tick` ages stamps and culls any with finite lifetimes; persistent stamps keep `life_ms == 0`.
 - Rendering: `gore_draw` projects each sample into screen space as an opaque square, clipping against wall depth/depth
   buffer and applying sector + point-light shading. Draw stats (`stats_drawn_samples`, `stats_pixels_written`) are

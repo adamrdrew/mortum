@@ -22,7 +22,6 @@ typedef struct GoreSample {
         float off_r;      // offset along tangent/right basis (world units)
         float off_u;      // offset along bitangent/up basis (world units)
         float radius;     // world-unit radius of this droplet
-        float opacity;    // [0..1]
         float r;
         float g;
         float b;
@@ -102,11 +101,9 @@ typedef struct GoreSpawnParams {
 
         float radius;        // world units, overall footprint radius
         int sample_count;    // number of procedural droplets to generate
-        float opacity;       // [0..1]
         float color_r;       // [0..1]
         float color_g;       // [0..1]
         float color_b;       // [0..1]
-        float color_spread;  // per-sample random color variance in [-spread, +spread]
         float anisotropy;    // 0..1 stretch droplets along tangent
         uint32_t life_ms;    // 0 => persistent
         uint32_t seed;       // deterministic seed; 0 derives from position
