@@ -375,6 +375,10 @@ void gore_tick(GoreSystem* self, const World* world, uint32_t dt_ms) {
                 c->z = new_z;
 
                 if (hit_wall) {
+                        // Push the stamp flush to the wall to avoid floating pixels.
+                        float contact_push = c->radius * 0.98f;
+                        c->x -= nx * contact_push;
+                        c->y -= ny * contact_push;
                         c->alive = false;
                         gore_stamp_from_chunk(self, world, c, nx, ny, 0.0f);
                         continue;
@@ -533,6 +537,89 @@ void gore_draw(
 
         uint32_t drawn_samples = 0u;
         uint32_t pixels_written = 0u;
+
+        // Draw live airborne chunks as opaque squares so their ballistic motion is visible.
+        for (int ci = 0; ci < self->chunk_capacity; ci++) {
+                const GoreChunk* c = &self->chunks[ci];
+                if (!c->alive) {
+                        continue;
+                }
+                float dx = c->x - cam->x;
+                float dy = c->y - cam->y;
+                float depth = dx * fx + dy * fy;
+                if (depth <= 0.05f) {
+                        continue;
+                }
+                float side = dx * rx + dy * ry;
+
+                float proj_depth = depth;
+                const float min_proj_depth = 0.25f;
+                if (proj_depth < min_proj_depth) {
+                        proj_depth = min_proj_depth;
+                }
+                float scale = focal / proj_depth;
+                int radius_px = (int)(c->radius * scale + 0.5f);
+                if (radius_px < 1) {
+                        radius_px = 1;
+                }
+                int max_dim = fb->width > fb->height ? fb->width : fb->height;
+                if (radius_px > max_dim) {
+                        radius_px = max_dim;
+                }
+
+                float x_center = half_w + side * scale;
+                float y_center = half_h + (cam_z_world - c->z) * scale;
+
+                int x0 = (int)(x_center - (float)radius_px);
+                int x1 = (int)(x_center + (float)radius_px + 1);
+                int y0 = (int)(y_center - (float)radius_px);
+                int y1 = (int)(y_center + (float)radius_px + 1);
+
+                int clip_x0 = x0 < 0 ? 0 : x0;
+                int clip_x1 = x1 > fb->width ? fb->width : x1;
+                int clip_y0 = y0 < 0 ? 0 : y0;
+                int clip_y1 = y1 > fb->height ? fb->height : y1;
+                if (clip_x0 >= clip_x1 || clip_y0 >= clip_y1) {
+                        continue;
+                }
+
+                int sec = world_find_sector_at_point_stable(world, c->x, c->y, start_sector);
+                float sector_intensity = 1.0f;
+                LightColor sector_tint = light_color_white();
+                if ((unsigned)sec < (unsigned)world->sector_count) {
+                        sector_intensity = world->sectors[sec].light;
+                        sector_tint = world->sectors[sec].light_color;
+                }
+
+                float dist = sqrtf(dx * dx + dy * dy);
+                uint8_t a = 255u;
+                uint8_t r = (uint8_t)lroundf(clampf3(c->r, 0.0f, 1.0f) * 255.0f);
+                uint8_t gch = (uint8_t)lroundf(clampf3(c->g, 0.0f, 1.0f) * 255.0f);
+                uint8_t b = (uint8_t)lroundf(clampf3(c->b, 0.0f, 1.0f) * 255.0f);
+                uint32_t src_px = pack_abgr_u8(a, b, gch, r);
+                src_px = lighting_apply(src_px, dist, sector_intensity, sector_tint, vis_lights, vis_count, c->x, c->y);
+
+                bool any = false;
+                for (int x = clip_x0; x < clip_x1; x++) {
+                        if (wall_depth && depth >= wall_depth[x]) {
+                                continue;
+                        }
+                        for (int y = clip_y0; y < clip_y1; y++) {
+                                if (depth_pixels) {
+                                        float world_depth = depth_pixels[y * fb->width + x];
+                                        if (depth >= world_depth) {
+                                                continue;
+                                        }
+                                }
+                                fb->pixels[y * fb->width + x] = src_px;
+                                pixels_written++;
+                                any = true;
+                        }
+                }
+                if (any) {
+                        drawn_samples++;
+                }
+        }
 
         for (int i = 0; i < self->capacity; i++) {
                 const GoreStamp* g = &self->items[i];
