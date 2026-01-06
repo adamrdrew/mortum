@@ -3411,6 +3411,7 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 			continue;
 		}
 		if (def->kind == ENTITY_KIND_PROJECTILE && def->u.projectile.damage > 0) {
+			PhysicsBodyParams phys = physics_body_params_default();
 			// Enemy-fired projectiles can damage the player (player is not an entity).
 			bool damages_player = false;
 			if (!entity_id_is_none(e->owner)) {
@@ -3516,6 +3517,103 @@ void entity_system_tick(EntitySystem* es, const PhysicsBody* player_body, float 
 				if (ez1 < tz0 || tz1 < ez0) {
 					continue;
 				}
+
+				// Apply a small knockback impulse to enemies when hit by projectiles.
+				// Key constraints:
+				// - Must respect world collision and not cause clipping.
+				// - Must not cause enemies to get stuck on geometry or each other.
+				if (tdef->kind == ENTITY_KIND_ENEMY && es->world) {
+					float ang = deg_to_rad2(e->yaw_deg);
+					float kx = cosf(ang);
+					float ky = sinf(ang);
+					// Clamp knockback distance per hit: visible but not extreme.
+					// Calibrated against typical enemy radii (~0.4-0.45 world units).
+					float base = 0.10f;
+					float speed_scale = def->u.projectile.speed / 10.0f;
+					if (speed_scale < 0.25f) {
+						speed_scale = 0.25f;
+					}
+					if (speed_scale > 2.0f) {
+						speed_scale = 2.0f;
+					}
+					float dmg_scale = (float)def->u.projectile.damage * 0.008f;
+					if (dmg_scale < 0.0f) {
+						dmg_scale = 0.0f;
+					}
+					float knock = base * speed_scale + dmg_scale;
+					if (knock < 0.10f) {
+						knock = 0.10f;
+					}
+					if (knock > 0.32f) {
+						knock = 0.32f;
+					}
+					physics_body_move_delta_block_portals(&t->body, es->world, kx * knock, ky * knock, &phys);
+					// Keep spatial hash consistent for any subsequent queries this tick.
+					spatial_invalidate(es);
+					spatial_rebuild(es);
+
+					// Local post-knockback separation to reduce risk of enemies sticking together.
+					uint32_t near[64];
+					float query_r = t->body.radius * 2.0f + 1.0f;
+					uint32_t near_count = spatial_query_circle_indices(es, t->body.x, t->body.y, query_r, near, (uint32_t)MORTUM_ARRAY_COUNT(near));
+					for (uint32_t a = 1; a < near_count; a++) {
+						uint32_t key = near[a];
+						int b = (int)a - 1;
+						while (b >= 0 && near[b] > key) {
+							near[b + 1] = near[b];
+							b--;
+						}
+						near[b + 1] = key;
+					}
+					for (uint32_t ni = 0; ni < near_count; ni++) {
+						uint32_t oi = near[ni];
+						if (oi >= es->capacity || !es->alive[oi] || oi == j) {
+							continue;
+						}
+						Entity* o = &es->entities[oi];
+						if (o->pending_despawn) {
+							continue;
+						}
+						const EntityDef* odef = &es->defs->defs[o->def_id];
+						if (odef->kind != ENTITY_KIND_ENEMY) {
+							continue;
+						}
+						if (o->state == ENTITY_STATE_DYING || o->state == ENTITY_STATE_DEAD) {
+							continue;
+						}
+						if (o->body.sector != t->body.sector) {
+							continue;
+						}
+						float sdx = o->body.x - t->body.x;
+						float sdy = o->body.y - t->body.y;
+						float rr2 = t->body.radius + o->body.radius;
+						float d2 = sdx * sdx + sdy * sdy;
+						if (rr2 <= 1e-4f || d2 >= rr2 * rr2) {
+							continue;
+						}
+						float d = d2 > 1e-8f ? sqrtf(d2) : 0.0f;
+						float nx = 1.0f;
+						float ny = 0.0f;
+						if (d > 1e-6f) {
+							nx = sdx / d;
+							ny = sdy / d;
+						} else {
+							nx = ((j ^ oi) & 1u) ? 1.0f : -1.0f;
+							ny = 0.0f;
+						}
+						float push = (rr2 - d);
+						if (push > 0.0f) {
+							float half = 0.5f * push;
+							physics_body_move_delta_block_portals(&t->body, es->world, -nx * half, -ny * half, &phys);
+							physics_body_move_delta_block_portals(&o->body, es->world, nx * half, ny * half, &phys);
+						}
+					}
+				spatial_invalidate(es);
+				spatial_rebuild(es);
+				entity_light_update_pos(es, t);
+				entity_particles_update_pos(es, t);
+				// Note: other entities we separated will have their attachments updated at end-of-tick.
+			}
 
 				EntityEvent ev;
 				memset(&ev, 0, sizeof(ev));
