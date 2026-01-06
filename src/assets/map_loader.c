@@ -376,12 +376,16 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	if (!name_is_safe_relpath(map_filename) || !ends_with_ci(map_filename, ".json")) {
 		log_error("Map filename must be a safe relative .json path under Assets/Levels: %s", map_filename);
 		return false;
-	}
-	memset(out, 0, sizeof(*out));
-	world_init_empty(&out->world);
-	if (!particles_init(&out->world.particles, PARTICLE_MAX_DEFAULT)) {
-		return false;
-	}
+        }
+        memset(out, 0, sizeof(*out));
+        world_init_empty(&out->world);
+        if (!particles_init(&out->world.particles, PARTICLE_MAX_DEFAULT)) {
+                return false;
+        }
+        if (!gore_init(&out->world.gore, GORE_STAMP_MAX_DEFAULT)) {
+                particles_shutdown(&out->world.particles);
+                return false;
+        }
 
 	char* full = asset_path_join(paths, "Levels", map_filename);
 	if (!full) {

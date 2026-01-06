@@ -5,15 +5,16 @@
 #include <math.h>
 
 void world_init_empty(World* self) {
-	memset(self, 0, sizeof(*self));
+        memset(self, 0, sizeof(*self));
 }
 
 void world_destroy(World* self) {
-	particles_shutdown(&self->particles);
-	free(self->vertices);
-	free(self->sectors);
-	free(self->walls);
-	free(self->wall_interact_next_allowed_s);
+        gore_shutdown(&self->gore);
+        particles_shutdown(&self->particles);
+        free(self->vertices);
+        free(self->sectors);
+        free(self->walls);
+        free(self->wall_interact_next_allowed_s);
 	free(self->wall_interact_next_deny_toast_s);
 	free(self->sector_wall_offsets);
 	free(self->sector_wall_counts);

@@ -32,6 +32,8 @@
 
 #include "game/postfx.h"
 
+#include "game/gore.h"
+
 #include "game/font.h"
 
 #include "game/weapon_view.h"
@@ -237,19 +239,122 @@ static bool key_pressed_no_repeat(const Input* in, int scancode) {
 }
 
 static void consume_key(Input* in, int scancode) {
-	if (!in || scancode < 0 || scancode >= (int)(sizeof(in->keys_down) / sizeof(in->keys_down[0]))) {
-		return;
-	}
-	// Prevent "held" semantics from leaking into the rest of the frame.
-	in->keys_down[scancode] = false;
-	// Remove any discrete KEYDOWN events for this scancode from this frame.
-	int w = 0;
-	for (int r = 0; r < in->key_event_count; r++) {
-		if (in->key_events[r].scancode != scancode) {
-			in->key_events[w++] = in->key_events[r];
-		}
-	}
-	in->key_event_count = w;
+        if (!in || scancode < 0 || scancode >= (int)(sizeof(in->keys_down) / sizeof(in->keys_down[0]))) {
+                return;
+        }
+        // Prevent "held" semantics from leaking into the rest of the frame.
+        in->keys_down[scancode] = false;
+        // Remove any discrete KEYDOWN events for this scancode from this frame.
+        int w = 0;
+        for (int r = 0; r < in->key_event_count; r++) {
+                if (in->key_events[r].scancode != scancode) {
+                        in->key_events[w++] = in->key_events[r];
+                }
+        }
+        in->key_event_count = w;
+}
+
+static uint32_t mix_gore_seed(uint32_t a, uint32_t b) {
+        uint32_t h = a ^ (b + 0x9E3779B9u + (a << 6) + (a >> 2));
+        h ^= h << 13;
+        h ^= h >> 7;
+        h ^= h << 17;
+        return h ? h : 0xAC1D3Eu;
+}
+
+static GoreSpawnParams gore_params_base(float x, float y, float z, float nx, float ny, float nz, float radius, int samples, float anisotropy, uint32_t seed) {
+        GoreSpawnParams gp;
+        memset(&gp, 0, sizeof(gp));
+        gp.x = x;
+        gp.y = y;
+        gp.z = z;
+        gp.n_x = nx;
+        gp.n_y = ny;
+        gp.n_z = nz;
+        gp.radius = radius;
+        gp.sample_count = samples;
+        gp.opacity = 0.95f;
+        gp.color_r = 0.65f;
+        gp.color_g = 0.08f;
+        gp.color_b = 0.05f;
+        gp.color_spread = 0.08f;
+        gp.anisotropy = anisotropy;
+        gp.life_ms = 0u; // Persistent until reclaimed by pool pressure.
+        gp.seed = seed;
+        return gp;
+}
+
+static float gore_body_height_center(const Entity* target) {
+        if (!target) {
+                return 0.8f;
+        }
+        return target->body.z + fmaxf(target->body.height * 0.6f, 0.1f);
+}
+
+static void gore_emit_damage_splatter(World* world, const Entity* target, const PhysicsBody* player_body, float hx, float hy, uint32_t seed) {
+        if (!world || !world->gore.initialized || !target) {
+                return;
+        }
+        float base_x = hx;
+        float base_y = hy;
+        if (base_x == 0.0f && base_y == 0.0f) {
+                base_x = target->body.x;
+                base_y = target->body.y;
+        }
+        float center_z = gore_body_height_center(target);
+
+        uint32_t s0 = mix_gore_seed(seed, (uint32_t)target->id.index + 1u);
+        GoreSpawnParams floor_gp = gore_params_base(base_x, base_y, center_z, 0.0f, 0.0f, 1.0f, 0.35f, 12, 0.25f, s0);
+        (void)gore_spawn(&world->gore, &floor_gp);
+
+        float nx = 0.0f;
+        float ny = 1.0f;
+        if (player_body) {
+                float dx = target->body.x - player_body->x;
+                float dy = target->body.y - player_body->y;
+                float len = sqrtf(dx * dx + dy * dy);
+                if (len > 1e-3f) {
+                        nx = dx / len;
+                        ny = dy / len;
+                }
+        }
+        uint32_t s1 = mix_gore_seed(seed, (uint32_t)(target->id.index + 3u));
+        GoreSpawnParams wall_gp = gore_params_base(base_x, base_y, center_z, nx, ny, 0.0f, 0.28f, 10, 0.55f, s1);
+        wall_gp.color_spread = 0.12f;
+        (void)gore_spawn(&world->gore, &wall_gp);
+}
+
+static void gore_emit_death_burst(World* world, const Entity* target, const PhysicsBody* player_body, uint32_t seed) {
+        if (!world || !world->gore.initialized || !target) {
+                return;
+        }
+        float base_x = target->body.x;
+        float base_y = target->body.y;
+        float center_z = gore_body_height_center(target);
+
+        uint32_t s0 = mix_gore_seed(seed, (uint32_t)target->id.index + 11u);
+        GoreSpawnParams floor_gp = gore_params_base(base_x, base_y, center_z, 0.0f, 0.0f, 1.0f, 0.6f, 18, 0.35f, s0);
+        floor_gp.opacity = 1.0f;
+        floor_gp.color_spread = 0.12f;
+        (void)gore_spawn(&world->gore, &floor_gp);
+
+        float nx = 0.0f;
+        float ny = 1.0f;
+        if (player_body) {
+                float dx = target->body.x - player_body->x;
+                float dy = target->body.y - player_body->y;
+                float len = sqrtf(dx * dx + dy * dy);
+                if (len > 1e-3f) {
+                        nx = dx / len;
+                        ny = dy / len;
+                }
+        }
+
+        uint32_t s1 = mix_gore_seed(seed, (uint32_t)target->id.index + 17u);
+        GoreSpawnParams wall_gp = gore_params_base(base_x, base_y, center_z, nx, ny, 0.0f, 0.85f, 24, 0.65f, s1);
+        wall_gp.opacity = 0.9f;
+        wall_gp.color_spread = 0.15f;
+        (void)gore_spawn(&world->gore, &wall_gp);
 }
 
 static void set_mouse_capture(Window* win, const CoreConfig* cfg, bool captured) {
@@ -750,13 +855,15 @@ int main(int argc, char** argv) {
 		double frame_t0 = platform_time_seconds();
 		double now = frame_t0;
 		double prev_time = loop.last_time_s;
-		double update_t0 = 0.0, update_t1 = 0.0;
-		double render3d_t0 = 0.0, render3d_t1 = 0.0;
-		double ui_t0 = 0.0, ui_t1 = 0.0;
-		double present_t0 = 0.0, present_t1 = 0.0;
-		double pe_update_ms = 0.0;
-		double p_tick_ms = 0.0;
-		double p_draw_ms = 0.0;
+                double update_t0 = 0.0, update_t1 = 0.0;
+                double render3d_t0 = 0.0, render3d_t1 = 0.0;
+                double ui_t0 = 0.0, ui_t1 = 0.0;
+                double present_t0 = 0.0, present_t1 = 0.0;
+                double pe_update_ms = 0.0;
+                double p_tick_ms = 0.0;
+                double p_draw_ms = 0.0;
+                double g_tick_ms = 0.0;
+                double g_draw_ms = 0.0;
 		int steps = game_loop_begin_frame(&loop, now);
 		double frame_dt_s = 0.0;
 		if (prev_time != 0.0) {
@@ -1077,10 +1184,11 @@ int main(int argc, char** argv) {
 			// Visual-only gameplay post-FX (damage flashes, status overlays, etc.)
 			postfx_update(&postfx, frame_dt_s);
 
-		if (map_ok) {
-			particle_emitters_begin_frame(&particle_emitters);
-			particles_begin_frame(&map.world.particles);
-		}
+                if (map_ok) {
+                        particle_emitters_begin_frame(&particle_emitters);
+                        particles_begin_frame(&map.world.particles);
+                        gore_begin_frame(&map.world.gore);
+                }
 		if (perf_trace_is_active(&perf)) {
 			update_t0 = platform_time_seconds();
 		}
@@ -1221,16 +1329,20 @@ int main(int argc, char** argv) {
 									entity_system_request_despawn(&entities, ev->entity);
 								}
 
-								// Apply damage to target entity.
-								Entity* target = NULL;
-								if (entity_system_resolve(&entities, ev->other, &target) && ev->amount > 0) {
-									const EntityDef* tdef = &entity_defs.defs[target->def_id];
-									target->hp -= ev->amount;
-									if (target->hp <= 0) {
-										target->hp = 0;
-										EntityEvent died;
-										memset(&died, 0, sizeof(died));
-										died.type = ENTITY_EVENT_DIED;
+                                                                // Apply damage to target entity.
+                                                                Entity* target = NULL;
+                                                                if (entity_system_resolve(&entities, ev->other, &target) && ev->amount > 0) {
+                                                                        const EntityDef* tdef = &entity_defs.defs[target->def_id];
+                                                                        target->hp -= ev->amount;
+                                                                        if (map_ok && tdef->kind == ENTITY_KIND_ENEMY) {
+                                                                                uint32_t gore_seed = mix_gore_seed((uint32_t)target->id.index, (uint32_t)ev->entity.index ^ (uint32_t)ev->amount);
+                                                                                gore_emit_damage_splatter(&map.world, target, &player.body, ev->x, ev->y, gore_seed);
+                                                                        }
+                                                                        if (target->hp <= 0) {
+                                                                                target->hp = 0;
+                                                                                EntityEvent died;
+                                                                                memset(&died, 0, sizeof(died));
+                                                                                died.type = ENTITY_EVENT_DIED;
 										died.entity = target->id;
 										died.other = ev->entity; // source
 										died.def_id = target->def_id;
@@ -1256,9 +1368,16 @@ int main(int argc, char** argv) {
 								}
 							} break;
 
-							case ENTITY_EVENT_DIED: {
-								// Reserved for future: death sounds, drops, score, etc.
-							} break;
+                                                        case ENTITY_EVENT_DIED: {
+                                                                if (map_ok && ev->kind == ENTITY_KIND_ENEMY) {
+                                                                        Entity* target = NULL;
+                                                                        if (entity_system_resolve(&entities, ev->entity, &target)) {
+                                                                                uint32_t gore_seed = mix_gore_seed((uint32_t)ev->entity.index, (uint32_t)ev->other.index + 991u);
+                                                                                gore_emit_death_burst(&map.world, target, &player.body, gore_seed);
+                                                                        }
+                                                                }
+                                                                // Reserved for future: death sounds, drops, score, etc.
+                                                        } break;
 
 							case ENTITY_EVENT_PLAYER_DAMAGE: {
 								// If a projectile hit the player, reuse its impact sound at the hit location.
@@ -1296,35 +1415,41 @@ int main(int argc, char** argv) {
 				entity_system_flush(&entities);
 
 				// Particle emitters + particles (world-owned particles; emitters can be map- or entity-owned).
-				if (map_ok) {
-					double ms = loop.fixed_dt_s * 1000.0 + particle_ms_remainder;
-					uint32_t dt_ms = (uint32_t)ms;
-					particle_ms_remainder = ms - (double)dt_ms;
-					if (dt_ms > 0u) {
+                                if (map_ok) {
+                                        double ms = loop.fixed_dt_s * 1000.0 + particle_ms_remainder;
+                                        uint32_t dt_ms = (uint32_t)ms;
+                                        particle_ms_remainder = ms - (double)dt_ms;
+                                        if (dt_ms > 0u) {
 						double t0 = 0.0;
 						if (perf_trace_is_active(&perf)) {
 							t0 = platform_time_seconds();
 						}
-						particle_emitters_update(
-							&particle_emitters,
-							&map.world,
-							&map.world.particles,
-							player.body.x,
-							player.body.y,
-							player.body.sector,
-							dt_ms);
-						if (perf_trace_is_active(&perf)) {
-							double t1 = platform_time_seconds();
-							pe_update_ms += (t1 - t0) * 1000.0;
-							t0 = t1;
-						}
-						particles_tick(&map.world.particles, dt_ms);
-						if (perf_trace_is_active(&perf)) {
-							double t1 = platform_time_seconds();
-							p_tick_ms += (t1 - t0) * 1000.0;
-						}
-					}
-				}
+                                                particle_emitters_update(
+                                                        &particle_emitters,
+                                                        &map.world,
+                                                        &map.world.particles,
+                                                        player.body.x,
+                                                        player.body.y,
+                                                        player.body.sector,
+                                                        dt_ms);
+                                                if (perf_trace_is_active(&perf)) {
+                                                        double t1 = platform_time_seconds();
+                                                        pe_update_ms += (t1 - t0) * 1000.0;
+                                                        t0 = t1;
+                                                }
+                                                particles_tick(&map.world.particles, dt_ms);
+                                                if (perf_trace_is_active(&perf)) {
+                                                        double t1 = platform_time_seconds();
+                                                        p_tick_ms += (t1 - t0) * 1000.0;
+                                                        t0 = t1;
+                                                }
+                                                gore_tick(&map.world.gore, dt_ms);
+                                                if (perf_trace_is_active(&perf)) {
+                                                        double t1 = platform_time_seconds();
+                                                        g_tick_ms += (t1 - t0) * 1000.0;
+                                                }
+                                        }
+                                }
 
 				// Basic footsteps: emitted from player/camera position (non-spatial).
 				{
@@ -1550,17 +1675,22 @@ int main(int argc, char** argv) {
 			start_sector,
 			rc_perf_ptr
 		);
-		if (map_ok) {
-			entity_system_draw_sprites(&entities, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
-			if (perf_trace_is_active(&perf)) {
-				double t0 = platform_time_seconds();
-				particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
-				double t1 = platform_time_seconds();
-				p_draw_ms += (t1 - t0) * 1000.0;
-			} else {
-				particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
-			}
-		}
+                if (map_ok) {
+                        entity_system_draw_sprites(&entities, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
+                        if (perf_trace_is_active(&perf)) {
+                                double t0 = platform_time_seconds();
+                                gore_draw(&map.world.gore, &fb, &map.world, &cam, start_sector, wall_depth, depth_pixels);
+                                double t1 = platform_time_seconds();
+                                g_draw_ms += (t1 - t0) * 1000.0;
+                                t0 = t1;
+                                particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
+                                t1 = platform_time_seconds();
+                                p_draw_ms += (t1 - t0) * 1000.0;
+                        } else {
+                                gore_draw(&map.world.gore, &fb, &map.world, &cam, start_sector, wall_depth, depth_pixels);
+                                particles_draw(&map.world.particles, &fb, &map.world, &cam, start_sector, &texreg, &paths, wall_depth, depth_pixels);
+                        }
+                }
 		if (perf_trace_is_active(&perf)) {
 			render3d_t1 = platform_time_seconds();
 			ui_t0 = render3d_t1;
@@ -1607,20 +1737,28 @@ int main(int argc, char** argv) {
 			pf.ui_ms = (ui_t1 - ui_t0) * 1000.0;
 			pf.present_ms = (present_t1 - present_t0) * 1000.0;
 			pf.steps = steps;
-			pf.pe_update_ms = pe_update_ms;
-			pf.p_tick_ms = p_tick_ms;
-			pf.p_draw_ms = p_draw_ms;
-			pf.pe_alive = particle_emitters.alive_count;
-			pf.pe_emitters_updated = (int)particle_emitters.stats_emitters_updated;
-			pf.pe_emitters_gated = (int)particle_emitters.stats_emitters_gated;
-			pf.pe_spawn_attempted = (int)particle_emitters.stats_particles_spawn_attempted;
-			pf.p_alive = map_ok ? map.world.particles.alive_count : 0;
-			pf.p_capacity = map_ok ? map.world.particles.capacity : 0;
-			pf.p_spawned = map_ok ? (int)map.world.particles.stats_spawned : 0;
-			pf.p_dropped = map_ok ? (int)map.world.particles.stats_dropped : 0;
-			pf.p_drawn_particles = map_ok ? (int)map.world.particles.stats_drawn_particles : 0;
-			pf.p_pixels_written = map_ok ? (int)map.world.particles.stats_pixels_written : 0;
-			pf.rc_planes_ms = rc_perf.planes_ms;
+                        pf.pe_update_ms = pe_update_ms;
+                        pf.p_tick_ms = p_tick_ms;
+                        pf.p_draw_ms = p_draw_ms;
+                        pf.g_tick_ms = g_tick_ms;
+                        pf.g_draw_ms = g_draw_ms;
+                        pf.pe_alive = particle_emitters.alive_count;
+                        pf.pe_emitters_updated = (int)particle_emitters.stats_emitters_updated;
+                        pf.pe_emitters_gated = (int)particle_emitters.stats_emitters_gated;
+                        pf.pe_spawn_attempted = (int)particle_emitters.stats_particles_spawn_attempted;
+                        pf.p_alive = map_ok ? map.world.particles.alive_count : 0;
+                        pf.p_capacity = map_ok ? map.world.particles.capacity : 0;
+                        pf.p_spawned = map_ok ? (int)map.world.particles.stats_spawned : 0;
+                        pf.p_dropped = map_ok ? (int)map.world.particles.stats_dropped : 0;
+                        pf.p_drawn_particles = map_ok ? (int)map.world.particles.stats_drawn_particles : 0;
+                        pf.p_pixels_written = map_ok ? (int)map.world.particles.stats_pixels_written : 0;
+                        pf.g_alive = map_ok ? map.world.gore.alive_count : 0;
+                        pf.g_capacity = map_ok ? map.world.gore.capacity : 0;
+                        pf.g_spawned = map_ok ? (int)map.world.gore.stats_spawned : 0;
+                        pf.g_dropped = map_ok ? (int)map.world.gore.stats_dropped : 0;
+                        pf.g_drawn_samples = map_ok ? (int)map.world.gore.stats_drawn_samples : 0;
+                        pf.g_pixels_written = map_ok ? (int)map.world.gore.stats_pixels_written : 0;
+                        pf.rc_planes_ms = rc_perf.planes_ms;
 			pf.rc_hit_test_ms = rc_perf.hit_test_ms;
 			pf.rc_walls_ms = rc_perf.walls_ms;
 			pf.rc_tex_lookup_ms = rc_perf.tex_lookup_ms;
