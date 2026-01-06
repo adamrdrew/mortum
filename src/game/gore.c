@@ -375,10 +375,10 @@ void gore_tick(GoreSystem* self, const World* world, uint32_t dt_ms) {
                 c->z = new_z;
 
                 if (hit_wall) {
-                        // Push the stamp flush to the wall to avoid floating pixels.
+                        // Push the stamp further into the wall contact to avoid floating pixels.
                         float contact_push = c->radius * 0.98f;
-                        c->x -= nx * contact_push;
-                        c->y -= ny * contact_push;
+                        c->x += nx * contact_push;
+                        c->y += ny * contact_push;
                         c->alive = false;
                         gore_stamp_from_chunk(self, world, c, nx, ny, 0.0f);
                         continue;
