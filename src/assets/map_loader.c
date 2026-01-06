@@ -377,23 +377,26 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		log_error("Map filename must be a safe relative .json path under Assets/Levels: %s", map_filename);
 		return false;
         }
-        memset(out, 0, sizeof(*out));
-        world_init_empty(&out->world);
-        if (!particles_init(&out->world.particles, PARTICLE_MAX_DEFAULT)) {
-                return false;
-        }
-        if (!gore_init(&out->world.gore, GORE_STAMP_MAX_DEFAULT)) {
-                particles_shutdown(&out->world.particles);
-                return false;
-        }
+		memset(out, 0, sizeof(*out));
+		world_init_empty(&out->world);
+		if (!particles_init(&out->world.particles, PARTICLE_MAX_DEFAULT)) {
+			map_load_result_destroy(out);
+			return false;
+		}
+		if (!gore_init(&out->world.gore, GORE_STAMP_MAX_DEFAULT)) {
+			map_load_result_destroy(out);
+			return false;
+		}
 
 	char* full = asset_path_join(paths, "Levels", map_filename);
 	if (!full) {
+		map_load_result_destroy(out);
 		return false;
 	}
 	JsonDoc doc;
 	if (!json_doc_load_file(&doc, full)) {
 		free(full);
+		map_load_result_destroy(out);
 		return false;
 	}
 	free(full);
@@ -401,6 +404,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	if (doc.token_count < 1 || !json_token_is_object(&doc, 0)) {
 		log_error("Map JSON root must be an object");
 		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
 		return false;
 	}
 
@@ -445,6 +449,7 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	if (!json_object_get(&doc, 0, "player_start", &t_player) || !json_object_get(&doc, 0, "vertices", &t_vertices) || !json_object_get(&doc, 0, "sectors", &t_sectors) || !json_object_get(&doc, 0, "walls", &t_walls)) {
 		log_error("Map JSON missing required fields");
 		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
 		return false;
 	}
 	(void)json_object_get(&doc, 0, "lights", &t_lights);
@@ -457,17 +462,20 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	if (!json_token_is_object(&doc, t_player)) {
 		log_error("player_start must be an object");
 		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
 		return false;
 	}
 	int t_x=-1,t_y=-1,t_ang=-1;
 	if (!json_object_get(&doc, t_player, "x", &t_x) || !json_object_get(&doc, t_player, "y", &t_y) || !json_object_get(&doc, t_player, "angle_deg", &t_ang)) {
 		log_error("player_start missing x/y/angle_deg");
 		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
 		return false;
 	}
 	if (!json_get_float(&doc, t_x, &out->player_start_x) || !json_get_float(&doc, t_y, &out->player_start_y) || !json_get_float(&doc, t_ang, &out->player_start_angle_deg)) {
 		log_error("player_start values invalid");
 		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
 		return false;
 	}
 
@@ -476,9 +484,15 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 	if (vcount < 3) {
 		log_error("vertices must have at least 3 entries");
 		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
 		return false;
 	}
-	world_alloc_vertices(&out->world, vcount);
+	if (!world_alloc_vertices(&out->world, vcount)) {
+		log_error("failed to allocate vertices");
+		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
+		return false;
+	}
 	for (int i = 0; i < vcount; i++) {
 		int tv = json_array_nth(&doc, t_vertices, i);
 		int tx=-1, ty=-1;
@@ -509,7 +523,12 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		map_load_result_destroy(out);
 		return false;
 	}
-	world_alloc_sectors(&out->world, scount);
+	if (!world_alloc_sectors(&out->world, scount)) {
+		log_error("failed to allocate sectors");
+		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
+		return false;
+	}
 	for (int i = 0; i < scount; i++) {
 		int ts = json_array_nth(&doc, t_sectors, i);
 		int tid=-1, tfloor=-1, tceil=-1, tfloor_tex=-1, tceil_tex=-1, tlight=-1;
@@ -957,7 +976,12 @@ bool map_load(MapLoadResult* out, const AssetPaths* paths, const char* map_filen
 		map_load_result_destroy(out);
 		return false;
 	}
-	world_alloc_walls(&out->world, wcount);
+	if (!world_alloc_walls(&out->world, wcount)) {
+		log_error("failed to allocate walls");
+		json_doc_destroy(&doc);
+		map_load_result_destroy(out);
+		return false;
+	}
 	for (int i = 0; i < wcount; i++) {
 		int tw = json_array_nth(&doc, t_walls, i);
 		int tv0=-1,tv1=-1,tfs=-1,tbs=-1,ttex=-1;
