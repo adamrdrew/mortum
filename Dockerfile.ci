@@ -1,0 +1,32 @@
+# CI-only build container for Mortum.
+# Runs the full compile + asset validation during `docker build`.
+
+FROM ubuntu:24.04 AS ci-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    clang \
+    make \
+    pkg-config \
+    libsdl2-dev \
+    libfluidsynth-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+
+FROM ci-base AS ci-check
+
+# Copy repo into the image so the build is hermetic and fails the PR check.
+COPY . /work
+
+ARG JOBS=0
+
+# Use all available CPUs by default.
+RUN set -eux; \
+  if [ "${JOBS}" -le 0 ]; then JOBS="$(nproc)"; fi; \
+  make clean; \
+  make build -j"${JOBS}"; \
+  make validate
