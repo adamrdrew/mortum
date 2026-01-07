@@ -17,7 +17,8 @@ the map ([src/assets/map_loader.c](../src/assets/map_loader.c)). Gameplay spawns
 ### Concepts
 
 - **Chunks**: flying opaque squares that use simple ballistic physics, collide with world geometry only, and stamp when
-they hit floors/ceilings/walls. They are pooled separately from stamps (`GORE_CHUNK_MAX_DEFAULT`).
+they hit floors. Wall/ceiling impacts currently do not stamp (the chunk is removed). Chunks are pooled separately from
+stamps (`GORE_CHUNK_MAX_DEFAULT`).
 - **Stamps**: persistent "sticky" splats that are floor-only in the current implementation. Chunk impacts only stamp
   onto floors (walls/ceilings are intentionally skipped due to view-dependent z-fighting and skybox edge cases).
   Each stamp procedurally scatters up to `GORE_STAMP_MAX_SAMPLES` droplets in the floor plane, with palette snapping and
@@ -49,10 +50,11 @@ stable given the same inputs.
 - Spawn: `gore_spawn_chunk` drops the newest request if the pool is full and defaults `life_ms` to ~2.8s when zero.
   It immediately snaps the requested RGB to the gore palette for consistency.
 - Simulation: `gore_tick` advances gravity (`18.0f` units/s²), integrates XY motion with `collision_move_circle`, and
-  handles Z floor/ceiling impacts. Floor hits stamp before killing the chunk; wall and ceiling hits currently do not
-  stamp (the chunk is simply removed).
+  handles Z floor/ceiling impacts. Floor hits stamp before killing the chunk; wall and ceiling hits do not stamp (the
+  chunk is simply removed).
 - Rendering: visible chunks draw as opaque squares in screen space, depth-tested against walls/depth buffers and lit per
-  sector/point light.
+  sector/point light. This is mainly a readability/debug affordance so you can see ballistic motion (it is not a
+  textured particle effect).
 
 ### Stamps (sticky decals)
 

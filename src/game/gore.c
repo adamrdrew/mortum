@@ -148,7 +148,7 @@ static inline float max3(float a, float b) {
         return a > b ? a : b;
 }
 
-static bool gore_stamp_from_chunk(GoreSystem* self, const World* world, const GoreChunk* c, float nx, float ny, float nz) {
+static bool gore_stamp_from_chunk(GoreSystem* self, const GoreChunk* c) {
         if (!self || !c) {
                 return false;
         }
@@ -157,9 +157,6 @@ static bool gore_stamp_from_chunk(GoreSystem* self, const World* world, const Go
         gp.x = c->x;
         gp.y = c->y;
         gp.z = c->z;
-        (void)nx;
-        (void)ny;
-        (void)nz;
         gp.radius = max3(c->radius * 2.25f, 0.05f);
         gp.sample_count = 4;
         gp.color_r = c->r;
@@ -167,7 +164,6 @@ static bool gore_stamp_from_chunk(GoreSystem* self, const World* world, const Go
         gp.color_b = c->b;
         gp.life_ms = 0u;
         gp.seed = c->age_ms ^ (uint32_t)(fabsf(c->x * 100.0f));
-        (void)world;
         return gore_spawn(self, &gp);
 }
 
@@ -180,7 +176,8 @@ static bool gore_chunk_collide_floorceil(
         float ceil_z) {
         if (new_z - c->radius <= floor_z) {
                 c->z = floor_z;
-                gore_stamp_from_chunk(self, world, c, 0.0f, 0.0f, 1.0f);
+                (void)world;
+                gore_stamp_from_chunk(self, c);
                 c->alive = false;
                 return true;
         }
@@ -211,10 +208,6 @@ bool gore_spawn_chunk(
                 return false;
         }
         if (radius <= 0.0f) {
-                return false;
-        }
-        if (self->chunk_alive >= self->chunk_capacity) {
-                self->stats_dropped++;
                 return false;
         }
         int idx = -1;
@@ -323,10 +316,6 @@ bool gore_spawn(GoreSystem* self, const GoreSpawnParams* params) {
                 return false;
         }
         if (params->sample_count <= 0 || params->radius <= 0.0f) {
-                return false;
-        }
-        if (self->alive_count >= self->capacity) {
-            self->stats_dropped++;
                 return false;
         }
         // Find free slot.
@@ -439,9 +428,10 @@ void gore_draw(
         uint32_t drawn_samples = 0u;
         uint32_t pixels_written = 0u;
 
-        // Depth bias (world units along the ray depth axis) so decals don't z-fight with the surface they sit on.
-        // This is applied only for STAMPS (not chunks) and biases them to be slightly closer than the surface.
+        // Depth bias (world units along the ray depth axis) so stamps don't z-fight with the surface they sit on.
+        // Stamps are biased slightly closer than the surface.
         const float stamp_depth_bias = 0.02f;
+        const float chunk_depth_bias = 0.0f;
 
         // Draw live airborne chunks as opaque squares so their ballistic motion is visible.
         for (int ci = 0; ci < self->chunk_capacity; ci++) {
@@ -506,13 +496,13 @@ void gore_draw(
 
                 bool any = false;
                 for (int x = clip_x0; x < clip_x1; x++) {
-                        if (wall_depth && depth >= (wall_depth[x] + stamp_depth_bias)) {
+                        if (wall_depth && depth >= (wall_depth[x] + chunk_depth_bias)) {
                                 continue;
                         }
                         for (int y = clip_y0; y < clip_y1; y++) {
                                 if (depth_pixels) {
                                         float world_depth = depth_pixels[y * fb->width + x];
-                                        if (depth >= (world_depth + stamp_depth_bias)) {
+                                        if (depth >= (world_depth + chunk_depth_bias)) {
                                                 continue;
                                         }
                                 }

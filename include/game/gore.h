@@ -6,8 +6,8 @@
 #include "render/framebuffer.h"
 
 // Purpose-built gore/blood system (separate from particles) for persistent, "sticky" splats.
-// Gore stamps are planar, procedurally generated blobs that cling to walls/floors/ceilings and
-// are pooled separately from the particle emitter pipeline.
+// Gore stamps are procedurally generated blobs that currently stamp onto floors only (no wall/ceiling decals)
+// and are pooled separately from the particle emitter pipeline.
 
 #define GORE_STAMP_MAX_DEFAULT 512
 #define GORE_CHUNK_MAX_DEFAULT 768
