@@ -18,19 +18,29 @@ typedef struct PerfTraceFrame {
 	int steps;
 
 	// Particle breakdown (captured during perf trace only).
-	double pe_update_ms;
-	double p_tick_ms;
-	double p_draw_ms;
-	int pe_alive;
-	int pe_emitters_updated;
-	int pe_emitters_gated;
-	int pe_spawn_attempted;
-	int p_alive;
-	int p_capacity;
-	int p_spawned;
-	int p_dropped;
-	int p_drawn_particles;
-	int p_pixels_written;
+        double pe_update_ms;
+        double p_tick_ms;
+        double p_draw_ms;
+        int pe_alive;
+        int pe_emitters_updated;
+        int pe_emitters_gated;
+        int pe_spawn_attempted;
+        int p_alive;
+        int p_capacity;
+        int p_spawned;
+        int p_dropped;
+        int p_drawn_particles;
+        int p_pixels_written;
+
+        // Gore breakdown (captured during perf trace only).
+        double g_tick_ms;
+        double g_draw_ms;
+        int g_alive;
+        int g_capacity;
+        int g_spawned;
+        int g_dropped;
+        int g_drawn_samples;
+        int g_pixels_written;
 
 	// Renderer breakdown (captured during perf trace only).
 	double rc_planes_ms;

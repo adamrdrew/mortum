@@ -96,6 +96,7 @@ SRC := \
   src/game/player_controller.c \
   src/game/sound_emitters.c \
   src/game/particle_emitters.c \
+  src/game/gore.c \
   src/game/particles.c \
   src/game/console.c \
   src/game/console_commands.c \

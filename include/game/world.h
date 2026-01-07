@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "core/base.h"
+#include "game/gore.h"
 #include "game/particles.h"
 #include "render/lighting.h"
 
@@ -84,12 +85,15 @@ typedef struct World {
 	int* light_free; // owned stack of free indices
 	int light_free_count;
 	int light_free_cap;
-	int light_count; // total slots in use in lights[] (may include free slots)
-	int light_capacity;
+        int light_count; // total slots in use in lights[] (may include free slots)
+        int light_capacity;
 
-	// World-owned particle pool. Particles always run their lifecycle to completion
-	// even if their originating emitter is destroyed.
-	Particles particles;
+        // World-owned particle pool. Particles always run their lifecycle to completion
+        // even if their originating emitter is destroyed.
+        Particles particles;
+
+        // Purpose-built gore pool (separate from particles) for sticky decals.
+        GoreSystem gore;
 } World;
 
 void world_init_empty(World* self);
