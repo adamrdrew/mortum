@@ -23,7 +23,10 @@
 #include "assets/menu_loader.h"
 #include "assets/timeline_loader.h"
 #include "assets/map_loader.h"
+#include "assets/map_validate.h"
 #include "assets/midi_player.h"
+
+#include "core/path_safety.h"
 
 #include "game/player.h"
 #include "game/player_controller.h"
@@ -72,10 +75,507 @@
 
 #include <SDL.h>
 #include <stdbool.h>
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
+static int ci_tolower(int c) {
+	if (c >= 'A' && c <= 'Z') {
+		return c - 'A' + 'a';
+	}
+	return c;
+}
+
+static bool ends_with_ci2(const char* s, const char* suffix) {
+	if (!s || !suffix) {
+		return false;
+	}
+	size_t ns = strlen(s);
+	size_t nf = strlen(suffix);
+	if (nf > ns) {
+		return false;
+	}
+	const char* tail = s + (ns - nf);
+	for (size_t i = 0; i < nf; i++) {
+		if (ci_tolower((unsigned char)tail[i]) != ci_tolower((unsigned char)suffix[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static void json_write_escaped_string(FILE* f, const char* s) {
+	if (!f) {
+		return;
+	}
+	if (!s) {
+		fputs("null", f);
+		return;
+	}
+	fputc('"', f);
+	for (const unsigned char* p = (const unsigned char*)s; *p; p++) {
+		unsigned char c = *p;
+		switch (c) {
+			case '"': fputs("\\\"", f); break;
+			case '\\': fputs("\\\\", f); break;
+			case '\b': fputs("\\b", f); break;
+			case '\f': fputs("\\f", f); break;
+			case '\n': fputs("\\n", f); break;
+			case '\r': fputs("\\r", f); break;
+			case '\t': fputs("\\t", f); break;
+			default:
+				if (c < 0x20) {
+					fprintf(f, "\\u%04x", (unsigned)c);
+				} else {
+					fputc((int)c, f);
+				}
+				break;
+		}
+	}
+	fputc('"', f);
+}
+
+static const char* strstr_last(const char* haystack, const char* needle) {
+	if (!haystack || !needle || needle[0] == '\0') {
+		return NULL;
+	}
+	const char* last = NULL;
+	const char* p = haystack;
+	while ((p = strstr(p, needle)) != NULL) {
+		last = p;
+		p = p + 1;
+	}
+	return last;
+}
+
+static bool get_exe_dir(char* out, size_t out_cap, const char* argv0) {
+	if (!out || out_cap == 0) {
+		return false;
+	}
+	out[0] = '\0';
+
+	char path_buf[PATH_MAX];
+	path_buf[0] = '\0';
+
+	bool got = false;
+	if (argv0 && argv0[0] != '\0') {
+		char* rp = realpath(argv0, path_buf);
+		if (rp) {
+			got = true;
+		}
+	}
+
+#if defined(__APPLE__)
+	if (!got) {
+		uint32_t sz = (uint32_t)sizeof(path_buf);
+		if (_NSGetExecutablePath(path_buf, &sz) == 0) {
+			char resolved[PATH_MAX];
+			if (realpath(path_buf, resolved)) {
+				(void)snprintf(path_buf, sizeof(path_buf), "%s", resolved);
+				got = true;
+			}
+		}
+	}
+#endif
+
+	if (!got || path_buf[0] == '\0') {
+		return false;
+	}
+
+	char* slash = strrchr(path_buf, '/');
+	if (!slash) {
+		return false;
+	}
+	*slash = '\0';
+	(void)snprintf(out, out_cap, "%s", path_buf);
+	return out[0] != '\0';
+}
+
+static bool normalize_map_filename_arg(const char* input, char* out, size_t out_cap) {
+	if (!input || input[0] == '\0' || !out || out_cap == 0) {
+		return false;
+	}
+	const char* tail = NULL;
+	const char* m1 = strstr_last(input, "Assets/Levels/");
+	const char* m2 = strstr_last(input, "Assets\\\\Levels\\\\");
+	if (m1) {
+		tail = m1 + strlen("Assets/Levels/");
+	} else if (m2) {
+		tail = m2 + strlen("Assets\\\\Levels\\\\");
+	} else {
+		tail = input;
+	}
+	if (!tail || tail[0] == '\0') {
+		return false;
+	}
+	if (!name_is_safe_relpath(tail) || !ends_with_ci2(tail, ".json")) {
+		return false;
+	}
+	(void)snprintf(out, out_cap, "%s", tail);
+	return true;
+}
+
+static void report_push_entry(MapValidationReport* r, bool is_error, const char* code, const char* message, MapValidationContext ctx) {
+	if (!r || !code || !message) {
+		return;
+	}
+	size_t n = strlen(message);
+	char* msg = (char*)malloc(n + 1);
+	if (!msg) {
+		return;
+	}
+	memcpy(msg, message, n + 1);
+
+	MapValidationEntry e;
+	e.code = code;
+	e.message = msg;
+	e.context = ctx;
+
+	if (is_error) {
+		if (r->error_count >= r->error_cap) {
+			int next_cap = (r->error_cap == 0) ? 8 : (r->error_cap * 2);
+			MapValidationEntry* next = (MapValidationEntry*)realloc(r->errors, (size_t)next_cap * sizeof(*next));
+			if (!next) {
+				free(msg);
+				return;
+			}
+			r->errors = next;
+			r->error_cap = next_cap;
+		}
+		r->errors[r->error_count++] = e;
+	} else {
+		if (r->warning_count >= r->warning_cap) {
+			int next_cap = (r->warning_cap == 0) ? 8 : (r->warning_cap * 2);
+			MapValidationEntry* next = (MapValidationEntry*)realloc(r->warnings, (size_t)next_cap * sizeof(*next));
+			if (!next) {
+				free(msg);
+				return;
+			}
+			r->warnings = next;
+			r->warning_cap = next_cap;
+		}
+		r->warnings[r->warning_count++] = e;
+	}
+}
+
+static void json_write_context(FILE* out, const MapValidationContext* ctx) {
+	bool first = true;
+	fputc('{', out);
+	if (ctx) {
+		if (ctx->sector_index != -1) {
+			fprintf(out, "%s\"sector_index\":%d", first ? "" : ",", ctx->sector_index);
+			first = false;
+		}
+		if (ctx->wall_index != -1) {
+			fprintf(out, "%s\"wall_index\":%d", first ? "" : ",", ctx->wall_index);
+			first = false;
+		}
+		if (ctx->vertex_index != -1) {
+			fprintf(out, "%s\"vertex_index\":%d", first ? "" : ",", ctx->vertex_index);
+			first = false;
+		}
+		if (ctx->door_index != -1) {
+			fprintf(out, "%s\"door_index\":%d", first ? "" : ",", ctx->door_index);
+			first = false;
+		}
+		if (ctx->entity_index != -1) {
+			fprintf(out, "%s\"entity_index\":%d", first ? "" : ",", ctx->entity_index);
+			first = false;
+		}
+		if (ctx->light_index != -1) {
+			fprintf(out, "%s\"light_index\":%d", first ? "" : ",", ctx->light_index);
+			first = false;
+		}
+		if (!isnan(ctx->x)) {
+			fprintf(out, "%s\"x\":%.3f", first ? "" : ",", ctx->x);
+			first = false;
+		}
+		if (!isnan(ctx->y)) {
+			fprintf(out, "%s\"y\":%.3f", first ? "" : ",", ctx->y);
+			first = false;
+		}
+	}
+	fputc('}', out);
+}
+
+static void json_write_entries(FILE* out, const MapValidationEntry* entries, int count) {
+	fputc('[', out);
+	for (int i = 0; i < count; i++) {
+		const MapValidationEntry* e = &entries[i];
+		if (i > 0) {
+			fputc(',', out);
+		}
+		fputc('{', out);
+		fputs("\"code\":", out);
+		json_write_escaped_string(out, e->code ? e->code : "");
+		fputs(",\"message\":", out);
+		json_write_escaped_string(out, e->message ? e->message : "");
+		fputs(",\"context\":", out);
+		json_write_context(out, &e->context);
+		fputc('}', out);
+	}
+	fputc(']', out);
+}
+
+static void cli_dump_map_spec(FILE* out) {
+	// Single JSON object; stable ordering.
+	fputc('{', out);
+	fputs("\"command\":\"dump-map-spec\"", out);
+
+	fputs(",\"top_level\":{", out);
+	fputs("\"required_fields\":[\"player_start\",\"vertices\",\"sectors\",\"walls\"]", out);
+	fputs(",\"optional_fields\":[\"bgmusic\",\"soundfont\",\"sky\",\"lights\",\"sounds\",\"particles\",\"entities\",\"doors\"]", out);
+	fputs(",\"ignored_fields\":[\"version\",\"name\",\"textures\",\"flags\"]", out);
+	fputs("}", out);
+
+	fputs(",\"player_start\":{", out);
+	fputs("\"type\":\"object\",\"required\":[\"x\",\"y\",\"angle_deg\"],\"properties\":{", out);
+	fputs("\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"angle_deg\":{\"type\":\"number\"}", out);
+	fputs("}", out);
+	fputs(",\"constraints\":[", out);
+	fputs("\"(x,y) must be inside at least one sector\"", out);
+	fputs(",\"All sectors must be reachable from the player_start sector via portal adjacency (back_sector != -1)\"", out);
+	fputs("]}", out);
+
+	fputs(",\"vertices\":{", out);
+	fputs("\"type\":\"array\",\"min_items\":3,\"items\":{\"type\":\"object\",\"required\":[\"x\",\"y\"],\"properties\":{\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"}}}}", out);
+
+	fputs(",\"sectors\":{", out);
+	fputs("\"type\":\"array\",\"min_items\":1,\"items\":{", out);
+	fputs("\"type\":\"object\",\"required\":[\"id\",\"floor_z\",\"ceil_z\",\"floor_tex\",\"ceil_tex\",\"light\"],", out);
+	fputs("\"optional\":[\"light_color\",\"movable\",\"floor_z_toggled_pos\"],", out);
+	fputs("\"properties\":{", out);
+	fputs("\"id\":{\"type\":\"integer\"}", out);
+	fputs(",\"floor_z\":{\"type\":\"number\"}", out);
+	fputs(",\"ceil_z\":{\"type\":\"number\"}", out);
+	fputs(",\"floor_tex\":{\"type\":\"string\",\"non_empty\":true}", out);
+	fputs(",\"ceil_tex\":{\"type\":\"string\",\"non_empty\":true}", out);
+	fputs(",\"light\":{\"type\":\"number\"}", out);
+	fputs(",\"light_color\":{\"type\":\"object\",\"properties\":{\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}}}", out);
+	fputs(",\"movable\":{\"type\":\"boolean\",\"default\":false}", out);
+	fputs(",\"floor_z_toggled_pos\":{\"type\":\"number\"}", out);
+	fputs("}", out);
+	fputs("}", out);
+	fputs(",\"constraints\":[", out);
+	fputs("\"ceil_z > floor_z\"", out);
+	fputs(",\"floor_tex and ceil_tex must be non-empty\"", out);
+	fputs(",\"If movable is true, floor_z_toggled_pos must be present\"", out);
+	fputs(",\"Movable sectors require clearance: ceil_z > max(floor_z_origin, floor_z_toggled_pos) + 0.10\"", out);
+	fputs(",\"Each sector must have at least one closed boundary loop formed by its front-side walls\"", out);
+	fputs("]", out);
+	fputs(",\"warnings\":[", out);
+	fputs("\"Multiple closed loops (holes/obstacles)\"", out);
+	fputs(",\"Open wall components (internal segments)\"", out);
+	fputs("]}", out);
+
+	fputs(",\"walls\":{", out);
+	fputs("\"type\":\"array\",\"min_items\":1,\"items\":{", out);
+	fputs("\"type\":\"object\",\"required\":[\"v0\",\"v1\",\"front_sector\",\"back_sector\",\"tex\"],", out);
+	fputs("\"optional\":[\"end_level\",\"toggle_sector\",\"toggle_sector_id\",\"toggle_sector_oneshot\",\"active_tex\",\"toggle_sound\",\"toggle_sound_finish\",\"required_item\",\"required_item_missing_message\"],", out);
+	fputs("\"properties\":{", out);
+	fputs("\"v0\":{\"type\":\"integer\"},\"v1\":{\"type\":\"integer\"}", out);
+	fputs(",\"front_sector\":{\"type\":\"integer\"},\"back_sector\":{\"type\":\"integer\",\"portal_if_ge_0\":true,\"solid_if_minus_1\":true}", out);
+	fputs(",\"tex\":{\"type\":\"string\",\"non_empty\":true}", out);
+	fputs(",\"end_level\":{\"type\":\"boolean\"}", out);
+	fputs(",\"toggle_sector\":{\"type\":\"boolean\"}", out);
+	fputs(",\"toggle_sector_id\":{\"type\":\"integer\",\"notes\":[\"Refers to sector id (not sector index)\",\"-1 means default to player's current sector\"]}", out);
+	fputs(",\"toggle_sector_oneshot\":{\"type\":\"boolean\"}", out);
+	fputs(",\"active_tex\":{\"type\":\"string\"}", out);
+	fputs(",\"toggle_sound\":{\"type\":\"string\",\"extension\":\".wav\"}", out);
+	fputs(",\"toggle_sound_finish\":{\"type\":\"string\",\"extension\":\".wav\"}", out);
+	fputs(",\"required_item\":{\"type\":\"string\"}", out);
+	fputs(",\"required_item_missing_message\":{\"type\":\"string\"}", out);
+	fputs("}", out);
+	fputs("}", out);
+	fputs(",\"constraints\":[", out);
+	fputs("\"v0/v1 indices in range and v0 != v1\"", out);
+	fputs(",\"front_sector in range; back_sector is -1 or in range\"", out);
+	fputs(",\"tex must be non-empty\"", out);
+	fputs(",\"end_level cannot be combined with toggle_sector\"", out);
+	fputs(",\"toggle_sector_id (if not -1) must match some sector.id\"", out);
+	fputs("]", out);
+	fputs(",\"semantics\":[", out);
+	fputs("\"Solid wall if back_sector == -1; portal wall if back_sector >= 0\"", out);
+	fputs(",\"Exterior should be sealed with solid walls to prevent escaping outside sectors\"", out);
+	fputs("]}", out);
+
+	fputs(",\"doors\":{", out);
+	fputs("\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"id\",\"wall_index\",\"tex\"],\"optional\":[\"starts_closed\",\"sound_open\",\"required_item\",\"required_item_missing_message\"],\"defaults\":{\"starts_closed\":true}}", out);
+	fputs(",\"constraints\":[\"id must be unique\",\"wall_index must refer to a portal wall\",\"doors cannot bind to end_level walls\"]}", out);
+
+	fputs(",\"lights\":{", out);
+	fputs("\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"x\",\"y\",\"radius\"],\"one_of_required\":[[\"brightness\"],[\"intensity\"]],\"optional\":[\"z\",\"color\",\"flicker\",\"seed\"],\"enums\":{\"flicker\":[\"none\",\"flame\",\"malfunction\"]}}", out);
+	fputs(",\"warnings\":[\"Warn if a light is not inside any sector\"]}", out);
+
+	fputs(",\"sounds\":{", out);
+	fputs("\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"x\",\"y\",\"sound\"],\"optional\":[\"loop\",\"spatial\",\"gain\"],\"defaults\":{\"loop\":false,\"spatial\":true,\"gain\":1.0}}}", out);
+
+	fputs(",\"particles\":{", out);
+	fputs("\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"x\",\"y\",\"particle_life_ms\",\"emit_interval_ms\",\"start\",\"end\"],\"optional\":[\"z\",\"offset_jitter\",\"rotate\",\"image\",\"shape\"]}}", out);
+
+	fputs(",\"entities\":{", out);
+	fputs("\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"x\",\"y\"],\"preferred\":[\"def\"],\"optional\":[\"yaw_deg\",\"type\"],\"notes\":[\"If def is present, loader requires entity be inside a sector (otherwise load fails)\"]}}", out);
+
+	fputs(",\"global_invariants\":[", out);
+	fputs("\"Each sector must have at least one closed boundary loop\"", out);
+	fputs(",\"Portal edges should be authored as two directed walls (A→B and B→A) so both sectors form valid boundaries\"", out);
+	fputs(",\"Contiguity: all sectors reachable from the player_start sector via portal adjacency (back_sector != -1)\"", out);
+	fputs("]", out);
+
+	fputs(",\"string_length_guidance\":{\"note\":\"Many filenames are stored in fixed char[64]; keep filenames <= 63 bytes where practical\"}", out);
+
+	fputc('}', out);
+}
+
+static int cli_validate_map(FILE* out, const char* argv0, const char* input_path) {
+	(void)argv0;
+	if (!out) {
+		return 2;
+	}
+	if (!input_path || input_path[0] == '\0') {
+		// Missing path argument.
+		MapValidationReport r;
+		map_validation_report_init(&r);
+		MapValidationContext ctx;
+		ctx.sector_index = -1;
+		ctx.wall_index = -1;
+		ctx.vertex_index = -1;
+		ctx.door_index = -1;
+		ctx.entity_index = -1;
+		ctx.light_index = -1;
+		ctx.x = NAN;
+		ctx.y = NAN;
+		report_push_entry(&r, true, "CLI_MISSING_PATH", "--validate-map requires a path argument", ctx);
+
+		fputc('{', out);
+		fputs("\"command\":\"validate-map\"", out);
+		fputs(",\"input_path\":", out);
+		json_write_escaped_string(out, input_path ? input_path : "");
+		fputs(",\"map_filename\":", out);
+		json_write_escaped_string(out, "");
+		fputs(",\"status\":\"errors\"", out);
+		fputs(",\"exit_code\":2", out);
+		fputs(",\"errors\":", out);
+		json_write_entries(out, r.errors, r.error_count);
+		fputs(",\"warnings\":", out);
+		json_write_entries(out, r.warnings, r.warning_count);
+		fputc('}', out);
+		map_validation_report_destroy(&r);
+		return 2;
+	}
+
+	if (!log_init(LOG_LEVEL_ERROR)) {
+		return 2;
+	}
+
+	char map_filename[1024];
+	map_filename[0] = '\0';
+	MapValidationReport rep;
+	map_validation_report_init(&rep);
+
+	if (!normalize_map_filename_arg(input_path, map_filename, sizeof(map_filename))) {
+		MapValidationContext ctx;
+		ctx.sector_index = -1;
+		ctx.wall_index = -1;
+		ctx.vertex_index = -1;
+		ctx.door_index = -1;
+		ctx.entity_index = -1;
+		ctx.light_index = -1;
+		ctx.x = NAN;
+		ctx.y = NAN;
+		report_push_entry(
+			&rep,
+			true,
+			"CLI_INVALID_PATH",
+			"Path must be a safe relative .json under Assets/Levels, or a filesystem path containing Assets/Levels/ that can be converted",
+			ctx
+		);
+		int exit_code = 2;
+		fputc('{', out);
+		fputs("\"command\":\"validate-map\"", out);
+		fputs(",\"input_path\":", out);
+		json_write_escaped_string(out, input_path);
+		fputs(",\"map_filename\":", out);
+		json_write_escaped_string(out, "");
+		fputs(",\"status\":\"errors\"", out);
+		fprintf(out, ",\"exit_code\":%d", exit_code);
+		fputs(",\"errors\":", out);
+		json_write_entries(out, rep.errors, rep.error_count);
+		fputs(",\"warnings\":", out);
+		json_write_entries(out, rep.warnings, rep.warning_count);
+		fputc('}', out);
+		map_validation_report_destroy(&rep);
+		log_shutdown();
+		return exit_code;
+	}
+
+	char exe_dir[PATH_MAX];
+	exe_dir[0] = '\0';
+	(void)get_exe_dir(exe_dir, sizeof(exe_dir), argv0);
+
+	AssetPaths paths;
+	asset_paths_init(&paths, exe_dir[0] != '\0' ? exe_dir : NULL);
+
+	MapLoadResult map;
+	map_validate_set_report_sink(&rep);
+	bool ok = map_load(&map, &paths, map_filename);
+	map_validate_set_report_sink(NULL);
+
+	if (!ok) {
+		MapValidationContext ctx;
+		ctx.sector_index = -1;
+		ctx.wall_index = -1;
+		ctx.vertex_index = -1;
+		ctx.door_index = -1;
+		ctx.entity_index = -1;
+		ctx.light_index = -1;
+		ctx.x = NAN;
+		ctx.y = NAN;
+		report_push_entry(&rep, true, "MAP_LOAD_FAILED", "map_load() returned false", ctx);
+	}
+
+	if (ok) {
+		map_load_result_destroy(&map);
+	}
+
+	int exit_code = 0;
+	const char* status = "ok";
+	if (rep.error_count > 0) {
+		exit_code = 2;
+		status = "errors";
+	} else if (rep.warning_count > 0) {
+		exit_code = 1;
+		status = "warnings";
+	}
+
+	fputc('{', out);
+	fputs("\"command\":\"validate-map\"", out);
+	fputs(",\"input_path\":", out);
+	json_write_escaped_string(out, input_path);
+	fputs(",\"map_filename\":", out);
+	json_write_escaped_string(out, map_filename);
+	fputs(",\"status\":", out);
+	json_write_escaped_string(out, status);
+	fprintf(out, ",\"exit_code\":%d", exit_code);
+	fputs(",\"errors\":", out);
+	json_write_entries(out, rep.errors, rep.error_count);
+	fputs(",\"warnings\":", out);
+	json_write_entries(out, rep.warnings, rep.warning_count);
+	fputc('}', out);
+
+	asset_paths_destroy(&paths);
+	map_validation_report_destroy(&rep);
+	log_shutdown();
+	return exit_code;
+}
 
 static inline ColorRGBA color_from_abgr(uint32_t abgr) {
 	ColorRGBA c;
@@ -505,6 +1005,40 @@ static bool gather_fire(const Input* in) {
 }
 
 int main(int argc, char** argv) {
+	bool cli_dump_spec = false;
+	const char* cli_validate_path = NULL;
+	for (int i = 1; i < argc; i++) {
+		const char* a = argv[i];
+		if (!a || a[0] == '\0') {
+			continue;
+		}
+		if (strcmp(a, "--dump-map-spec") == 0) {
+			cli_dump_spec = true;
+			continue;
+		}
+		if (strcmp(a, "--validate-map") == 0) {
+			if (i + 1 < argc) {
+				cli_validate_path = argv[i + 1];
+				i++; // consume value
+			} else {
+				cli_validate_path = ""; // triggers a structured error
+			}
+			continue;
+		}
+	}
+	if (cli_dump_spec || cli_validate_path) {
+		if (cli_dump_spec) {
+			cli_dump_map_spec(stdout);
+			if (cli_validate_path) {
+				fputc('\n', stdout);
+			}
+		}
+		if (cli_validate_path) {
+			return cli_validate_map(stdout, (argc > 0) ? argv[0] : NULL, cli_validate_path);
+		}
+		return 0;
+	}
+
 	char prev_bgmusic[64] = "";
 	char prev_soundfont[64] = "";
 
