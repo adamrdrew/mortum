@@ -1,0 +1,35 @@
+name: PR Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-validate:
+    name: Build and validate (Docker)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build container and run checks
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.ci
+          target: ci-check
+          push: false
+          build-args: |
+            JOBS=0
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
