@@ -127,7 +127,19 @@ LIB_OBJ := $(LIB_SRC:src/%.c=$(BIN_DIR)/obj/%.o) $(THIRD_SRC:third_party/%.c=$(B
 TOOL_VALIDATE := $(BIN_DIR)/validate_assets
 TOOL_VALIDATE_OBJ := $(BIN_DIR)/obj/tools/validate_assets.o
 
-.PHONY: all build release run test validate clean
+# Nomos Studio (standalone map editor)
+NOMOS := $(BIN_DIR)/nomos
+NOMOS_SRC := \
+  tools/nomos_studio/nomos_main.c \
+  tools/nomos_studio/nomos_document.c \
+  tools/nomos_studio/nomos_ui.c \
+  tools/nomos_studio/nomos_viewport.c \
+  tools/nomos_studio/nomos_save.c \
+  tools/nomos_studio/nomos_procgen.c \
+  tools/nomos_studio/nomos_font.c
+NOMOS_OBJ := $(NOMOS_SRC:tools/nomos_studio/%.c=$(BIN_DIR)/obj/nomos_studio/%.o)
+
+.PHONY: all build release run test validate nomos run-nomos clean
 
 all: CFLAGS := $(CFLAGS_COMMON) $(DBG)
 all: $(BIN)
@@ -146,6 +158,12 @@ test: ; @echo "No tests wired yet." ; exit 0
 validate: CFLAGS := $(CFLAGS_COMMON) $(DBG)
 validate: $(TOOL_VALIDATE) ; $(TOOL_VALIDATE) $(RUN_MAP)
 
+nomos: CFLAGS := $(CFLAGS_COMMON) $(DBG)
+nomos: $(NOMOS)
+
+run-nomos: CFLAGS := $(CFLAGS_COMMON) $(DBG)
+run-nomos: $(NOMOS) ; $(NOMOS)
+
 clean: ; @rm -rf $(BIN_DIR)
 
 $(BIN): $(OBJ) ; @mkdir -p $(BIN_DIR) ; $(CC) $(OBJ) -o $@ $(SDL_LIBS) $(FLUIDSYNTH_LIBS) -lm
@@ -157,3 +175,7 @@ $(BIN_DIR)/obj/third_party/%.o: third_party/%.c ; @mkdir -p $(dir $@) ; $(CC) $(
 $(TOOL_VALIDATE_OBJ): tools/validate_assets.c ; @mkdir -p $(dir $@) ; $(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 $(TOOL_VALIDATE): $(LIB_OBJ) $(TOOL_VALIDATE_OBJ) ; @mkdir -p $(BIN_DIR) ; $(CC) $(LIB_OBJ) $(TOOL_VALIDATE_OBJ) -o $@ $(SDL_LIBS) $(FLUIDSYNTH_LIBS) -lm
+
+$(BIN_DIR)/obj/nomos_studio/%.o: tools/nomos_studio/%.c ; @mkdir -p $(dir $@) ; $(CC) $(CPPFLAGS) $(CFLAGS) -Itools/nomos_studio -c $< -o $@
+
+$(NOMOS): $(LIB_OBJ) $(NOMOS_OBJ) ; @mkdir -p $(BIN_DIR) ; $(CC) $(LIB_OBJ) $(NOMOS_OBJ) -o $@ $(SDL_LIBS) $(FLUIDSYNTH_LIBS) -lm
